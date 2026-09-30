@@ -1,0 +1,22 @@
+# Local development (auto-loaded by `docker compose up`): http://localhost:8080.
+services:
+  caddy:
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+  api:
+    environment:
+      COOKIE_SECURE: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+  worker:
+    depends_on:
+      db:
+        condition: service_healthy
+  backup:
+    depends_on:
+      db:
+        condition: service_healthy

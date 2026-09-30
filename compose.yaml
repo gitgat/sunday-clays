@@ -1,0 +1,120 @@
+# Production-shaped stack (Swarm-ready): no published ports, no external networks, no host
+# binds; configuration only via env vars and *_FILE secrets. Local: compose.override.yaml.
+# CI e2e: -f compose.yaml -f compose.test.yaml. Swarm: -c compose.yaml -c compose.swarm.yaml.
+
+x-backend-secrets-env: &backend-secrets-env
+  DATABASE_URL_FILE: /run/secrets/database_url
+  SESSION_SECRET_FILE: /run/secrets/session_secret
+  VIEWER_PASSWORD_HASH_FILE: /run/secrets/viewer_password_hash
+  ADMIN_PASSWORD_HASH_FILE: /run/secrets/admin_password_hash
+
+services:
+  caddy:
+    image: ghcr.io/gitgat/sunday-clays-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on: [api]
+    restart: unless-stopped
+    healthcheck:
+      # Caddy itself (the SPA shell), not /api through the proxy: in the Swarm an api outage
+      # must not get Caddy restarted too. Local/CI ordering: depends_on api service_healthy.
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  api:
+    image: ghcr.io/gitgat/sunday-clays-backend:${IMAGE_TAG:-latest}
+    build:
+      context: backend
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && exec uvicorn sunday_clays.api.app:create_app --factory --host 0.0.0.0 --port 8000 --no-proxy-headers
+    environment: *backend-secrets-env
+    secrets: [database_url, session_secret, viewer_password_hash, admin_password_hash]
+    depends_on: [db]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  worker:
+    image: ghcr.io/gitgat/sunday-clays-backend:${IMAGE_TAG:-latest}
+    build:
+      context: backend
+    command: ["python", "-m", "sunday_clays.jobs.worker"]
+    environment: *backend-secrets-env
+    secrets: [database_url, session_secret, viewer_password_hash, admin_password_hash]
+    depends_on: [db]
+    restart: unless-stopped
+    stop_grace_period: 5m
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,time,sys; sys.exit(time.time()-os.path.getmtime('/tmp/worker-heartbeat')>60)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: sunday
+      POSTGRES_DB: sunday_clays
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backup:
+    image: ghcr.io/gitgat/sunday-clays-backend:${IMAGE_TAG:-latest}
+    build:
+      context: backend
+    command: ["/app/backup/backup.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: sunday
+      PGDATABASE: sunday_clays
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - backups:/backups
+    depends_on: [db]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,time,sys; sys.exit(time.time()-os.path.getmtime('/backups/last_success')>93600)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+volumes:
+  db-data:
+  backups:
+
+secrets:
+  session_secret:
+    file: ./secrets/session_secret
+  viewer_password_hash:
+    file: ./secrets/viewer_password_hash
+  admin_password_hash:
+    file: ./secrets/admin_password_hash
+  db_password:
+    file: ./secrets/db_password
+  database_url:
+    file: ./secrets/database_url

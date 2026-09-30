@@ -1,0 +1,327 @@
+import { http, HttpResponse } from 'msw';
+import type { EventDetail, EventSummary, Meta, StationMatrix } from './api';
+
+export const meta: Meta = {
+  app_version: 'test',
+  data_version: 7,
+  first_event_date: '2018-12-30',
+  last_event_date: '2026-09-27',
+  first_score_date: '2020-01-05',
+  last_score_date: '2026-09-27',
+  n_events: 360,
+  n_scored_events: 311,
+  n_held_events: 310,
+  n_station_events: 2,
+  n_rounds: 7480,
+  n_shooters: 332,
+  last_rebuild_at: '2026-09-27T19:01:04Z',
+};
+
+const scored = {
+  has_scores: true,
+  results_complete: true,
+  round_type_source: 'none',
+  has_stations: false,
+  condition: null,
+} as const;
+const stationWeek = {
+  has_scores: true,
+  results_complete: true,
+  round_type_source: 'stations',
+  has_stations: true,
+  condition: null,
+} as const;
+
+export const eventSummaries: EventSummary[] = [
+  {
+    ...scored,
+    event_date: '2026-09-27',
+    round_type: 'sporting',
+    head_count: 23,
+    n_rounds: 23,
+    n_shooters: 23,
+    median: 39,
+    top_score: 49,
+    difficulty: -1.4,
+    winners: [
+      { shooter_id: 31, display_name: 'Stockton, Ethan', score: 49 },
+      { shooter_id: 30, display_name: 'Finnegan, Stanton', score: 49 },
+    ],
+  },
+  {
+    ...stationWeek,
+    event_date: '2026-09-13',
+    round_type: 'super_sporting',
+    head_count: 13,
+    n_rounds: 13,
+    n_shooters: 13,
+    median: 34,
+    top_score: 42,
+    difficulty: 2.1,
+    winners: [{ shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 }],
+  },
+  {
+    ...stationWeek,
+    event_date: '2026-09-06',
+    round_type: 'super_sporting',
+    head_count: 24,
+    n_rounds: 24,
+    n_shooters: 24,
+    median: 36,
+    top_score: 48,
+    difficulty: 0.3,
+    winners: [{ shooter_id: 32, display_name: 'Grimsby, Gregor', score: 48 }],
+  },
+  {
+    ...scored,
+    event_date: '2026-08-30',
+    round_type: 'sporting',
+    head_count: 36,
+    n_rounds: 36,
+    n_shooters: 35,
+    median: 40.5,
+    top_score: 48,
+    difficulty: -0.6,
+    winners: [
+      { shooter_id: 31, display_name: 'Stockton, Ethan', score: 48 },
+      { shooter_id: 44, display_name: 'Ackerly, Alton', score: 48 },
+      { shooter_id: 45, display_name: 'Blakeslee, Ryder', score: 48 },
+    ],
+  },
+  {
+    ...scored,
+    event_date: '2025-11-16',
+    round_type: 'sporting',
+    head_count: 21,
+    has_scores: false,
+    results_complete: false,
+    n_rounds: 0,
+    n_shooters: 0,
+    median: null,
+    top_score: null,
+    difficulty: null,
+    winners: [],
+  },
+  {
+    ...scored,
+    event_date: '2025-11-09',
+    round_type: 'sporting',
+    head_count: 26,
+    n_rounds: 33,
+    n_shooters: 29,
+    median: 39,
+    top_score: 47,
+    difficulty: -0.2,
+    winners: [{ shooter_id: 60, display_name: 'Boatwright, Oliver', score: 47 }],
+  },
+];
+
+const noModel = {
+  expected: null,
+  residual: null,
+  gauge_class: null,
+  shooter_status: 'member',
+} as const;
+
+/** Station hits in layout order (stations 4..10) → the API's `{ station_no, hits }` cells. */
+function cells(hits: number[]): StationMatrix['entries'][number]['hits'] {
+  return hits.map((h, i) => ({ label: String(i + 4), station_no: i + 4, hits: h }));
+}
+
+export const eventDetail: EventDetail = {
+  event_date: '2026-09-13',
+  round_type: 'super_sporting',
+  round_type_source: 'stations',
+  head_count: 13,
+  has_scores: true,
+  has_stations: true,
+  results_complete: true,
+  n_rounds: 13,
+  n_shooters: 13,
+  median: 34,
+  mean: 34.462,
+  stdev: 4.807,
+  top_score: 42,
+  difficulty: 2.1,
+  results: [
+    {
+      ...noModel,
+      round_id: 7444,
+      shooter_id: 12,
+      display_name: 'Nordquist, Sherman',
+      name_key: 'nordquist sherman',
+      ordinal: 1,
+      score: 42,
+      adjusted: 8,
+      event_rank: 1,
+      is_best_round: true,
+      percentile: 1,
+      mu_before: 35.2,
+      mu_after: 36.1,
+      rating_delta: 0.9,
+    },
+    {
+      ...noModel,
+      round_id: 7445,
+      shooter_id: 7,
+      display_name: 'Abernathy, Preston',
+      name_key: 'abernathy preston',
+      ordinal: 1,
+      score: 41,
+      adjusted: 7,
+      event_rank: 2,
+      is_best_round: true,
+      percentile: 0.917,
+      mu_before: 38.4,
+      mu_after: 38.6,
+      rating_delta: 0.2,
+    },
+    {
+      ...noModel,
+      round_id: 7450,
+      shooter_id: 3,
+      display_name: 'Hadley, Ike',
+      name_key: 'hadley ike',
+      ordinal: 1,
+      score: 34,
+      adjusted: 0,
+      event_rank: 7,
+      is_best_round: true,
+      percentile: 0.5,
+      mu_before: 35.3,
+      mu_after: 35.0,
+      rating_delta: -0.3,
+    },
+    {
+      ...noModel,
+      round_id: 7456,
+      shooter_id: 21,
+      display_name: 'Devlin, Sid',
+      name_key: 'devlin sid',
+      ordinal: 1,
+      score: 25,
+      adjusted: -9,
+      event_rank: 13,
+      is_best_round: true,
+      percentile: 0,
+      mu_before: 31.0,
+      mu_after: 30.1,
+      rating_delta: -0.9,
+    },
+  ],
+  weather: {
+    temp_f: 58.3,
+    apparent_f: 56.9,
+    precip_in: 0,
+    wind_mph: 6.2,
+    gust_mph: 12.4,
+    wind_dir_deg: 225,
+    cloud_pct: 40,
+    humidity_pct: 71,
+    pressure_hpa: 1016.2,
+    condition: 'partly_cloudy',
+  },
+  stations: {
+    layout: [4, 5, 6, 7, 8, 9, 10].map((station_no) => ({
+      label: String(station_no),
+      station_no,
+      target_count: station_no === 10 ? 8 : 7,
+    })),
+    entries: [
+      {
+        entry_row: 10,
+        name_key: 'nordquist sherman',
+        shooter_id: 12,
+        display_name: 'Nordquist, Sherman',
+        round_id: 7444,
+        hits: cells([5, 6, 6, 7, 7, 4, 7]),
+        total: 42,
+      },
+      {
+        entry_row: 11,
+        name_key: 'abernathy preston',
+        shooter_id: 7,
+        display_name: 'Abernathy, Preston',
+        round_id: 7445,
+        hits: cells([5, 7, 7, 5, 6, 5, 6]),
+        total: 41,
+      },
+      {
+        entry_row: 15,
+        name_key: 'hadley ike',
+        shooter_id: 3,
+        display_name: 'Hadley, Ike',
+        round_id: 7450,
+        hits: cells([3, 4, 6, 5, 7, 4, 7]),
+        total: 36,
+      },
+      {
+        entry_row: 22,
+        name_key: 'devlin sid',
+        shooter_id: 21,
+        display_name: 'Devlin, Sid',
+        round_id: 7456,
+        hits: cells([2, 4, 6, 5, 2, 0, 6]),
+        total: 25,
+      },
+    ],
+  },
+  // `detail` strings in the server's own wording (api/routes/events.py event_notables).
+  notables: [
+    {
+      kind: 'pb',
+      shooter_id: 12,
+      display_name: 'Nordquist, Sherman',
+      detail: 'New personal best 42 (was 40)',
+      value: 42,
+    },
+  ],
+  vs_prev: {
+    prev_date: '2026-09-06',
+    head_count_delta: -11,
+    median_delta: -2,
+    top_score_delta: -6,
+    difficulty_delta: 1.8,
+  },
+};
+
+export const attendanceOnlyDetail: EventDetail = {
+  event_date: '2018-12-30',
+  round_type: 'sporting',
+  round_type_source: 'none',
+  head_count: 7,
+  has_scores: false,
+  has_stations: false,
+  results_complete: false,
+  n_rounds: 0,
+  n_shooters: 0,
+  median: null,
+  mean: null,
+  stdev: null,
+  top_score: null,
+  difficulty: null,
+  results: [],
+  weather: null,
+  stations: null,
+  notables: [],
+  vs_prev: null,
+};
+
+// Default handlers are branch-free (every line runs in routes.test.tsx); tests needing other data use server.use.
+export const handlers = [
+  http.get('*/api/events', ({ request }) => {
+    // A `year`, or the inclusive `from`/`to` window; either end may be absent (All has no `from`).
+    const q = new URL(request.url).searchParams;
+    const year = q.get('year');
+    const from = q.get('from') ?? '';
+    const to = q.get('to') ?? '9999-12-31';
+    return HttpResponse.json(
+      eventSummaries.filter((e) =>
+        year === null ? e.event_date >= from && e.event_date <= to : e.event_date.startsWith(year),
+      ),
+    );
+  }),
+  http.get('*/api/events/:date', ({ params }) =>
+    HttpResponse.json({ ...eventDetail, event_date: String(params.date) }),
+  ),
+];

@@ -1,0 +1,38 @@
+# Monthly, grouped version updates (C11). Lockfile changes land as controller-reviewed PRs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: monthly
+    groups:
+      backend:
+        patterns: ["*"]
+    ignore:
+      # D1: uv_build moves together with the pinned uv (CI, Dockerfile, required-version).
+      - dependency-name: uv-build
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: monthly
+    groups:
+      frontend:
+        patterns: ["*"]
+    ignore:
+      # D4: majors held on purpose (react-router v7 contract, typescript-eslint needs TS < 6.1,
+      # jsdom 30 needs a newer Node 22, @types/node tracks Node 22).
+      - dependency-name: react-router
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: jsdom
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
