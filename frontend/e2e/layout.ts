@@ -7,8 +7,10 @@ import { expect } from './fixtures';
  * measure the final page and not a half-rendered one.
  */
 export async function whenSettled(page: Page): Promise<void> {
-  await expect(page.getByRole('status')).toHaveCount(0);
-  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  // Placeholders hold their space until the feeds arrive; give slow CI runs room to load them.
+  const settled = { timeout: 15_000 };
+  await expect(page.getByRole('status')).toHaveCount(0, settled);
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, settled);
 }
 
 export async function expectNoSideScroll(page: Page): Promise<void> {
