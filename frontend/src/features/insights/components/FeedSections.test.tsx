@@ -1,5 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import { clearMe, setMe } from '../../../lib/me';
 import { server } from '../../../test/msw/server';
@@ -158,6 +158,61 @@ describe('SundayInsights', () => {
 });
 
 describe('HomeInsights', () => {
+  it('holds the place of the cards while the feed loads, then swaps them for the real ones', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get('*/api/insights/home', async () => {
+        await gate;
+        return HttpResponse.json(
+          feedFixture({
+            pinned: insightFixture({ key: 'recap', kind: 'home.sunday-recap' }),
+            hero: insightFixture({ key: 'hero' }),
+            top: [insightFixture({ key: 'top' })],
+          }),
+        );
+      }),
+    );
+    const { container } = renderWithProviders(<HomeInsights meId={3} />);
+    expect(screen.getByRole('status', { name: 'Loading insights' })).toBeInTheDocument();
+    // Two cards side by side on desktop, then the Insights card: three placeholders in all.
+    expect(container.querySelector('.lg\\:grid-cols-2')?.children).toHaveLength(2);
+    expect(container.querySelectorAll('[data-skeleton-line]').length).toBeGreaterThan(8);
+    expect(screen.queryByRole('region', { name: 'Last Sunday' })).not.toBeInTheDocument();
+    release();
+    expect(await screen.findByRole('region', { name: 'Last Sunday' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Top story' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Insights' })).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Loading insights' })).not.toBeInTheDocument();
+    expect(container.querySelector('[data-skeleton-line]')).toBeNull();
+  });
+
+  it('keeps the placeholder up while the request is still pending', async () => {
+    server.use(http.get('*/api/insights/home', () => delay('infinite')));
+    renderWithProviders(<HomeInsights meId={null} />);
+    expect(screen.getByRole('status', { name: 'Loading insights' })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole('status', { name: 'Loading insights' })).toBeInTheDocument();
+  });
+
+  it('shows nothing once the feed has loaded empty, and nothing on a fetch error', async () => {
+    server.use(http.get('*/api/insights/home', () => HttpResponse.json(feedFixture())));
+    const empty = renderWithProviders(<HomeInsights meId={null} />);
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: 'Loading insights' })).not.toBeInTheDocument(),
+    );
+    expect(empty.container).toBeEmptyDOMElement();
+    empty.unmount();
+    server.use(http.get('*/api/insights/home', () => new HttpResponse(null, { status: 500 })));
+    const failed = renderWithProviders(<HomeInsights meId={null} />);
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: 'Loading insights' })).not.toBeInTheDocument(),
+    );
+    expect(failed.container).toBeEmptyDOMElement();
+  });
+
   it("shows the latest Sunday's kudos, with the recap and the top story side by side, each dated", async () => {
     server.use(
       http.get('*/api/insights/home', () =>
