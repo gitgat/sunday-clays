@@ -1,0 +1,42 @@
+@import 'tailwindcss';
+@import '@fontsource/roboto/400.css';
+@import '@fontsource/roboto/500.css';
+@import '@fontsource/roboto/700.css';
+
+/* Mirrors src/theme/tokens.ts: change both together. */
+@theme {
+  --color-surface: #1a4d2e;
+  --color-elevated: #2d5f3f;
+  --color-primary: #9e5530;
+  --color-primary-container: #c76d3f;
+  --color-accent: #e8a77a;
+  --color-text: #fefbf6;
+  --color-text-muted: #d4e7dd;
+  --color-outline: #d1e7da;
+  --color-outline-variant: #4a7c59;
+  --color-error: #fee2e2;
+  --color-error-container: #dc2626;
+  --font-sans: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --radius-card: 12px;
+  --radius-button: 20px;
+  --radius-sheet: 16px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}

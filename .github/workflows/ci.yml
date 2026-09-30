@@ -1,0 +1,406 @@
+# CI (C11). `ci-ok` is the only required check; it fails when any other job fails, is
+# cancelled or is skipped. No job except `publish` may carry a job-level `if:`
+# (scripts/tests/test_ci_config.py enforces the shape of this file).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.9.9"
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        credentials:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sunday_clays_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/sunday_clays_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+          cache-suffix: backend
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy --strict src
+      - run: uv run pytest --cov --cov-branch --cov-report=term --cov-report=xml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: error
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+          cache-suffix: frontend
+      - run: uv sync --project backend --frozen
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+          cache: true
+          cache_dependency_path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: pnpm gen:api
+        working-directory: frontend
+      - run: pnpm lint
+        working-directory: frontend
+      - run: pnpm typecheck
+        working-directory: frontend
+      - run: pnpm exec prettier --check .
+        working-directory: frontend
+      - run: pnpm test --coverage
+        working-directory: frontend
+      - run: pnpm build
+        working-directory: frontend
+      - run: python3 scripts/bundle_stats.py --dist frontend/dist --out bundle-stats.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/coverage-summary.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bundle-stats
+          path: bundle-stats.json
+          if-no-files-found: error
+
+  ratchet:
+    needs: [backend, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: ratchets/ may change only in chore/ratchet-* PRs
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if ! git diff --quiet "origin/${BASE_REF}...HEAD" -- ratchets/ && [[ "${HEAD_REF}" != chore/ratchet-* ]]; then
+            echo "::error::ratchets/ changed outside a chore/ratchet-* branch (${HEAD_REF})"
+            exit 1
+          fi
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: backend-coverage
+          path: artifacts/backend-coverage
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: frontend-coverage
+          path: artifacts/frontend-coverage
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bundle-stats
+          path: artifacts/bundle-stats
+      - run: >-
+          uv run --no-project --with pytest --with pytest-cov --with pyyaml
+          pytest scripts/tests --cov=deploy/deployer --cov-branch --cov-fail-under=90
+      - run: python3 scripts/ratchet.py check
+
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Docker Hub pulls (buildkit, base images, postgres) as gitgat, not anonymously: anonymous
+      # pulls get rate-limited and sometimes refused ("unauthorized"). Read-only token.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deploy/deployer
+          platforms: linux/amd64
+          tags: ghcr.io/gitgat/sunday-clays-deployer:ci
+          cache-from: type=gha,scope=deployer
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=deployer' || '' }}
+          load: true
+      - name: Smoke-test the deployer image
+        run: docker run --rm --entrypoint sh ghcr.io/gitgat/sunday-clays-deployer:ci -c 'docker --version && docker buildx version && git --version && python3 /app/deployer.py --help'
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          platforms: linux/amd64
+          tags: ghcr.io/gitgat/sunday-clays-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=backend' || '' }}
+          outputs: type=docker,dest=/tmp/backend.tar
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: frontend/Dockerfile
+          platforms: linux/amd64
+          tags: ghcr.io/gitgat/sunday-clays-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=frontend' || '' }}
+          outputs: type=docker,dest=/tmp/frontend.tar
+      - name: Smoke-test the backend image
+        run: |
+          docker load --input /tmp/backend.tar
+          docker run --rm ghcr.io/gitgat/sunday-clays-backend:ci alembic --help
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-image
+          path: /tmp/backend.tar
+          retention-days: 1
+          compression-level: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-image
+          path: /tmp/frontend.tar
+          retention-days: 1
+          compression-level: 1
+          if-no-files-found: error
+
+  # Native arm64 build + smoke test (Plan 13): the Swarm runs these images on Raspberry Pis too.
+  # No image upload and no e2e here; the amd64 `docker` + `e2e` path stays the functional gate.
+  docker-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Docker Hub pulls (buildkit, base images, postgres) as gitgat, not anonymously: anonymous
+      # pulls get rate-limited and sometimes refused ("unauthorized"). Read-only token.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deploy/deployer
+          platforms: linux/arm64
+          tags: ghcr.io/gitgat/sunday-clays-deployer:ci-arm64
+          cache-from: type=gha,scope=deployer-arm64
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=min,scope=deployer-arm64' || '' }}
+          load: true
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          platforms: linux/arm64
+          tags: ghcr.io/gitgat/sunday-clays-backend:ci-arm64
+          cache-from: type=gha,scope=backend-arm64
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=min,scope=backend-arm64' || '' }}
+          load: true
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: frontend/Dockerfile
+          platforms: linux/arm64
+          tags: ghcr.io/gitgat/sunday-clays-frontend:ci-arm64
+          cache-from: type=gha,scope=frontend-arm64
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=min,scope=frontend-arm64' || '' }}
+          load: true
+      - name: Smoke-test the arm64 images
+        run: |
+          docker run --rm ghcr.io/gitgat/sunday-clays-backend:ci-arm64 sh -c 'test "$(uname -m)" = aarch64 && alembic --help >/dev/null && pg_dump --version && python -c "import argon2, numpy, pandas, psycopg, scipy"'
+          docker run --rm ghcr.io/gitgat/sunday-clays-frontend:ci-arm64 caddy version
+          docker run --rm --entrypoint sh ghcr.io/gitgat/sunday-clays-deployer:ci-arm64 -c 'test "$(uname -m)" = aarch64 && docker --version && docker buildx version && git --version && python3 /app/deployer.py --help'
+
+  stack-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: false
+      - name: Swarm stack renders and satisfies the fleet rules
+        shell: bash
+        run: |
+          IMAGE_TAG=sha-0000000 GHCR_USER=ci docker stack config -c compose.yaml -c compose.swarm.yaml \
+            | uv run --no-project --with pyyaml python scripts/check_stack.py
+
+  e2e:
+    needs: [docker]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: backend-image
+          path: /tmp/images
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: frontend-image
+          path: /tmp/images
+      - run: |
+          docker load --input /tmp/images/backend.tar
+          docker load --input /tmp/images/frontend.tar
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+          cache: true
+          cache_dependency_path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend
+      - run: VIEWER_PASSWORD=e2e-viewer ADMIN_PASSWORD=e2e-admin scripts/dev-secrets.sh
+      # Docker Hub pulls (buildkit, base images, postgres) as gitgat, not anonymously: anonymous
+      # pulls get rate-limited and sometimes refused ("unauthorized"). Read-only token.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - run: IMAGE_TAG=ci docker compose -f compose.yaml -f compose.test.yaml up -d --wait
+      - run: pnpm exec playwright test
+        working-directory: frontend
+        env:
+          CI: "true"
+          E2E_VIEWER_PASSWORD: e2e-viewer
+          E2E_ADMIN_PASSWORD: e2e-admin
+      - name: Backup restore verification
+        run: docker compose -f compose.yaml -f compose.test.yaml exec -T backup /app/backup/verify-restore.sh
+      - name: Compose logs
+        if: failure() || cancelled()
+        run: docker compose -f compose.yaml -f compose.test.yaml logs --no-color
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure() || cancelled()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
+      - name: Stop the stack
+        if: always()
+        run: docker compose -f compose.yaml -f compose.test.yaml down -v
+
+  tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: |
+            tools/trophy_art/uv.lock
+            tools/scoresheets/uv.lock
+      - name: trophy_art
+        working-directory: tools/trophy_art
+        run: |
+          uv sync --frozen
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy
+          uv run pytest
+      - name: scoresheets
+        working-directory: tools/scoresheets
+        run: |
+          uv sync --frozen
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy
+          uv run pytest
+
+  ci-ok:
+    if: always()
+    needs: [backend, frontend, ratchet, docker, docker-arm64, stack-config, e2e, tools]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every CI job succeeded
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
+
+  publish:
+    needs: ci-ok
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && vars.PUBLISH_ON_PUSH == 'true'))
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish.yml
+    secrets:
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

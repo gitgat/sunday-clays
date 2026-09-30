@@ -1,0 +1,302 @@
+{
+  "above_average_3": {
+    "art_key": "above_average_3",
+    "metal": null,
+    "seed": 101
+  },
+  "all_weather": {
+    "art_key": "all_weather",
+    "metal": null,
+    "seed": 202
+  },
+  "anniversary_1": {
+    "art_key": "anniversary_1",
+    "metal": null,
+    "seed": 101
+  },
+  "anniversary_5": {
+    "art_key": "anniversary_5",
+    "metal": null,
+    "seed": 101
+  },
+  "big_year-bronze": {
+    "art_key": "big_year",
+    "metal": "bronze",
+    "seed": 101
+  },
+  "big_year-gold": {
+    "art_key": "big_year",
+    "metal": "gold",
+    "seed": 101
+  },
+  "big_year-silver": {
+    "art_key": "big_year",
+    "metal": "silver",
+    "seed": 101
+  },
+  "both_disciplines": {
+    "art_key": "both_disciplines",
+    "metal": null,
+    "seed": 101
+  },
+  "clays_broken-bronze": {
+    "art_key": "clays_broken",
+    "metal": "bronze",
+    "seed": 101
+  },
+  "clays_broken-diamond": {
+    "art_key": "clays_broken",
+    "metal": "diamond",
+    "seed": 202
+  },
+  "clays_broken-gold": {
+    "art_key": "clays_broken",
+    "metal": "gold",
+    "seed": 202
+  },
+  "clays_broken-platinum": {
+    "art_key": "clays_broken",
+    "metal": "platinum",
+    "seed": 202
+  },
+  "clays_broken-silver": {
+    "art_key": "clays_broken",
+    "metal": "silver",
+    "seed": 202
+  },
+  "clays_thrown-bronze": {
+    "art_key": "clays_thrown",
+    "metal": "bronze",
+    "seed": 505
+  },
+  "clays_thrown-diamond": {
+    "art_key": "clays_thrown",
+    "metal": "diamond",
+    "seed": 606
+  },
+  "clays_thrown-gold": {
+    "art_key": "clays_thrown",
+    "metal": "gold",
+    "seed": 909
+  },
+  "clays_thrown-platinum": {
+    "art_key": "clays_thrown",
+    "metal": "platinum",
+    "seed": 808
+  },
+  "clays_thrown-silver": {
+    "art_key": "clays_thrown",
+    "metal": "silver",
+    "seed": 1010
+  },
+  "cold": {
+    "art_key": "cold",
+    "metal": null,
+    "seed": 101
+  },
+  "comeback": {
+    "art_key": "comeback",
+    "metal": null,
+    "seed": 202
+  },
+  "doubleheader": {
+    "art_key": "doubleheader",
+    "metal": null,
+    "seed": 404
+  },
+  "events-bronze": {
+    "art_key": "events",
+    "metal": "bronze",
+    "seed": 404
+  },
+  "events-diamond": {
+    "art_key": "events",
+    "metal": "diamond",
+    "seed": 404
+  },
+  "events-gold": {
+    "art_key": "events",
+    "metal": "gold",
+    "seed": 303
+  },
+  "events-platinum": {
+    "art_key": "events",
+    "metal": "platinum",
+    "seed": 202
+  },
+  "events-silver": {
+    "art_key": "events",
+    "metal": "silver",
+    "seed": 404
+  },
+  "first_win": {
+    "art_key": "first_win",
+    "metal": null,
+    "seed": 101
+  },
+  "four_seasons": {
+    "art_key": "four_seasons",
+    "metal": null,
+    "seed": 101
+  },
+  "hardest_station_clean": {
+    "art_key": "hardest_station_clean",
+    "metal": null,
+    "seed": 101
+  },
+  "heat": {
+    "art_key": "heat",
+    "metal": null,
+    "seed": 202
+  },
+  "iron_streak-bronze": {
+    "art_key": "iron_streak",
+    "metal": "bronze",
+    "seed": 101
+  },
+  "iron_streak-gold": {
+    "art_key": "iron_streak",
+    "metal": "gold",
+    "seed": 101
+  },
+  "iron_streak-platinum": {
+    "art_key": "iron_streak",
+    "metal": "platinum",
+    "seed": 101
+  },
+  "iron_streak-silver": {
+    "art_key": "iron_streak",
+    "metal": "silver",
+    "seed": 101
+  },
+  "joined_club": {
+    "art_key": "joined_club",
+    "metal": null,
+    "seed": 101
+  },
+  "mudder": {
+    "art_key": "mudder",
+    "metal": null,
+    "seed": 101
+  },
+  "new_year": {
+    "art_key": "new_year",
+    "metal": null,
+    "seed": 101
+  },
+  "perfect_month": {
+    "art_key": "perfect_month",
+    "metal": null,
+    "seed": 101
+  },
+  "personal_bests-bronze": {
+    "art_key": "personal_bests",
+    "metal": "bronze",
+    "seed": 101
+  },
+  "personal_bests-gold": {
+    "art_key": "personal_bests",
+    "metal": "gold",
+    "seed": 101
+  },
+  "personal_bests-silver": {
+    "art_key": "personal_bests",
+    "metal": "silver",
+    "seed": 101
+  },
+  "podium": {
+    "art_key": "podium",
+    "metal": null,
+    "seed": 101
+  },
+  "rain": {
+    "art_key": "rain",
+    "metal": null,
+    "seed": 606
+  },
+  "round_score-bronze": {
+    "art_key": "round_score",
+    "metal": "bronze",
+    "seed": 101
+  },
+  "round_score-diamond": {
+    "art_key": "round_score",
+    "metal": "diamond",
+    "seed": 101
+  },
+  "round_score-gold": {
+    "art_key": "round_score",
+    "metal": "gold",
+    "seed": 101
+  },
+  "round_score-platinum": {
+    "art_key": "round_score",
+    "metal": "platinum",
+    "seed": 101
+  },
+  "round_score-silver": {
+    "art_key": "round_score",
+    "metal": "silver",
+    "seed": 101
+  },
+  "station_cleaner-bronze": {
+    "art_key": "station_cleaner",
+    "metal": "bronze",
+    "seed": 404
+  },
+  "station_cleaner-gold": {
+    "art_key": "station_cleaner",
+    "metal": "gold",
+    "seed": 404
+  },
+  "station_cleaner-platinum": {
+    "art_key": "station_cleaner",
+    "metal": "platinum",
+    "seed": 404
+  },
+  "station_cleaner-silver": {
+    "art_key": "station_cleaner",
+    "metal": "silver",
+    "seed": 404
+  },
+  "station_top_gun": {
+    "art_key": "station_top_gun",
+    "metal": null,
+    "seed": 101
+  },
+  "sub_gauge": {
+    "art_key": "sub_gauge",
+    "metal": null,
+    "seed": 909
+  },
+  "welcome_back": {
+    "art_key": "welcome_back",
+    "metal": null,
+    "seed": 101
+  },
+  "wind": {
+    "art_key": "wind",
+    "metal": null,
+    "seed": 303
+  },
+  "years_active-bronze": {
+    "art_key": "years_active",
+    "metal": "bronze",
+    "seed": 101
+  },
+  "years_active-gold": {
+    "art_key": "years_active",
+    "metal": "gold",
+    "seed": 101
+  },
+  "years_active-platinum": {
+    "art_key": "years_active",
+    "metal": "platinum",
+    "seed": 101
+  },
+  "years_active-silver": {
+    "art_key": "years_active",
+    "metal": "silver",
+    "seed": 101
+  }
+}

@@ -1,0 +1,93 @@
+# Sunday Clays edge inside the stack: plain :80; TLS terminates at Traefik in the Swarm.
+{
+	servers {
+		# Two paths reach Caddy, both through a private-range peer:
+		# - Cloudflare Tunnel: cloudflared -> traefik-public -> Caddy. Cloudflare overwrites
+		#   CF-Connecting-IP at its edge, so it is the real visitor.
+		# - LAN: traefik-v3 -> Caddy. The internal router strips CF-Connecting-IP (a client could send
+		#   its own), so Caddy falls back to X-Forwarded-For, which traefik-v3 sets to the LAN client.
+		# The first header present wins, and only when the peer is a trusted proxy: a request straight
+		# to Caddy from an untrusted address resolves to its socket address.
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+		trusted_proxies_strict
+	}
+}
+
+# Security headers for every response, including the error responses Caddy generates itself.
+(security_headers) {
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
+
+# C8 client-IP contract: only Caddy reads forwarding headers; the API trusts X-Real-IP alone.
+(api) {
+	reverse_proxy api:8000 {
+		header_up X-Real-IP {client_ip}
+	}
+}
+
+:80 {
+	encode zstd gzip
+
+	import security_headers
+
+	# Body limits sit just above the API's own (10 MiB + 64 KiB upload, 256 KiB otherwise), so a
+	# body the API accepts is never cut off here. IEC units: Caddy reads 256KB as 256,000 bytes but
+	# 256KiB as 262,144. A declared Content-Length over the limit (same number, in bytes) gets the
+	# 413 below before anything is proxied: forwarded, the API's early 413 races Caddy's cutoff and
+	# Caddy can drop the connection mid-reply. `request_body` still caps a chunked body.
+	handle /api/admin/imports {
+		@over_limit expression `{http.request.header.Content-Length} != "" && int({http.request.header.Content-Length}) > 11534336`
+		error @over_limit 413
+		request_body {
+			max_size 11MiB
+		}
+		import api
+	}
+
+	handle /api/* {
+		@over_limit expression `{http.request.header.Content-Length} != "" && int({http.request.header.Content-Length}) > 270336`
+		error @over_limit 413
+		request_body {
+			max_size 264KiB
+		}
+		import api
+	}
+
+	# Hashed build output: immutable only when the file exists; a missing chunk is a plain 404.
+	handle /assets/* {
+		root * /srv
+		@asset file
+		header @asset Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else: the file if it exists, else index.html (SPA deep links); always revalidated.
+	handle {
+		root * /srv
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	# A body over the edge limit, refused by its Content-Length or cut off while chunked, gets the
+	# API's JSON envelope and Cache-Control (backend/tests/unit/api/test_edge_limits.py).
+	handle_errors 413 {
+		import security_headers
+		header Content-Type application/json
+		header Cache-Control no-store
+		respond `{"error":{"code":"payload_too_large","message":"Request body is too large"}}` 413
+	}
+
+	# Caddy drops the headers set above when a handler fails (404), so re-apply them.
+	handle_errors {
+		import security_headers
+	}
+}

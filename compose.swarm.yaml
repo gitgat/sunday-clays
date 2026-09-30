@@ -1,0 +1,176 @@
+# Swarm overlay. The deployer service keeps the stack on main by itself; run
+# `docker stack deploy` by hand only as in deploy/README.md "Deploy or upgrade" (pause the
+# deployer, IMAGE_TAG from `deployer.py tag`, GHCR_USER exported, resume).
+# Every app image is pulled from the fleet registry, registry.thehalf.io (SC_REGISTRY overrides
+# it): the deployer mirrors each release's multi-arch index from GHCR into it, so only the
+# deployer's manager needs a ghcr.io login (deploy/README.md "Automatic deploys").
+# Images are multi-arch (linux/amd64 + linux/arm64), so the stateless services carry no
+# architecture constraint and run on any node, Pi or VM. Only the single-writer data services are
+# pinned, by hostname, to the database node (scripts/check_stack.py enforces both).
+x-db-node: &db-node
+  constraints:
+    - node.hostname==${SC_DB_NODE:-autopirate}
+
+# Automatic rollback (Plan 13): a task that never turns healthy, or fails within `monitor`,
+# rolls its service back to the previous image. Every app service updates stop-first.
+x-update: &update-rollback
+  order: stop-first
+  failure_action: rollback
+  monitor: 60s
+
+x-rollback: &rollback-stop-first
+  order: stop-first
+
+services:
+  caddy:
+    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
+    environment:
+      TRUSTED_PROXIES: private_ranges
+    networks: [default, traefik_public, edge_public]
+    deploy:
+      update_config: *update-rollback
+      rollback_config: *rollback-stop-first
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=true
+        - traefik.swarm.network=traefik_public
+        - traefik.http.routers.sundayclays.rule=Host(`sundayclays.claysmasher.com`)
+        - traefik.http.routers.sundayclays.entrypoints=websecure
+        - traefik.http.routers.sundayclays.tls=true
+        - traefik.http.routers.sundayclays.tls.certresolver=cloudflare
+        - traefik.http.routers.sundayclays.service=sundayclays
+        - traefik.http.services.sundayclays.loadbalancer.server.port=80
+        # LAN-only router: a client could send its own CF-Connecting-IP, so drop it (an empty value
+        # removes the header). Caddy then falls back to X-Forwarded-For. The public path is
+        # swarm-config's traefik-public (edge_public), where Cloudflare sets the header.
+        - traefik.http.middlewares.sundayclays-strip-cf.headers.customrequestheaders.CF-Connecting-IP=
+        - traefik.http.routers.sundayclays.middlewares=sundayclays-strip-cf
+        # LAN name on the fleet's wildcard (*.thehalf.io -> ingress VIP); its own router so its
+        # certificate never waits on the public claysmasher.com one.
+        - traefik.http.routers.sundayclays-lan.rule=Host(`sundayclays.thehalf.io`)
+        - traefik.http.routers.sundayclays-lan.entrypoints=websecure
+        - traefik.http.routers.sundayclays-lan.tls=true
+        - traefik.http.routers.sundayclays-lan.tls.certresolver=cloudflare
+        - traefik.http.routers.sundayclays-lan.service=sundayclays
+        - traefik.http.routers.sundayclays-lan.middlewares=sundayclays-strip-cf
+
+  api:
+    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    deploy:
+      update_config: *update-rollback
+      rollback_config: *rollback-stop-first
+      restart_policy:
+        condition: on-failure
+
+  worker:
+    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    deploy:
+      replicas: 1
+      update_config: *update-rollback
+      rollback_config: *rollback-stop-first
+      # A full rebuild + skill calibration of the fixture history peaks at 224 MiB RSS (Plan 13
+      # Decision 22): 1 GiB leaves room for years of growth and fits a 4 GB Raspberry Pi.
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+      # `any`, not on-failure: SIGTERM (e.g. an unhealthy task) makes the worker finish its job
+      # and exit 0, and a long-running service must never stay stopped after a clean exit.
+      restart_policy:
+        condition: any
+
+  db:
+    volumes:
+      - /var/data/sunday-clays/db:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
+      placement: *db-node
+      restart_policy:
+        condition: on-failure
+
+  backup:
+    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    environment:
+      BACKUP_HC_URL_FILE: /run/secrets/backup_hc_url
+    secrets: [db_password, backup_hc_url]
+    volumes:
+      - /var/data/sunday-clays/backups:/backups
+    deploy:
+      replicas: 1
+      update_config: *update-rollback
+      rollback_config: *rollback-stop-first
+      placement: *db-node
+      restart_policy:
+        condition: on-failure
+
+  # Pull-based auto-deployer (Plan 13; deploy/README.md "Automatic deploys"). The only service
+  # allowed the Docker socket and a manager placement (scripts/check_stack.py). It never updates
+  # db or itself; `docker stack deploy` refreshes it. Any manager will do, Pi or VM: the image is
+  # multi-arch like the others.
+  deployer:
+    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-deployer:${IMAGE_TAG:?IMAGE_TAG is required}
+    environment:
+      GHCR_USER: ${GHCR_USER:?GHCR_USER is required}
+      REGISTRY: ${SC_REGISTRY:-registry.thehalf.io}
+      SOURCE_REGISTRY: ghcr.io/gitgat
+      POLL_INTERVAL: "120"
+    secrets: [deployer_github_token, deployer_ghcr_token]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - deployer-state:/state
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role==manager
+      update_config:
+        order: stop-first
+      resources:
+        limits:
+          memory: 256M
+      restart_policy:
+        condition: any
+
+volumes:
+  deployer-state:
+
+networks:
+  traefik_public:
+    external: true
+  # swarm-config's isolated public edge (cloudflared -> traefik-public -> caddy).
+  edge_public:
+    external: true
+
+# Restated in full: `docker stack` replaces top-level secret entries rather than merging them.
+# Swarm secrets are immutable: rotate = new file content + bump SECRETS_REV + redeploy.
+# The two deployer tokens expire on their own schedule, so they have their own DEPLOYER_SECRETS_REV.
+secrets:
+  session_secret:
+    file: ./secrets/session_secret
+    name: sundayclays_session_secret_v${SECRETS_REV:-1}
+  viewer_password_hash:
+    file: ./secrets/viewer_password_hash
+    name: sundayclays_viewer_password_hash_v${SECRETS_REV:-1}
+  admin_password_hash:
+    file: ./secrets/admin_password_hash
+    name: sundayclays_admin_password_hash_v${SECRETS_REV:-1}
+  db_password:
+    file: ./secrets/db_password
+    name: sundayclays_db_password_v${SECRETS_REV:-1}
+  database_url:
+    file: ./secrets/database_url
+    name: sundayclays_database_url_v${SECRETS_REV:-1}
+  backup_hc_url:
+    file: ./secrets/backup_hc_url
+    name: sundayclays_backup_hc_url_v${SECRETS_REV:-1}
+  deployer_github_token:
+    file: ./secrets/deployer_github_token
+    name: sundayclays_deployer_github_token_v${DEPLOYER_SECRETS_REV:-1}
+  deployer_ghcr_token:
+    file: ./secrets/deployer_ghcr_token
+    name: sundayclays_deployer_ghcr_token_v${DEPLOYER_SECRETS_REV:-1}

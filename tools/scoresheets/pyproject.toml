@@ -1,0 +1,35 @@
+[project]
+name = "scoresheets"
+version = "0.1.0"
+description = "Dev-only local-VLM station backfill from the weekly Sunday Clays Update PDFs. Never shipped in an image."
+requires-python = ">=3.13"
+dependencies = ["httpx>=0.28", "pillow>=11.0", "openpyxl>=3.1"]
+
+[dependency-groups]
+dev = ["mypy>=1.13", "pytest>=8.3", "pytest-cov>=6.0", "respx>=0.22", "ruff>=0.8", "types-openpyxl>=3.1"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"review.py" = ["E501"]  # inline HTML/JS template
+
+[tool.mypy]
+strict = true
+files = ["parse.py", "layout.py", "checks.py", "vlm.py", "pipeline.py", "review.py", "export.py", "cli.py", "scores.py", "claude_engine.py"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "--cov=. --cov-branch --cov-report=term-missing --cov-fail-under=90"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+omit = ["tests/*"]

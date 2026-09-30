@@ -1,0 +1,94 @@
+# One prompt per trophy; tiered families list the metals their tiers use (Plan 10 Decision 1).
+# The full prompt is "<style>, <metal phrase>, <prompt>". Never put credentials here.
+style: "enamel-and-metal clay-shooting trophy medallion, centered, flat studio lighting, dark forest-green backdrop, no text"
+defaults:
+  model: z-image-turbo
+  size: 1024
+  seeds: [101, 202, 303, 404]
+  negative: "text, letters, numbers, words, watermark, logo, signature, border frame, people, hands, blurry, low quality"
+metal_phrases:
+  bronze: "warm bronze finish"
+  silver: "polished silver finish"
+  gold: "gleaming gold finish"
+  platinum: "brushed platinum finish"
+  diamond: "platinum set with sparkling diamonds"
+  one_off: "burnished copper with orange enamel"
+trophies:
+  - art_key: clays_broken
+    metals: [bronze, silver, gold, platinum, diamond]
+    prompt: "an orange clay target shattering into flying fragments"
+  - art_key: clays_thrown
+    metals: [bronze, silver, gold, platinum, diamond]
+    prompt: "the medallion face shows five small flat orange discs flying in a sweeping arc across a blue sky"
+    style: "a single flat round enamel medallion badge filling the frame, centered, dark forest-green backdrop, no text, no guns, no pistols"
+    seeds: [505, 606, 707, 808, 909, 1010]
+    model: krea2-turbo
+  - art_key: events
+    metals: [bronze, silver, gold, platinum, diamond]
+    prompt: "a sunrise over a sporting clays field with a shooting station post"
+  - art_key: years_active
+    metals: [bronze, silver, gold, platinum]
+    prompt: "concentric growth rings like a tree stump with a clay target at the center"
+  - art_key: big_year
+    metals: [bronze, silver, gold]
+    prompt: "a laurel wreath encircling a ring of small clay targets"
+  - art_key: iron_streak
+    metals: [bronze, silver, gold, platinum]
+    prompt: "an unbroken iron chain whose links are clay targets"
+  - art_key: round_score
+    metals: [bronze, silver, gold, platinum, diamond]
+    prompt: "a bullseye made of concentric rings of clay targets"
+  - art_key: station_cleaner
+    metals: [bronze, silver, gold, platinum]
+    prompt: "a wooden shooting station cage with a sparkle of cleared targets"
+  - art_key: personal_bests
+    metals: [bronze, silver, gold]
+    prompt: "an upward arrow built from clay target shards"
+  - art_key: doubleheader
+    prompt: "two clay targets side by side with two crossed shotgun shells"
+  - art_key: new_year
+    prompt: "fireworks bursting above a clay target at dawn"
+  - art_key: anniversary_1
+    prompt: "a single candle standing on a clay target"
+  - art_key: anniversary_5
+    prompt: "five candles standing on a clay target"
+  - art_key: welcome_back
+    prompt: "an open farm gate on a path leading to a shooting field"
+  - art_key: joined_club
+    prompt: "a handshake in front of a club crest shield"
+  - art_key: both_disciplines
+    prompt: "two crossed shotguns over two clay targets"
+  - art_key: four_seasons
+    prompt: "a clay target split into four quadrants of snow, blossom, sun and autumn leaves"
+  - art_key: perfect_month
+    prompt: "a full moon rising behind a clay target"
+  - art_key: sub_gauge
+    prompt: "a slender, delicate side-by-side shotgun with an ornately engraved receiver, lying diagonally, no ammunition"
+    seeds: [505, 606, 707, 808, 909, 1010]
+  - art_key: rain
+    prompt: "the medallion face shows a dark storm cloud with rain falling from it"
+    style: "a single flat round enamel medallion badge filling the frame, centered, dark forest-green backdrop, no text, no guns, no pistols"
+    seeds: [505, 606, 707, 808, 909, 1010]
+    model: krea2-turbo
+  - art_key: cold
+    prompt: "a frosted clay target hung with icicles"
+  - art_key: heat
+    prompt: "a blazing sun behind a clay target"
+  - art_key: wind
+    prompt: "swirling wind lines carrying a clay target"
+  - art_key: all_weather
+    prompt: "a sun, a rain cloud, a snowflake and a wind swirl circling a clay target"
+  - art_key: mudder
+    prompt: "a mud-splattered clay target and shotgun shell"
+  - art_key: comeback
+    prompt: "a phoenix rising from clay target shards"
+  - art_key: above_average_3
+    prompt: "three clay targets on ascending steps"
+  - art_key: first_win
+    prompt: "a laurel crown resting on a clay target"
+  - art_key: podium
+    prompt: "a three-step podium with a clay target on the top step"
+  - art_key: station_top_gun
+    prompt: "a crosshair over a shooting station post with a star"
+  - art_key: hardest_station_clean
+    prompt: "a clean clay target on the summit of a jagged mountain peak"

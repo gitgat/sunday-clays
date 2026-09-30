@@ -1,0 +1,18 @@
+{
+  "cal": {"route": "/shooters/:id", "urlKey": "cal"},
+  "finishes": {"route": "/shooters/:id", "urlKey": "finishes"},
+  "first-rounds": {"route": "/club", "urlKey": "first-rounds"},
+  "lb-board": {"route": "/leaderboards", "urlKey": "lb-board"},
+  "lb-movers": {"route": "/leaderboards", "urlKey": "lb-movers"},
+  "learn": {"route": "/shooters/:id", "urlKey": "learn"},
+  "new": {"route": "/club", "urlKey": "new"},
+  "race-bars": {"route": "/race", "urlKey": "race-bars"},
+  "rating": {"route": "/shooters/:id", "urlKey": "rating"},
+  "rec-highest": {"route": "/records", "urlKey": "rec-highest"},
+  "rec-streaks": {"route": "/records", "urlKey": "rec-streaks"},
+  "results": {"route": "/events/:date", "urlKey": "results"},
+  "sthit": {"route": "/stations", "urlKey": "sthit"},
+  "tough-days": {"route": "/shooters/:id", "urlKey": "tough-days"},
+  "trend": {"route": "/shooters/:id", "urlKey": "trend"},
+  "trophytl": {"route": "/shooters/:id", "urlKey": "trophytl"}
+}

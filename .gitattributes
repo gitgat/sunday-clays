@@ -1,0 +1,2 @@
+# Pinned SHA-256 (Plan 12): no trailing newline; keep byte-exact.
+/backend/tests/fixtures/weather_hourly_2026-09-27.json -text

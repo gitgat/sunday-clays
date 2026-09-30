@@ -1,0 +1,34 @@
+# Git hooks, mirroring claysmasher. Install once per clone: `brew install lefthook && lefthook install`.
+# pre-commit: fast lint/format on staged files (+ frontend typecheck, which regenerates the API schema).
+# pre-push: full suites, scoped by path, so a frontend-only push never starts Postgres.
+pre-commit:
+  parallel: true
+  commands:
+    backend-lint:
+      root: "backend/"
+      glob: "*.py"
+      run: uv run ruff check {staged_files} && uv run ruff format --check {staged_files}
+    frontend-lint:
+      root: "frontend/"
+      glob: "*.{ts,tsx,js}"
+      run: pnpm exec eslint --max-warnings 0 {staged_files}
+    frontend-format:
+      root: "frontend/"
+      glob: "*.{ts,tsx,js,json,css,md,html,yaml,yml}"
+      run: pnpm exec prettier --check {staged_files}
+    frontend-typecheck:
+      root: "frontend/"
+      glob: "*.{ts,tsx}"
+      run: pnpm typecheck
+
+pre-push:
+  parallel: true
+  commands:
+    backend-tests:
+      root: "backend/"
+      glob: "backend/**"
+      run: uv run pytest -q
+    frontend-tests:
+      root: "frontend/"
+      glob: "frontend/**"
+      run: pnpm exec vitest --run

@@ -1,0 +1,34 @@
+# CI e2e: IMAGE_TAG=ci docker compose -f compose.yaml -f compose.test.yaml up -d --wait
+# E2E_PORT (default 8080) moves the host port so parallel local stacks can coexist (CONTRIBUTING.md).
+# Images come from `docker load` (pull_policy: never; Compose would re-pull otherwise).
+services:
+  caddy:
+    pull_policy: never
+    ports:
+      - "${E2E_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+  api:
+    pull_policy: never
+    environment:
+      COOKIE_SECURE: "false"
+      WEATHER_ENABLED: "false"
+      # Every e2e login comes from one IP: the default 10 failures / 15 min would turn a re-run
+      # against a long-lived stack into 429s. Backend unit tests cover the limiter itself.
+      LOGIN_MAX_FAILURES: "1000"
+    depends_on:
+      db:
+        condition: service_healthy
+  worker:
+    pull_policy: never
+    environment:
+      WEATHER_ENABLED: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+  backup:
+    pull_policy: never
+    depends_on:
+      db:
+        condition: service_healthy
