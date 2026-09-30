@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import { isCustomWindow, useTimeWindow } from '../../../lib/timeWindow';
 import type { PageKey } from '../../../components/layout/pageTop';
 import { Card } from '../../../components/ui/Card';
+import { Skeleton } from '../../../components/ui/Skeleton';
 import { formatShortDate } from '../../../lib/format';
 import { getMe } from '../../../lib/me';
 import { formatDay } from '../../shooters/format';
@@ -88,11 +89,40 @@ export function SundayInsights({ date }: { date: string }) {
 }
 
 /**
+ * Stands in for the home cards while the feed loads, at roughly their final height, so the page
+ * below does not jump when they arrive. One status for the lot; the extra cards are hidden from
+ * assistive tech.
+ */
+function HomeInsightsPlaceholder() {
+  return (
+    <>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <Card>
+          <Skeleton label="Loading insights" lines={4} className="min-h-40" />
+        </Card>
+        <Card>
+          <div aria-hidden="true">
+            <Skeleton label="Loading top story" lines={4} className="min-h-40" />
+          </div>
+        </Card>
+      </div>
+      <Card>
+        <div aria-hidden="true">
+          <Skeleton label="Loading more insights" lines={8} className="min-h-72" />
+        </div>
+      </Card>
+    </>
+  );
+}
+
+/**
  * Home: the pinned recap and the hero side by side on desktop, then "Shooter to know", the
  * latest Sunday's kudos across the page, one card per slot in a 2 × 2 grid, and the rest.
  */
 export function HomeInsights({ meId }: { meId: number | null }) {
   const feed = useHomeFeed();
+  if (feed.isPending) return <HomeInsightsPlaceholder />;
+  // A failed fetch shows nothing: the other home cards already report an outage.
   if (feed.data === undefined || isEmpty(feed.data)) return null;
   const f = feed.data;
   return (
