@@ -40,8 +40,10 @@ function TrophyHolders({ holders }: { holders: Holder[] }) {
   const extra = holders.length - HOLDERS_SHOWN;
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <p className="text-sm text-text-muted">Earned by</p>
-      <ul id={listId} aria-label="Earned by" className="flex flex-wrap gap-x-3">
+      <p id={`${listId}-label`} className="text-sm text-text-muted">
+        Earned by
+      </p>
+      <ul id={listId} aria-labelledby={`${listId}-label`} className="flex flex-wrap gap-x-3">
         {holders.map((h, i) => (
           <li key={h.shooter_id} hidden={!all && i >= HOLDERS_SHOWN}>
             <Link

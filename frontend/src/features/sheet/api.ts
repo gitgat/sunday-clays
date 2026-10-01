@@ -71,7 +71,13 @@ export function useBumpToggle(date: string, deviceId: string, postKey: string) {
   const mutation = useMutation({
     mutationKey,
     scope: { id: `bump:${date}:${postKey}` },
-    mutationFn: ({ bump }: { bump: boolean; previous: BumpState | undefined }) => {
+    mutationFn: ({
+      bump,
+    }: {
+      bump: boolean;
+      previous: BumpState | undefined;
+      refetch: boolean;
+    }) => {
       const body = { post_key: postKey, device_id: deviceId };
       return bump
         ? unwrap(api.POST('/api/sheet/bumps', { body }))
@@ -91,13 +97,24 @@ export function useBumpToggle(date: string, deviceId: string, postKey: string) {
         qc.setQueryData<BumpCounts>(key, (old) => ({ ...old, [postKey]: state }));
       }
     },
+    onSettled: (_data, _error, { refetch }) => {
+      // The counts were not loaded when this was tapped, so the map holds only this post: once the
+      // last queued tap for the post settles, fetch the whole map again.
+      if (refetch && qc.isMutating({ mutationKey }) <= 1) {
+        void qc.invalidateQueries({ queryKey: key });
+      }
+    },
   });
   function send(bump: boolean) {
     setFailed(false);
     const counts = qc.getQueryData<BumpCounts>(key);
-    void qc.cancelQueries({ queryKey: key });
+    const loaded = counts !== undefined && qc.getQueryState(key)?.status !== 'error';
+    // A load still in flight is left alone: cancelling it would leave every other post at 0. (If it
+    // lands before this post's request settles, this post may briefly look un-bumped; onSuccess or
+    // the refetch in onSettled then corrects it.)
+    if (loaded) void qc.cancelQueries({ queryKey: key });
     qc.setQueryData<BumpCounts>(key, toggled(counts, postKey, bump));
-    mutation.mutate({ bump, previous: counts?.[postKey] });
+    mutation.mutate({ bump, previous: counts?.[postKey], refetch: !loaded });
   }
   return { send, failed };
 }

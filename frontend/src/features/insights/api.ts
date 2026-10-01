@@ -3,7 +3,7 @@ import { api, unwrap } from '../../api/client';
 import type { PageKey } from '../../components/layout/pageTop';
 
 /** The feed as the API client returns it (every insight route answers InsightFeedOut). */
-export type InsightFeed = NonNullable<ReturnType<typeof useHomeFeed>['data']>;
+export type InsightFeed = NonNullable<ReturnType<typeof useSundayFeed>['data']>;
 export type Insight = InsightFeed['top'][number];
 export type InsightSegment = Insight['headline'][number];
 export type InsightChart = Insight['chart'];
@@ -35,14 +35,6 @@ export function useSundayFeed(date: string) {
   return useQuery({
     queryKey: ['/api/insights/sundays/{date}', date],
     queryFn: () => unwrap(api.GET('/api/insights/sundays/{date}', { params: { path: { date } } })),
-    staleTime: STALE,
-  });
-}
-
-export function useHomeFeed() {
-  return useQuery({
-    queryKey: ['/api/insights/home'],
-    queryFn: () => unwrap(api.GET('/api/insights/home')),
     staleTime: STALE,
   });
 }

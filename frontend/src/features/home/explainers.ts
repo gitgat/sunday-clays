@@ -6,19 +6,6 @@ import type { Explainer } from '../../components/charts/types';
  * (STYLE.md: no jargon, neutral pronouns, "Sunday" not "event"; "you" for the personal panel).
  */
 const explainers = {
-  pulse: {
-    what: 'How many people came to each Sunday in the time window you picked at the top.',
-    read: [
-      'Tall bars are big turnouts; a dip is a slow Sunday (weather, holidays).',
-      'Drag or pinch the chart to look at earlier Sundays from the same year. Fullscreen and the CSV download cover every Sunday on record.',
-    ],
-    computed: [
-      'One bar per Sunday with scores.',
-      'Bar height is the attendance head count, or the number of shooters with scores when there is no head count.',
-      'The round-type filter applies. Sundays with attendance but no scores are left out.',
-    ],
-    scope: 'windowed',
-  },
   pulseSheet: {
     what: 'How many people came to each Sunday in the 8 weeks up to this issue’s Sunday.',
     read: [

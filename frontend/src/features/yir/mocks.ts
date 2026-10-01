@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { Leaderboard, OnThisDay, YirClub, YirShooter } from './api';
+import type { Leaderboard, YirClub, YirShooter } from './api';
 
 const CLUB_MONTHS: YirClub['months'] = [
   { month: 1, events: 4, rounds: 119, avg_score: 35.0924 },
@@ -95,46 +95,6 @@ export const YIR_GRIMSBY_2025: YirShooter = {
   },
 };
 
-export const ON_THIS_DAY: OnThisDay = {
-  on: '2026-09-27',
-  items: [
-    {
-      years_ago: 1,
-      event_date: '2025-09-28',
-      has_scores: true,
-      head_count: 23,
-      n_shooters: 23,
-      top_score: 45,
-      median: 36,
-      winners: [{ shooter_id: 125, display_name: 'Rookwood, Derek', score: 45 }],
-    },
-    {
-      years_ago: 2,
-      event_date: '2024-09-29',
-      has_scores: true,
-      head_count: 25,
-      n_shooters: 25,
-      top_score: 40,
-      median: 33,
-      winners: [
-        { shooter_id: 178, display_name: 'McMurtry, Zeb', score: 40 },
-        { shooter_id: 205, display_name: 'Yoder, Gavin', score: 40 },
-        { shooter_id: 238, display_name: 'Blakeslee, Ryder', score: 40 },
-      ],
-    },
-    {
-      years_ago: 3,
-      event_date: '2023-09-24',
-      has_scores: false,
-      head_count: 30,
-      n_shooters: 0,
-      top_score: null,
-      median: null,
-      winners: [],
-    },
-  ],
-};
-
 export const YEAR_BOARD: Leaderboard = {
   period: 'ytd',
   metric: 'events',
@@ -207,5 +167,4 @@ export const leaderboardHandler = http.get('*/api/leaderboards', () =>
 export const handlers = [
   http.get('*/api/yir/:year', () => HttpResponse.json(YIR_2025)),
   http.get('*/api/yir/:year/shooters/:id', () => HttpResponse.json(YIR_GRIMSBY_2025)),
-  http.get('*/api/on-this-day', () => HttpResponse.json(ON_THIS_DAY)),
 ];

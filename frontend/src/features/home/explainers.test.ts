@@ -17,7 +17,7 @@ function texts(): [string, string][] {
 
 describe('home explainers', () => {
   it('says fullscreen and the CSV cover every Sunday on record', () => {
-    expect(homeExplainers.pulse.read?.join(' ')).toContain(
+    expect(homeExplainers.pulseSheet.read?.join(' ')).toContain(
       'Fullscreen and the CSV download cover every Sunday on record.',
     );
   });
@@ -27,7 +27,9 @@ describe('home explainers', () => {
       [...src.matchAll(/urlKey="([^"]+)"/g)].map((m) => m[1] ?? ''),
     );
     expect(keys.length).toBeGreaterThan(0);
-    for (const key of keys) expect(homeExplainers, key).toHaveProperty(key);
+    // The Sheet's fixed 8 weeks keep the chart's `pulse` urlKey but explain themselves in `pulseSheet`.
+    for (const key of keys)
+      expect(homeExplainers, key).toHaveProperty(key === 'pulse' ? 'pulseSheet' : key);
   });
 
   it('has an entry for every explainer the feature wires in, and wires in every entry', () => {
@@ -51,10 +53,6 @@ describe('home explainers', () => {
       totals.set(key, (totals.get(key) ?? 0) + text.split(/\s+/).length);
     }
     for (const [key, words] of totals) expect(words, key).toBeLessThanOrEqual(95);
-  });
-
-  it('tags the chart’s default explainer with the time window', () => {
-    expect(homeExplainers.pulse.scope).toBe('windowed');
   });
 
   it('leaves the Sheet’s fixed 8-week club numbers untagged: the header window does not apply', () => {

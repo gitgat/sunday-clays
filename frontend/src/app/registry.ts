@@ -8,6 +8,8 @@ export interface NavItem {
   icon: LucideIcon;
   order: number;
   mobileTab?: boolean;
+  /** Other paths (react-router patterns) on which this item is current, e.g. `/sheet/*`. */
+  alsoActive?: readonly string[];
   adminOnly?: boolean;
 }
 

@@ -12,5 +12,12 @@ export const routes: RouteObject[] = [
 ];
 
 export const nav: NavItem[] = [
-  { label: 'Sheet', path: '/', icon: Newspaper, order: 10, mobileTab: true },
+  {
+    label: 'Sheet',
+    path: '/',
+    icon: Newspaper,
+    order: 10,
+    mobileTab: true,
+    alsoActive: ['/sheet/*'],
+  },
 ];

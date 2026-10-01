@@ -1,22 +1,11 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useId, useState } from 'react';
-import { api, unwrap } from '../../../api/client';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { setMe, skipMe } from '../../../lib/me';
+import { useShooters } from '../../shooters/api';
 
 const MIN_QUERY = 2;
 const SHOWN = 8;
-
-/** The shooters list for a name search; the key matches features/shooters' `useShooters`. */
-function useNameSearch(q: string) {
-  return useQuery({
-    queryKey: ['/api/shooters', { q, active: false }],
-    queryFn: () => unwrap(api.GET('/api/shooters', { params: { query: { q } } })),
-    enabled: q.length >= MIN_QUERY,
-    placeholderData: keepPreviousData,
-  });
-}
 
 /**
  * "Which one are you?" (Plan 14): pick yourself once and this browser remembers it (lib/me), or
@@ -32,9 +21,10 @@ export function WhichOneAreYou({
   const inputId = useId();
   const [q, setQ] = useState('');
   const query = q.trim();
-  const search = useNameSearch(query);
   const asked = query.length >= MIN_QUERY;
-  const matches = asked ? (search.data ?? []).slice(0, SHOWN) : [];
+  const search = useShooters(query, false, { enabled: asked });
+  const found = asked ? (search.data ?? []) : [];
+  const matches = found.slice(0, SHOWN);
   return (
     <Card title="Which one are you?" subtitle="Pick your name once; this browser remembers it.">
       <div className="flex flex-col gap-3">
@@ -49,12 +39,21 @@ export function WhichOneAreYou({
           autoComplete="off"
           className="min-h-11 rounded-button border border-outline-variant bg-surface px-3 text-text"
         />
-        {asked && search.isError && (
-          <p className="text-sm text-text-muted">Couldn’t search the shooters just now.</p>
-        )}
-        {asked && search.isSuccess && matches.length === 0 && (
-          <p className="text-sm text-text-muted">{`No shooter matches “${query}”.`}</p>
-        )}
+        <div role="status" className="empty:hidden">
+          {asked && search.isError && (
+            <p className="text-sm text-text-muted">Couldn’t search the shooters just now.</p>
+          )}
+          {asked && search.isSuccess && matches.length === 0 && (
+            <p className="text-sm text-text-muted">{`No shooter matches “${query}”.`}</p>
+          )}
+          {matches.length > 0 && (
+            <p className="text-sm text-text-muted">
+              {found.length > matches.length
+                ? `Showing ${String(matches.length)} of ${String(found.length)} matches`
+                : `${String(matches.length)} ${matches.length === 1 ? 'match' : 'matches'}`}
+            </p>
+          )}
+        </div>
         {matches.length > 0 && (
           <ul aria-label="Matching shooters" className="flex flex-col gap-2">
             {matches.map((s) => (

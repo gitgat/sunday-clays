@@ -56,6 +56,42 @@ describe('WhichOneAreYou', () => {
     expect(await screen.findByText('No shooter matches “Zz”.')).toBeInTheDocument();
   });
 
+  it('lists at most eight matches and says how many it found, in a live region', async () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      ...(shooterList[0] as (typeof shooterList)[number]),
+      shooter_id: 200 + i,
+      display_name: `Ann Anders${String(i + 1)}`,
+    }));
+    server.use(http.get('*/api/shooters', () => HttpResponse.json(many)));
+    const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
+    await user.type(screen.getByLabelText('Your name'), 'An');
+    const list = await screen.findByRole('list', { name: 'Matching shooters' });
+    expect(within(list).getAllByRole('button')).toHaveLength(8);
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 8 of 10 matches');
+  });
+
+  it('announces the feedback in a live region that is there before the search', async () => {
+    searched();
+    const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
+    const live = screen.getByRole('status');
+    expect(live).toBeEmptyDOMElement();
+    await user.type(screen.getByLabelText('Your name'), 'Zz');
+    expect(await within(live).findByText('No shooter matches “Zz”.')).toBeInTheDocument();
+  });
+
+  it('announces a failed search in the live region', async () => {
+    server.use(
+      http.get('*/api/shooters', () =>
+        HttpResponse.json({ error: { code: 'internal', message: 'x' } }, { status: 500 }),
+      ),
+    );
+    const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
+    await user.type(screen.getByLabelText('Your name'), 'Hadley');
+    expect(
+      await within(screen.getByRole('status')).findByText(/Couldn’t search/),
+    ).toBeInTheDocument();
+  });
+
   it('says so when the search fails', async () => {
     server.use(
       http.get('*/api/shooters', () =>

@@ -163,8 +163,14 @@ def _issue_rows(session: Session, day: date, latest: bool) -> list[InsightRow]:
 
 @cached_by_data_version
 def build_issue(session: Session, day: date) -> sheet.Issue:
-    """The assembled issue for a held Sunday (callers check that `day` is held)."""
+    """The assembled issue for a held Sunday (callers check that `day` is held).
+
+    The check and this read are separate transactions, so a rebuild between them can leave `day`
+    unheld: that is a 404, the same as asking for it afterwards, never a 500.
+    """
     held = held_dates(session)
+    if day not in held:
+        raise NotFoundError("sheet_not_found", f"No Sunday Sheet for {day.isoformat()}")
     rows_ = _issue_rows(session, day, day == held[-1])
     hero, spotlight = picked(rows_, load_picks(session, day), day)
     awards = [

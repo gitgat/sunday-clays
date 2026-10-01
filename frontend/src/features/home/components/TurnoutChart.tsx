@@ -8,7 +8,6 @@ import { api, unwrap } from '../../../api/client';
 import { useRoundTypes } from '../../../lib/roundTypes';
 import type { WindowRange } from '../../../lib/timeWindow';
 import type { EventSummary } from '../api';
-import { homeExplainers } from '../explainers';
 import { turnout } from '../turnout';
 
 const FRESH_MS = 60_000;
@@ -38,15 +37,14 @@ export function TurnoutChart({
   events,
   range,
   label,
-  explainer = homeExplainers.pulse,
+  explainer,
   windowName,
 }: {
   events: EventSummary[];
   range: WindowRange;
   /** The window's name, for the accessible label. */
   label: string;
-  /** The Sunday Sheet's fixed 8 weeks explain themselves differently (Plan 14). */
-  explainer?: Explainer;
+  explainer: Explainer;
   /** What the trimmed-table note calls the window (default: "the time window"). */
   windowName?: string;
 }) {
@@ -76,7 +74,11 @@ export function TurnoutChart({
       option={model.option}
       window={range}
       windowName={windowName}
-      emptyWindow={{ none: 'No scored Sundays', last: 'Latest scored Sunday' }}
+      emptyWindow={{
+        none: 'No scored Sundays',
+        last: 'Latest scored Sunday',
+        fixed: windowName !== undefined,
+      }}
       fullQuery={fullQuery}
       columns={model.columns}
       rows={model.rows}

@@ -9,7 +9,6 @@ type JsonOf<Op> = Op extends { responses: { 200: { content: { 'application/json'
 
 export type YirClub = components['schemas']['YirClubOut'];
 export type YirShooter = components['schemas']['YirShooterOut'];
-export type OnThisDay = components['schemas']['OnThisDayOut'];
 /** `GET /api/leaderboards` (rows carry rank, shooter_id, display_name, value). */
 export type Leaderboard = JsonOf<paths['/api/leaderboards']['get']>;
 /** The metric union, taken from the response as the leaderboards feature's own `api.ts` does. */

@@ -72,6 +72,8 @@ export function useWipeBumps() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['/api/admin/sheet/bumps'] });
       await qc.invalidateQueries({ queryKey: ['/api/admin/audit'] });
+      // An admin who then opens the Sheet must not see the wiped counts from the cache.
+      await qc.invalidateQueries({ queryKey: ['/api/sheet/{date}/bumps'] });
     },
     mutationFn: (postKey: string) =>
       unwrap(

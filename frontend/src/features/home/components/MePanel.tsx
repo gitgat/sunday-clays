@@ -158,7 +158,7 @@ export function MePanel({
   title = 'Your panel',
   actions,
 }: {
-  meId: number | null;
+  meId: number;
   onCleared: () => void;
   widgets: HomeWidget[];
   /** The Sunday Sheet calls it "Your Sunday" (Plan 14). */
@@ -166,26 +166,9 @@ export function MePanel({
   /** Header controls ("Not me" on the Sheet). */
   actions?: ReactNode;
 }) {
-  const shootersLink = useRoundTypeLink('/shooters');
   return (
     <Card title={title} actions={actions}>
-      {meId === null ? (
-        // The link stands on its own line: inline in the sentence it could not be 44px tall (C10).
-        <div className="flex flex-col gap-2">
-          <p>
-            Find yourself in Shooters and tap “That’s me” to see your last result, rating move and
-            odometer here.
-          </p>
-          <Link
-            to={shootersLink}
-            className="inline-flex min-h-11 items-center self-start underline"
-          >
-            Go to Shooters
-          </Link>
-        </div>
-      ) : (
-        <MeDetails meId={meId} onCleared={onCleared} widgets={widgets} />
-      )}
+      <MeDetails meId={meId} onCleared={onCleared} widgets={widgets} />
     </Card>
   );
 }
