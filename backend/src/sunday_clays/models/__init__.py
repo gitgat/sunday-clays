@@ -7,6 +7,7 @@ from sunday_clays.models.analytics import (
     RoundMetric,
 )
 from sunday_clays.models.base import Base
+from sunday_clays.models.bumps import BumpAttempt, FistBump
 from sunday_clays.models.identity import AuditLog, LoginAttempt, Rule, Shooter, ShooterAlias
 from sunday_clays.models.insights import Insight, InsightPick
 from sunday_clays.models.live import (
@@ -33,10 +34,12 @@ __all__ = [
     "AppState",
     "AuditLog",
     "Base",
+    "BumpAttempt",
     "DataIssue",
     "Event",
     "EventMetric",
     "EventWeather",
+    "FistBump",
     "ForecastCache",
     "Import",
     "ImportAttendanceRow",
