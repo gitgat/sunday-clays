@@ -39,13 +39,6 @@ export function useYirShooter(year: number, shooterId: number) {
   });
 }
 
-export function useOnThisDay() {
-  return useQuery({
-    queryKey: ['/api/on-this-day'],
-    queryFn: () => unwrap(api.GET('/api/on-this-day')),
-  });
-}
-
 /**
  * A calendar-year board: the leaderboards' "this year" period (1 January to `asOf`, or to today when
  * `asOf` is undefined), filtered by the global round type. The key matches the leaderboards feature's.

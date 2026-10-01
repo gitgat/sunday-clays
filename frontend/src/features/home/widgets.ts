@@ -1,15 +1,23 @@
 import type { FC } from 'react';
+import type { SheetIssue } from '../sheet/api';
 
 /**
- * Extension point (C10): a feature exports `homeWidget` from `src/features/<name>/homeWidget.tsx`. `hero` widgets
- * render full width under the page title (Plan 12); `main` widgets render in the main column with `meId` (possibly
- * null); `me` widgets render inside the me panel once a me profile has loaded.
+ * What a widget gets: the viewer's "me" id (possibly null) and, on the Sunday Sheet, the issue
+ * being shown (Plan 14).
+ */
+export type HomeWidgetProps = { meId: number | null; issue?: SheetIssue };
+
+/**
+ * Extension point (C10): a feature exports `homeWidget` from `src/features/<name>/homeWidget.tsx`.
+ * On the Sunday Sheet (Plan 14) `hero` widgets are the lead (the headline and the spotlight),
+ * `main` widgets are rail cards (shown on the latest issue), and `me` widgets render inside
+ * "Your Sunday" once a me profile has loaded.
  */
 export type HomeWidget = {
   id: string;
   order: number;
   slot: 'hero' | 'main' | 'me';
-  Component: FC<{ meId: number | null }>;
+  Component: FC<HomeWidgetProps>;
 };
 
 type WidgetModule = { homeWidget?: HomeWidget };

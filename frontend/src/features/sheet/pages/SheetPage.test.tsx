@@ -1,14 +1,23 @@
 import { screen, within } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { clearMe, setMe } from '../../../lib/me';
+import { expectChartControls } from '../../../test/charts';
+import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
+import { meDetail, meRounds, seasonEvents } from '../../home/mocks';
 import { insightFixture } from '../../insights/mocks';
 import { newerText } from '../components/Masthead';
 import { sheetExplainers } from '../explainers';
 import { onThisDayPost, postFixture, sheetFixture, trophyPost } from '../mocks';
-import { SheetPage } from './SheetPage';
+import { SHEET_ORDER, SheetPage } from './SheetPage';
+
+// The rail's turnout chart loads lazily: warm it once so findBy*'s budget never covers a cold import.
+beforeAll(async () => {
+  await import('../../home/components/TurnoutChart');
+});
+const turnoutChart = () => screen.findByRole('region', { name: 'Turnout per Sunday' }, LAZY_CHART);
 
 afterEach(() => {
   clearMe();
@@ -317,4 +326,194 @@ describe('SheetPage', () => {
       await screen.findByRole('link', { name: 'See the chart: Your turnout' }),
     ).toBeInTheDocument();
   });
+
+  it(
+    'stacks the blocks in the Sheet order on a phone and splits main and rail on desktop',
+    async () => {
+      const { container } = renderAt();
+      await turnoutChart();
+      const blocks = [...container.querySelectorAll<HTMLElement>('[data-sheet-block]')];
+      const order = (el: HTMLElement) => Number(/(?:^| )order-(\d)/.exec(el.className)?.[1]);
+      const stacked = [...blocks].sort((a, b) => order(a) - order(b));
+      expect(stacked.map((b) => b.dataset['sheetBlock'])).toEqual([
+        'masthead',
+        'numbers',
+        'you',
+        'lead',
+        'feed',
+        'more',
+        'next',
+        'pulse',
+        'details',
+      ]);
+      for (const block of blocks) {
+        const name = block.dataset['sheetBlock'] as keyof typeof SHEET_ORDER;
+        expect(block.className).toContain(SHEET_ORDER[name]);
+      }
+      // Real DOM order: blocks that share a column sit in the DOM in their phone order, so the
+      // desktop columns read top to bottom the same way. The masthead and numbers lead both.
+      const follows = (a: HTMLElement, b: HTMLElement) =>
+        Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      for (const [i, a] of stacked.entries()) {
+        for (const b of stacked.slice(i + 1)) {
+          if (a.parentElement === b.parentElement) {
+            expect(
+              follows(a, b),
+              `${a.dataset['sheetBlock']} before ${b.dataset['sheetBlock']}`,
+            ).toBe(true);
+          }
+        }
+      }
+      const byName = (n: string): HTMLElement => {
+        const el = container.querySelector<HTMLElement>(`[data-sheet-block="${n}"]`);
+        if (el === null) throw new Error(`no ${n} block`);
+        return el;
+      };
+      for (const n of ['lead', 'feed', 'more', 'you', 'next', 'pulse', 'details']) {
+        expect(follows(byName('numbers'), byName(n)), `numbers before ${n}`).toBe(true);
+      }
+      expect(follows(byName('masthead'), byName('numbers'))).toBe(true);
+      const lead = container.querySelector('[data-sheet-block="lead"]')?.parentElement;
+      const rail = container.querySelector('[data-sheet-block="you"]')?.parentElement;
+      expect(lead?.className).toContain('lg:col-span-2');
+      expect(rail).not.toBe(lead);
+      expect(rail?.className).toContain('lg:flex');
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it(
+    'keeps every former Home piece: numbers, lead, posts, Your Sunday, Next Sunday, Club pulse and details',
+    async () => {
+      setMe(3);
+      server.use(
+        http.get('*/api/sheet/:date', () =>
+          HttpResponse.json(
+            sheetFixture({
+              headline: insightFixture({ key: 'hero' }),
+              recap: insightFixture({
+                key: 'recap',
+                kind: 'home.sunday-recap',
+                headline: [{ t: 'text', v: '23 shooters came out.' }],
+                headline_you: null,
+              }),
+              spotlight: insightFixture({ key: 'spot', subject_id: '5' }),
+            }),
+          ),
+        ),
+        http.get('*/api/events', () => HttpResponse.json(seasonEvents)),
+        http.get('*/api/shooters/:id', () => HttpResponse.json(meDetail)),
+        http.get('*/api/shooters/:id/rounds', () => HttpResponse.json(meRounds)),
+      );
+      renderAt();
+      expect(await screen.findByRole('region', { name: 'This Sunday in numbers' })).toBeVisible();
+      expect(screen.getByRole('list', { name: 'Top story' })).toBeInTheDocument();
+      expect(screen.getByText('23 shooters came out.')).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Spotlight' })).toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Posts' })).toBeInTheDocument();
+      const you = await screen.findByRole('region', { name: 'Your Sunday' });
+      expect(await within(you).findByText('37 · 16th')).toBeInTheDocument();
+      expect(await screen.findByRole('region', { name: 'Next Sunday' })).toBeVisible();
+      expect(screen.getByRole('region', { name: 'Club pulse' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Full results, Sep 27, 2026' })).toHaveAttribute(
+        'href',
+        '/events/2026-09-27',
+      );
+      await turnoutChart();
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it(
+    'gives every chart on the Sheet Table and CSV, and the turnout chart is its only one',
+    async () => {
+      renderAt();
+      expectChartControls(await turnoutChart());
+      expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Table' })).toHaveLength(1);
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it(
+    'asks for the club pulse of the 8 weeks up to the issue’s Sunday',
+    async () => {
+      const seen: string[] = [];
+      server.use(
+        http.get('*/api/events', ({ request }) => {
+          const q = new URL(request.url).searchParams;
+          seen.push(`${q.get('from') ?? ''}..${q.get('to') ?? ''}`);
+          return HttpResponse.json(seasonEvents);
+        }),
+      );
+      renderAt();
+      await turnoutChart();
+      expect(seen[0]).toBe('2026-08-03..2026-09-27');
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it(
+    'shows Next Sunday on the latest issue only',
+    async () => {
+      server.use(
+        http.get('*/api/sheet/:date', () =>
+          HttpResponse.json(
+            sheetFixture({
+              masthead: {
+                date: '2026-09-13',
+                issue: 309,
+                previous: null,
+                next: '2026-09-27',
+                latest: false,
+                newer: null,
+              },
+            }),
+          ),
+        ),
+      );
+      const { container } = renderAt('/sheet/2026-09-13');
+      await turnoutChart();
+      expect(container.querySelector('[data-sheet-block="next"]')).toBeNull();
+      expect(screen.getByRole('region', { name: 'Sunday details' })).toBeInTheDocument();
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it(
+    'asks "Which one are you?", then fills Your Sunday, and "Not me" asks again',
+    async () => {
+      server.use(
+        http.get('*/api/shooters', () =>
+          HttpResponse.json([{ ...meDetail, shooter_id: 3, display_name: 'Hadley, Ike' }]),
+        ),
+        http.get('*/api/shooters/:id', () => HttpResponse.json(meDetail)),
+        http.get('*/api/shooters/:id/rounds', () => HttpResponse.json(meRounds)),
+      );
+      const { user } = renderAt();
+      const ask = await screen.findByRole('region', { name: 'Which one are you?' });
+      await user.type(within(ask).getByLabelText('Your name'), 'Hadley');
+      await user.click(await within(ask).findByRole('button', { name: 'Hadley, Ike' }));
+      const you = await screen.findByRole('region', { name: 'Your Sunday' });
+      await user.click(within(you).getByRole('button', { name: 'Not me' }));
+      expect(await screen.findByRole('region', { name: 'Which one are you?' })).toBeInTheDocument();
+      await turnoutChart();
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it(
+    'hides the question after "skip", also on the next visit',
+    async () => {
+      const first = renderAt();
+      await first.user.click(await screen.findByRole('button', { name: 'Not a shooter / skip' }));
+      expect(screen.queryByRole('region', { name: 'Which one are you?' })).toBeNull();
+      await turnoutChart();
+      first.unmount();
+      renderAt();
+      await turnoutChart();
+      expect(screen.queryByRole('region', { name: 'Which one are you?' })).toBeNull();
+    },
+    LAZY_TEST_TIMEOUT,
+  );
 });
