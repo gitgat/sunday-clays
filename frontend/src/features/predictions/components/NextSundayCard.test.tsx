@@ -1,7 +1,7 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { http, HttpResponse, type JsonBodyType } from 'msw';
-import { afterEach, describe, expect, it } from 'vitest';
-import { skipMe } from '../../../lib/me';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resetMeForTests, skipMe } from '../../../lib/me';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import { expectExplainer } from '../../../test/charts';
@@ -9,6 +9,8 @@ import { NEXT_PREDICTIONS } from '../mocks';
 import { NextSundayCard } from './NextSundayCard';
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  resetMeForTests();
   localStorage.clear();
 });
 
@@ -75,6 +77,48 @@ describe('NextSundayCard', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Which one are you/)).toBeNull();
+  });
+
+  it('switches to the Shooters-only copy the moment the question is skipped', async () => {
+    serve(NEXT_PREDICTIONS);
+    renderWithProviders(<NextSundayCard meId={null} />);
+    expect(await screen.findByText(/pick your name in “Which one are you\?”/)).toBeInTheDocument();
+    act(() => {
+      skipMe();
+    });
+    expect(screen.getByText(/^Choose “That’s me”/)).toBeInTheDocument();
+    expect(screen.queryByText(/Which one are you/)).toBeNull();
+  });
+
+  it('follows a skip even when this browser cannot keep it', async () => {
+    serve(NEXT_PREDICTIONS);
+    renderWithProviders(<NextSundayCard meId={null} />);
+    expect(await screen.findByText(/pick your name in “Which one are you\?”/)).toBeInTheDocument();
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    act(() => {
+      skipMe();
+    });
+    expect(screen.getByText(/^Choose “That’s me”/)).toBeInTheDocument();
+    set.mockRestore();
+    get.mockRestore();
+  });
+
+  it('follows a skip that could not be written when reads still work', async () => {
+    serve(NEXT_PREDICTIONS);
+    renderWithProviders(<NextSundayCard meId={null} />);
+    expect(await screen.findByText(/pick your name in “Which one are you\?”/)).toBeInTheDocument();
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    act(() => {
+      skipMe();
+    });
+    expect(screen.getByText(/^Choose “That’s me”/)).toBeInTheDocument();
   });
 
   it('says so when the viewer has no expectation yet', async () => {

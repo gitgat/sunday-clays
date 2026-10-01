@@ -58,6 +58,42 @@ describe('WhichOneAreYou', () => {
     await waitFor(() => expect(asked).toEqual(['Ha']));
   });
 
+  it('never lists in-memoriam shooters, and they do not use up a slot', async () => {
+    const base = shooterList[0] as (typeof shooterList)[number];
+    const rows = [
+      ...Array.from({ length: 3 }, (_, i) => ({
+        ...base,
+        shooter_id: 300 + i,
+        display_name: `Zed Gone${String(i)}`,
+        status: 'deceased' as const,
+      })),
+      ...Array.from({ length: 8 }, (_, i) => ({
+        ...base,
+        shooter_id: 400 + i,
+        display_name: `Zed Here${String(i)}`,
+        status: 'member' as const,
+      })),
+    ];
+    server.use(http.get('*/api/shooters', () => HttpResponse.json(rows)));
+    const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
+    await user.type(screen.getByLabelText('Your name'), 'Zed');
+    const list = await screen.findByRole('list', { name: 'Matching shooters' });
+    expect(within(list).getAllByRole('button')).toHaveLength(8);
+    expect(within(list).queryByRole('button', { name: /Gone/ })).toBeNull();
+    expect(liveRegion()).toHaveTextContent('8 matches');
+  });
+
+  it('says no shooter matches when the only match is in memoriam', async () => {
+    server.use(
+      http.get('*/api/shooters', () =>
+        HttpResponse.json(shooterList.filter((s) => s.status === 'deceased')),
+      ),
+    );
+    const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
+    await user.type(screen.getByLabelText('Your name'), 'Gilchrist');
+    expect(await screen.findByText('No shooter matches “Gilchrist”.')).toBeInTheDocument();
+  });
+
   it('says when no shooter matches', async () => {
     searched();
     const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
@@ -69,6 +105,7 @@ describe('WhichOneAreYou', () => {
     const many = Array.from({ length: 10 }, (_, i) => ({
       ...(shooterList[0] as (typeof shooterList)[number]),
       shooter_id: 200 + i,
+      status: 'member' as const,
       display_name: `Ann Anders${String(i + 1)}`,
     }));
     server.use(http.get('*/api/shooters', () => HttpResponse.json(many)));

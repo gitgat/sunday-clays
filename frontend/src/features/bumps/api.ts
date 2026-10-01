@@ -16,6 +16,7 @@ export type BumpCounts = Record<string, BumpState>;
 export const BATCH = 100;
 
 export const BUMPS_OFF = 'Bumps need this browser to remember you';
+export const BUMPS_UNAVAILABLE = 'Bump counts aren’t available right now';
 
 /** Distinct keys in a stable order, so one set of insights is one query. */
 export function sortedKeys(keys: Iterable<string>): string[] {

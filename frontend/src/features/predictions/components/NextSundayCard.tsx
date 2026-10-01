@@ -1,6 +1,7 @@
+import { useSyncExternalStore } from 'react';
 import { Link } from 'react-router';
 import { Card } from '../../../components/ui/Card';
-import { isMeSkipped } from '../../../lib/me';
+import { isMeSkipped, subscribeMe } from '../../../lib/me';
 import { useRoundTypeLink } from '../../../lib/roundTypes';
 import { useNextPredictions, type NextPredictions } from '../api';
 import { explainers } from '../explainers';
@@ -15,10 +16,12 @@ import { AboutBlock } from '../../../components/ui/AboutBlock';
 
 function YourExpectation({ data, meId }: { data: NextPredictions; meId: number | null }) {
   const shootersLink = useRoundTypeLink('/shooters');
+  // Live, like Home's own question: a skip changes this copy in the same render.
+  const skipped = useSyncExternalStore(subscribeMe, isMeSkipped);
   if (meId === null) {
     return (
       <div className="flex flex-col gap-2">
-        {isMeSkipped() ? (
+        {skipped ? (
           <p>Choose “That’s me” on your Shooters profile to see your own expected score here.</p>
         ) : (
           <p>
