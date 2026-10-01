@@ -10,7 +10,8 @@ Invariant (ruling P16-R1): a rollup row and a raw row never cover the same day o
 the rollup only takes whole weeks. Each read still keeps one source per key, raw over rollup
 (``rolled | raw``), so a bug elsewhere can never double-count. A week's unique devices come from
 its own week row or raw rows, never from summing days. A ``since`` before the first data is
-clamped to the first data day, so a far-past ``since`` cannot zero-fill decades.
+clamped to the first data day (and no ``since`` starts there), so every series shares one axis
+and a far-past ``since`` cannot zero-fill decades.
 """
 
 from __future__ import annotations
@@ -160,13 +161,16 @@ def _earliest(session: Session, tz: str) -> date | None:
 
 
 def _clamped(session: Session, tz: str, span: Span) -> Span:
-    """Move a ``since`` earlier than all data up to the first data day (no data: unchanged)."""
-    if span.since is None:
-        return span
+    """Start every series on the same day: ``since`` no earlier than the first data day, and
+    with no ``since`` the first data day itself. With a ``since`` but no data at all, the span
+    collapses to ``as_of`` so a far-past ``since`` cannot zero-fill decades. No ``since`` and no
+    data stays open and every series is empty."""
     first = _earliest(session, tz)
-    if first is None or first <= span.since:
-        return span
-    return Span(first, span.as_of)
+    if first is None:
+        return span if span.since is None else Span(span.as_of, span.as_of)
+    if span.since is None or first > span.since:
+        return Span(first, span.as_of)
+    return span
 
 
 def _rolled_devices(session: Session, period: Period) -> dict[date, int]:

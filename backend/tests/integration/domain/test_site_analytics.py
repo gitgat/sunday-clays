@@ -333,3 +333,25 @@ def test_a_since_before_the_first_data_is_clamped_to_it(session: Session) -> Non
         )
     )
     assert bumps(session, TZ, ancient).days[0].day == date(2026, 5, 4)
+
+
+def test_a_since_with_no_data_at_all_does_not_zero_fill(session: Session) -> None:
+    ancient = Span(date(1900, 1, 1), date(2026, 9, 20))
+    assert len(visitors(session, TZ, ancient).days) <= 1
+    assert len(bumps(session, TZ, ancient).days) <= 1
+    assert len(uptake(session, TZ, ancient).weeks) <= 1
+
+
+def test_without_a_since_every_series_starts_on_the_shared_earliest_day(
+    session: Session,
+) -> None:
+    _view(session, A, "home", "picked", datetime(2026, 9, 16, 9, 0, tzinfo=PT))
+    session.execute(
+        insert(FistBump).values(
+            insight_key="k", device_id=B, created_at=datetime(2026, 9, 14, 12, 0, tzinfo=PT)
+        )
+    )
+    span = Span(None, date(2026, 9, 20))
+    assert visitors(session, TZ, span).days[0].day == date(2026, 9, 14)
+    assert bumps(session, TZ, span).days[0].day == date(2026, 9, 14)
+    assert uptake(session, TZ, span).weeks[0].week == date(2026, 9, 14)

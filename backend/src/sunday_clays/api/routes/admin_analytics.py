@@ -37,7 +37,8 @@ def analytics_window(
     as_of: date | None = None,
 ) -> Window:
     """``as_of`` defaults to today in the club's timezone; no ``since`` reaches back to the data."""
-    end = as_of if as_of is not None else _now(ZoneInfo(settings.timezone)).date()
+    today = _now(ZoneInfo(settings.timezone)).date()
+    end = today if as_of is None else min(as_of, today)  # the future has no data
     check_window(since, end)
     return Window(settings.timezone, Span(since, end))
 

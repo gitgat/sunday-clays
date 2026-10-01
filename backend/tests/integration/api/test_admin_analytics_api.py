@@ -40,9 +40,19 @@ def test_a_since_after_as_of_is_400(path: str, admin_client: TestClient) -> None
     assert response.json()["error"]["code"] == "invalid_range"
 
 
+def _seed_old_view(session: Session) -> None:
+    """Some data older than every window below: with none, a window collapses to one day."""
+    session.execute(
+        insert(PageView).values(
+            device_id=A, page_kind="home", me_state="none", at=datetime(2026, 1, 5, 9, 0, tzinfo=PT)
+        )
+    )
+
+
 def test_as_of_defaults_to_today_in_the_club_timezone(
-    admin_client: TestClient, auth_env: Settings
+    admin_client: TestClient, auth_env: Settings, session: Session
 ) -> None:
+    _seed_old_view(session)
     today = datetime.now(ZoneInfo(auth_env.timezone)).date()
     since = (today - timedelta(days=2)).isoformat()
     days = admin_client.get("/api/admin/analytics/visitors", params={"since": since}).json()["days"]
@@ -89,12 +99,25 @@ def test_reading_analytics_writes_nothing(admin_client: TestClient, session: Ses
 
 
 def test_the_default_as_of_is_the_club_date_on_a_pacific_evening(
-    admin_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    admin_client: TestClient, monkeypatch: pytest.MonkeyPatch, session: Session
 ) -> None:
+    _seed_old_view(session)
     # 2026-09-20 22:00 Pacific is already Monday 2026-09-21 in UTC.
     frozen = datetime(2026, 9, 21, 5, 0, tzinfo=UTC)
     monkeypatch.setattr(admin_analytics, "_now", lambda tz: frozen.astimezone(tz))
     days = admin_client.get("/api/admin/analytics/visitors", params={"since": "2026-09-19"}).json()[
         "days"
     ]
+    assert [d["day"] for d in days] == ["2026-09-19", "2026-09-20"]
+
+
+def test_a_future_as_of_is_clamped_to_today(
+    admin_client: TestClient, monkeypatch: pytest.MonkeyPatch, session: Session
+) -> None:
+    _seed_old_view(session)
+    frozen = datetime(2026, 9, 21, 5, 0, tzinfo=UTC)  # Sunday evening in Pacific time
+    monkeypatch.setattr(admin_analytics, "_now", lambda tz: frozen.astimezone(tz))
+    days = admin_client.get(
+        "/api/admin/analytics/visitors", params={"since": "2026-09-19", "as_of": "2400-01-01"}
+    ).json()["days"]
     assert [d["day"] for d in days] == ["2026-09-19", "2026-09-20"]
