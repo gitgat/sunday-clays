@@ -10,6 +10,8 @@ import { Segments } from '../../insights/segments';
 import type { BumpState, SheetPost, SheetPostType } from '../api';
 import { sheetExplainers } from '../explainers';
 import { BumpButton } from './BumpButton';
+import { SeeWhy } from './SeeWhy';
+import { SharePostButton } from './SharePostButton';
 
 export const TYPE_LABELS: Record<SheetPostType, string> = {
   milestone: 'Milestone',
@@ -96,13 +98,14 @@ export interface PostCardProps {
 
 /**
  * One post: its type, a "New" tag, its headline (names link to profiles), trophy art and everyone
- * who earned a trophy, the bump button, any extra charts and "How we worked it
+ * who earned a trophy, the bump button, "See why →", any extra charts, Share and "How we worked it
  * out" (an insight's own explainer, or the "On this day" one). The viewer's own single-shooter
  * insight reads in the second person.
  */
 export function PostCard({ post, date, deviceId, bumps, meId, noteId }: PostCardProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  const headlineId = useId();
   const insight = post.insight ?? null;
   const you = insight !== null && isMine(insight, meId);
   const headline = you && insight.headline_you !== null ? insight.headline_you : post.headline;
@@ -126,7 +129,7 @@ export function PostCard({ post, date, deviceId, bumps, meId, noteId }: PostCard
             size={48}
           />
         )}
-        <p className="min-w-0 break-words text-base">
+        <p id={headlineId} className="min-w-0 break-words text-base">
           {insight?.is_new === true && (
             <span className="mr-2 rounded-button bg-primary px-2 py-0.5 align-middle text-xs font-bold">
               New
@@ -144,7 +147,9 @@ export function PostCard({ post, date, deviceId, bumps, meId, noteId }: PostCard
           state={bumps}
           noteId={noteId}
         />
+        <SeeWhy post={post} you={you} />
         {insight !== null && <AlsoLinks insight={insight} you={you} />}
+        <SharePostButton post={post} date={date} describedBy={headlineId} />
         {explained && (
           <ExplainerToggle
             label="How we worked it out"

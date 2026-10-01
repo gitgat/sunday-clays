@@ -1,6 +1,6 @@
 import { toBlob } from 'html-to-image';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { shareElementAsImage } from './share';
+import { shareElementAsImage, shareLink } from './share';
 
 vi.mock('html-to-image', () => ({ toBlob: vi.fn() }));
 
@@ -185,6 +185,68 @@ describe('Roboto embedding', () => {
     await shareElementAsImage(document.createElement('div'), 'a');
     await shareElementAsImage(document.createElement('div'), 'b');
     expect(fetch).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('shareLink', () => {
+  const data = {
+    title: 'The Sunday Sheet',
+    text: '23 shooters',
+    url: 'https://x.test/sheet/2026-09-27',
+  };
+
+  function stubClipboard() {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    return writeText;
+  }
+
+  it('shares through the Web Share API when the browser can', async () => {
+    const share = vi.spyOn(navigator, 'share').mockResolvedValue(undefined);
+    vi.spyOn(navigator, 'canShare').mockReturnValue(true);
+    await expect(shareLink(data)).resolves.toBe('shared');
+    expect(share).toHaveBeenCalledWith(data);
+  });
+
+  it('is cancelled when the share sheet is dismissed', async () => {
+    vi.spyOn(navigator, 'canShare').mockReturnValue(true);
+    vi.spyOn(navigator, 'share').mockRejectedValue(new DOMException('no', 'AbortError'));
+    await expect(shareLink(data)).resolves.toBe('cancelled');
+  });
+
+  it('copies the text and link when sharing is refused or missing', async () => {
+    vi.spyOn(navigator, 'canShare').mockReturnValue(true);
+    vi.spyOn(navigator, 'share').mockRejectedValue(new DOMException('no', 'NotAllowedError'));
+    const writeText = stubClipboard();
+    await expect(shareLink(data)).resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith('23 shooters\nhttps://x.test/sheet/2026-09-27');
+  });
+
+  it('copies when the browser cannot share this link', async () => {
+    vi.spyOn(navigator, 'canShare').mockReturnValue(false);
+    const writeText = stubClipboard();
+    await expect(shareLink(data)).resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes any other share failure on', async () => {
+    vi.spyOn(navigator, 'canShare').mockReturnValue(true);
+    vi.spyOn(navigator, 'share').mockRejectedValue(new DOMException('no', 'DataError'));
+    await expect(shareLink(data)).rejects.toThrow('no');
+    vi.spyOn(navigator, 'share').mockRejectedValue(new TypeError('bad'));
+    await expect(shareLink(data)).rejects.toThrow('bad');
+  });
+
+  it('copies when the browser has no Web Share API at all', async () => {
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    await expect(shareLink(data)).resolves.toBe('copied');
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects, for the caller to handle, when there is no clipboard either', async () => {
+    vi.stubGlobal('navigator', {});
+    await expect(shareLink(data)).rejects.toThrow(TypeError);
     vi.unstubAllGlobals();
   });
 });

@@ -72,6 +72,33 @@ export function resetFontCache(): void {
   robotoCss = undefined;
 }
 
+export type LinkShareOutcome = 'shared' | 'copied' | 'cancelled';
+
+/**
+ * Shares a link with the Web Share API when the browser has it, otherwise copies "text, newline,
+ * url" to the clipboard. Resolves 'cancelled' when the user dismisses the share sheet. A
+ * NotAllowedError (Safari after an async gap) falls back to the clipboard too.
+ */
+export async function shareLink(data: {
+  title: string;
+  text: string;
+  url: string;
+}): Promise<LinkShareOutcome> {
+  const canShare = typeof navigator.canShare !== 'function' || navigator.canShare(data);
+  if (typeof navigator.share === 'function' && canShare) {
+    try {
+      await navigator.share(data);
+      return 'shared';
+    } catch (error) {
+      if (!(error instanceof DOMException)) throw error;
+      if (error.name === 'AbortError') return 'cancelled';
+      if (error.name !== 'NotAllowedError') throw error;
+    }
+  }
+  await navigator.clipboard.writeText(`${data.text}\n${data.url}`);
+  return 'copied';
+}
+
 /**
  * Renders `el` to a PNG and hands it to the Web Share API when the browser can share files,
  * otherwise downloads it. Resolves 'cancelled' when the user dismisses the share sheet. A

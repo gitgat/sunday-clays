@@ -2,6 +2,7 @@ import { Link } from 'react-router';
 import { useRoundTypeLink } from '../../../lib/roundTypes';
 import { formatDay } from '../../home/format';
 import type { SheetIssue } from '../api';
+import { ShareSheetButton } from './ShareSheetButton';
 
 const LINK = 'inline-flex min-h-11 items-center rounded-button px-2 underline underline-offset-2';
 
@@ -62,6 +63,7 @@ export function Masthead({ issue }: { issue: SheetIssue }) {
           All issues
         </Link>
       </nav>
+      <ShareSheetButton issue={issue} />
       {newer !== null && <NewerSunday newer={newer} />}
     </section>
   );
