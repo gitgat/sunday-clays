@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     weather_enabled: bool = True
     login_max_failures: int = 10
     login_window_minutes: int = 15
+    page_view_limit: int = 600  # Plan 16: page-view beacons per IP per 10 minutes
     cookie_secure: bool = True
 
     @classmethod
