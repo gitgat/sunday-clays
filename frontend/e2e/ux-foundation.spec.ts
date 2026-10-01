@@ -68,10 +68,12 @@ test('choosing a time window writes it to the URL and in-app links keep it', asy
   await expect(home).toHaveAttribute('href', /[?&]w=6m/);
   await home.click();
   await expect(page).toHaveURL(/[?&]w=6m(&|$)/);
-  // The Sunday Sheet keeps `w` in its URL but shows no window control; back on the profile the
-  // window still applies.
+  // The Sunday Sheet keeps `w` in its URL but shows no window control.
   await expect(page.getByRole('heading', { level: 1, name: 'The Sunday Sheet' })).toBeVisible();
-  await page.goBack();
+  // `w` is carried by in-app links: Leaderboards honours the window and shows its control again.
+  const leaderboards = page.getByRole('link', { name: 'Leaderboards' }).filter({ visible: true });
+  await leaderboards.first().click();
+  await expect(page).toHaveURL(/\/leaderboards.*[?&]w=6m(&|$)/);
   const after = await windowControl(page);
   if (after.kind === 'select') await expect(after.select).toHaveValue('6m');
   else {

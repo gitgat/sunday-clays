@@ -28,10 +28,18 @@ describe('sheet routes', () => {
   });
 
   it('serve an issue at /sheet/:date', async () => {
+    const asked: string[] = [];
+    server.use(
+      http.get('*/api/sheet/:date', ({ request }) => {
+        asked.push(new URL(request.url).pathname);
+        return HttpResponse.json(sheetFixture());
+      }),
+    );
     renderAt('/sheet/2026-09-27');
     expect(
       await screen.findByRole('heading', { level: 1, name: 'The Sunday Sheet' }, LAZY_CHART),
     ).toBeInTheDocument();
+    expect(asked).toEqual(['/api/sheet/2026-09-27']);
   });
 
   it('are the first nav item and a phone tab', () => {

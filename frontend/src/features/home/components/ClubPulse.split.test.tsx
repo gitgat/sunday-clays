@@ -32,7 +32,7 @@ describe('ClubPulse code splitting', () => {
       http.get('*/api/meta', () => HttpResponse.json(homeMeta)),
       http.get('*/api/events', () => HttpResponse.json(seasonEvents)),
     );
-    renderWithProviders(<ClubPulse />);
+    renderWithProviders(<ClubPulse range={{ from: '2026-08-03', to: '2026-09-27' }} />);
     const pulse = await screen.findByRole('region', { name: 'Club pulse' });
     expect(await within(pulse).findByText('Highest score')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Loading the turnout chart' })).toBeInTheDocument();
