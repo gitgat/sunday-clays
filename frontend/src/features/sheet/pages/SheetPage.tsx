@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ElementType, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ElementType,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../../../api/errors';
 import { cx } from '../../../components/ui/cx';
@@ -37,8 +44,12 @@ export const SHEET_PLACEMENT = {
 } as const;
 
 /** The h1 of the states that have no masthead (no issue yet, not found, error). */
-function SheetTitle() {
-  return <h1 className="text-3xl font-bold uppercase tracking-wide">The Sunday Sheet</h1>;
+function SheetTitle({ titleRef }: { titleRef?: RefObject<HTMLHeadingElement | null> }) {
+  return (
+    <h1 ref={titleRef} tabIndex={-1} className="text-3xl font-bold uppercase tracking-wide">
+      The Sunday Sheet
+    </h1>
+  );
 }
 
 function Block({
@@ -167,6 +178,13 @@ function NoSheetYet({ widgets }: { widgets: HomeWidget[] }) {
   const [meId, setMeId] = useState<number | null>(getMe);
   const [skipped, setSkipped] = useState(isMeSkipped);
   const showYou = meId !== null || !skipped;
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const skippedBefore = useRef(skipped);
+  // Skipping removes the card that held focus: carry on at the h1.
+  useEffect(() => {
+    if (skipped && !skippedBefore.current) titleRef.current?.focus();
+    skippedBefore.current = skipped;
+  }, [skipped]);
   const meta = useMeta();
   // With Sundays already scored (partly) the workbook is in; only full results are missing.
   const description = meta.isPending
@@ -177,7 +195,7 @@ function NoSheetYet({ widgets }: { widgets: HomeWidget[] }) {
   return (
     <div className="flex flex-col gap-4 lg:grid lg:grid-cols-3 lg:items-start">
       <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
-        <SheetTitle />
+        <SheetTitle titleRef={titleRef} />
         <EmptyState
           title="No Sunday Sheet yet"
           description={description}
@@ -190,14 +208,16 @@ function NoSheetYet({ widgets }: { widgets: HomeWidget[] }) {
       </div>
       <div className="flex min-w-0 flex-col gap-4">
         {showYou && (
-          <YourSunday
-            meId={meId}
-            skipped={skipped}
-            widgets={widgets}
-            onPicked={setMeId}
-            onCleared={() => setMeId(null)}
-            onSkipped={() => setSkipped(true)}
-          />
+          <aside aria-label="Personal" className="flex min-w-0 flex-col gap-4">
+            <YourSunday
+              meId={meId}
+              skipped={skipped}
+              widgets={widgets}
+              onPicked={setMeId}
+              onCleared={() => setMeId(null)}
+              onSkipped={() => setSkipped(true)}
+            />
+          </aside>
         )}
         <WidgetSlot slot="main" widgets={widgets} meId={meId} />
       </div>

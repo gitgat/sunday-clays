@@ -244,6 +244,22 @@ describe('SheetPage', () => {
     ]);
   });
 
+  it('keeps the Personal landmark and skip focus on a fresh install', async () => {
+    server.use(
+      http.get('*/api/sheet/latest', () =>
+        HttpResponse.json(
+          { error: { code: 'sheet_not_found', message: 'No Sunday Sheet' } },
+          { status: 404 },
+        ),
+      ),
+    );
+    const { user } = renderWithProviders(<SheetPage />, { route: '/', path: '/' });
+    const card = await screen.findByRole('region', { name: 'Which one are you?' });
+    expect(screen.getByRole('complementary', { name: 'Personal' })).toContainElement(card);
+    await user.click(within(card).getByRole('button', { name: 'Not a shooter / skip' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'The Sunday Sheet' })).toHaveFocus();
+  });
+
   it('says so when the issue fails to load', async () => {
     server.use(
       http.get('*/api/sheet/:date', () =>

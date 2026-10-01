@@ -109,7 +109,9 @@ export function useBumpToggle(date: string, deviceId: string, postKey: string) {
     setFailed(false);
     const counts = qc.getQueryData<BumpCounts>(key);
     const loaded = counts !== undefined && qc.getQueryState(key)?.status !== 'error';
-    // A load still in flight is left alone: cancelling it would leave every other post at 0.
+    // A load still in flight is left alone: cancelling it would leave every other post at 0. (If it
+    // lands before this post's request settles, this post may briefly look un-bumped; onSuccess or
+    // the refetch in onSettled then corrects it.)
     if (loaded) void qc.cancelQueries({ queryKey: key });
     qc.setQueryData<BumpCounts>(key, toggled(counts, postKey, bump));
     mutation.mutate({ bump, previous: counts?.[postKey], refetch: !loaded });
