@@ -386,6 +386,10 @@ describe('BumpButton', () => {
       const refetchHeld = new Promise<void>((resolve) => {
         releaseRefetch = resolve;
       });
+      let releaseB: () => void = () => undefined;
+      const bHeld = new Promise<void>((resolve) => {
+        releaseB = resolve;
+      });
       server.use(
         http.get('*/api/bumps', async () => {
           gets += 1;
@@ -398,6 +402,7 @@ describe('BumpButton', () => {
           if (key === A && status === 429) {
             return HttpResponse.json({ error: { code: 'rate_limited', message: 'x' } }, { status });
           }
+          if (key === B) await bHeld;
           return HttpResponse.json(truth[key]);
         }),
       );
@@ -427,13 +432,15 @@ describe('BumpButton', () => {
       // A settles and starts the catch-up refetch, which is held.
       await waitFor(() => expect(gets).toBe(2));
       await user.click(buttonIn(B));
-      await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+      // B's POST is still out when the refetch lands: C must get its count without waiting for B.
       releaseRefetch();
       expect(
         await within(screen.getByRole('region', { name: C })).findByRole('button', {
           name: 'Fist bump, 7 bumps',
         }),
       ).toBeInTheDocument();
+      releaseB();
+      await waitFor(() => expect(queryClient.isMutating()).toBe(0));
     });
   });
 
