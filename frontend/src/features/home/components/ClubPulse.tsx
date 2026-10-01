@@ -4,12 +4,12 @@ import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { Stat } from '../../../components/ui/Stat';
-import { useTimeWindow, filterRowsByWindow } from '../../../lib/timeWindow';
+import { useTimeWindow, filterRowsByWindow, type WindowRange } from '../../../lib/timeWindow';
 import { windowTagText } from '../../../lib/windowText';
 import { useWindowEvents } from '../api';
 import type { EventSummary } from '../api';
 import { homeExplainers } from '../explainers';
-import { formatScore, round1 } from '../format';
+import { formatDay, formatScore, round1 } from '../format';
 import { turnout } from '../turnout';
 
 // Code-split: ChartFrame and ECharts load after the season stats (and the rest of home) render.
@@ -32,9 +32,15 @@ export function pulseStats(events: EventSummary[]) {
   };
 }
 
-export function ClubPulse() {
-  const { window, range, label } = useTimeWindow();
-  const { events, isPending, error } = useWindowEvents();
+/**
+ * The club's numbers and the turnout chart. On the Sunday Sheet `range` fixes the 8 weeks up to
+ * the issue's Sunday (the header window does not apply there); elsewhere the header window does.
+ */
+export function ClubPulse({ range: fixed }: { range?: WindowRange } = {}) {
+  const { window, range: chosen, label: chosenLabel } = useTimeWindow();
+  const { events, isPending, error } = useWindowEvents(fixed);
+  const range = fixed ?? chosen;
+  const label = fixed === undefined ? chosenLabel : `8 weeks to ${formatDay(fixed.to)}`;
   const pulseCard = (body: ReactNode) => <Card title="Club pulse">{body}</Card>;
 
   if (isPending) return pulseCard(<Skeleton className="h-40" />);
@@ -45,7 +51,10 @@ export function ClubPulse() {
       <EmptyState title="Couldn't load these Sundays" description={error.message} />,
     );
   const stats = pulseStats(filterRowsByWindow(events, 'event_date', range));
-  const tag = windowTagText(window, range);
+  const tag =
+    fixed === undefined
+      ? windowTagText(window, range)
+      : `${label} · not affected by the time filter`;
   const chart = (
     <Suspense
       fallback={
@@ -54,7 +63,12 @@ export function ClubPulse() {
         </Card>
       }
     >
-      <TurnoutChart events={events} range={range} label={label} />
+      <TurnoutChart
+        events={events}
+        range={range}
+        label={label}
+        explainer={fixed === undefined ? homeExplainers.pulse : homeExplainers.pulseSheet}
+      />
     </Suspense>
   );
   // An empty window shows the chart card alone, so there is one message: its Table, CSV and
@@ -70,17 +84,23 @@ export function ClubPulse() {
           <Stat
             label="Sundays with full results"
             value={String(stats.held)}
-            explainer={homeExplainers.pulseHeld}
+            explainer={
+              fixed === undefined ? homeExplainers.pulseHeld : homeExplainers.pulseHeldSheet
+            }
           />
           <Stat
             label="Avg turnout"
             value={formatScore(stats.avgTurnout)}
-            explainer={homeExplainers.pulseTurnout}
+            explainer={
+              fixed === undefined ? homeExplainers.pulseTurnout : homeExplainers.pulseTurnoutSheet
+            }
           />
           <Stat
             label="Highest score"
             value={formatScore(stats.seasonHigh)}
-            explainer={homeExplainers.pulseHigh}
+            explainer={
+              fixed === undefined ? homeExplainers.pulseHigh : homeExplainers.pulseHighSheet
+            }
           />
         </div>
       </Card>

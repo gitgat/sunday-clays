@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { barOption } from '../../../components/charts/builders/bar';
 import { ChartFrame } from '../../../components/charts/ChartFrame';
-import type { ChartFullQuery, TabularData } from '../../../components/charts/types';
+import type { ChartFullQuery, Explainer, TabularData } from '../../../components/charts/types';
 import { api, unwrap } from '../../../api/client';
 import { useRoundTypes } from '../../../lib/roundTypes';
 import type { WindowRange } from '../../../lib/timeWindow';
@@ -38,11 +38,14 @@ export function TurnoutChart({
   events,
   range,
   label,
+  explainer = homeExplainers.pulse,
 }: {
   events: EventSummary[];
   range: WindowRange;
   /** The window's name, for the accessible label. */
   label: string;
+  /** The Sunday Sheet's fixed 8 weeks explain themselves differently (Plan 14). */
+  explainer?: Explainer;
 }) {
   const [roundTypes] = useRoundTypes();
   const queryClient = useQueryClient();
@@ -76,7 +79,7 @@ export function TurnoutChart({
       csvName={`turnout-${range.to}`}
       ariaLabel={`Turnout per Sunday, ${label.toLowerCase()}`}
       urlKey="pulse"
-      explainer={homeExplainers.pulse}
+      explainer={explainer}
     />
   );
 }
