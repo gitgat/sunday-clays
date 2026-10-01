@@ -1,5 +1,6 @@
 import { Card } from '../../../components/ui/Card';
 import { AuditLog } from '../components/AuditLog';
+import { BumpsPanel } from '../components/BumpsPanel';
 import { DataIssues } from '../components/DataIssues';
 import { RecomputePanel } from '../components/RecomputePanel';
 
@@ -12,6 +13,9 @@ export function OpsPage() {
       </Card>
       <Card title="Recompute analytics">
         <RecomputePanel />
+      </Card>
+      <Card title="Fist bumps" subtitle="Sunday Sheet posts with bumps, most recent first">
+        <BumpsPanel />
       </Card>
       <Card title="Audit log">
         <AuditLog />
