@@ -85,12 +85,15 @@ test.describe('as an admin', () => {
     });
     expect(response.status()).toBe(204);
     // "Fist bumps per day" is an empty state with no controls until some insight has a bump.
+    // insight-bumps.spec bumps and counts the hero and top[0] of Home, a profile and a Sunday
+    // exactly, so bump top[2] of Home: no other spec touches it and no count there can shift.
     const feed = (await (await viewer.get('/api/insights/home')).json()) as {
-      hero: { key: string } | null;
+      top: { key: string }[];
     };
-    if (feed.hero === null) throw new Error('the fx world has a top insight');
+    const insight = feed.top[2];
+    if (insight === undefined) throw new Error('the fx world has three top insights on Home');
     const bump = await viewer.post('/api/bumps', {
-      data: { key: feed.hero.key, device_id: randomUUID() },
+      data: { key: insight.key, device_id: randomUUID() },
     });
     expect(bump.ok()).toBe(true);
     await viewer.dispose();
@@ -102,8 +105,7 @@ test.describe('as an admin', () => {
     const sent = recordBeacons(page);
     await page.goto('/admin/analytics');
     await expect(page.getByRole('heading', { level: 1, name: 'Analytics' })).toBeVisible();
-    // Not /leaderboards: its "Board as of" slider keeps a permanent status that never settles.
-    await page.goto('/shooters');
+    await page.goto('/leaderboards');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await whenSettled(page);
     expect(sent).toEqual([]);
@@ -146,7 +148,7 @@ test.describe('as an admin', () => {
     await expectTapTargets(page);
   });
 
-  test('visitors switch to weeks, show a table, open fullscreen and download every day', async ({
+  test('visitors switch to weeks, show a table, open fullscreen and download every week', async ({
     page,
   }) => {
     await page.goto('/admin/analytics');

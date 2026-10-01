@@ -12,7 +12,7 @@ import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import type { AnalyticsRange } from '../api';
-import { bumps, uptake, visitors } from '../mocks';
+import { bumps, pageKinds, uptake, visitors } from '../mocks';
 import { BumpsCard } from './BumpsCard';
 import { PageKindsCard } from './PageKindsCard';
 import { UptakeCard } from './UptakeCard';
@@ -119,6 +119,7 @@ describe('an empty database', () => {
   // The API zero-fills a single day (since clamped to as_of), so there are rows but no counts.
   it('says nothing was counted instead of drawing flat charts', async () => {
     server.use(
+      http.get('*/api/admin/analytics/pages', () => HttpResponse.json([])),
       http.get('*/api/admin/analytics/visitors', () =>
         HttpResponse.json({
           days: [{ day: '2026-10-01', devices: 0 }],
@@ -147,10 +148,12 @@ describe('an empty database', () => {
         <VisitorsCard range={RANGE} />
         <BumpsCard range={RANGE} />
         <UptakeCard range={RANGE} />
+        <PageKindsCard range={RANGE} />
       </>,
     );
-    await waitFor(() =>
-      expect(screen.getAllByText('Nothing counted in this window yet.')).toHaveLength(3),
+    await waitFor(
+      () => expect(screen.getAllByText('Nothing counted in this window yet.')).toHaveLength(4),
+      LAZY_CHART,
     );
     expect(screen.queryByRole('button', { name: 'Table' })).not.toBeInTheDocument();
   });
@@ -243,5 +246,54 @@ describe('UptakeCard', () => {
     expect(
       await screen.findByText('No visits in this window are kept in detail.', {}, LAZY_CHART),
     ).toBeInTheDocument();
+  });
+});
+
+describe.each([
+  ['visitors', 'Visitors', 'Every day on record.', 'visitors-day', visitors, VisitorsCard],
+  ['pages', 'Page views by page', 'Every day on record.', 'page-views', pageKinds, PageKindsCard],
+  ['bumps', 'Fist bumps per day', 'Every day on record.', 'fist-bumps', bumps, BumpsCard],
+  [
+    'me-states',
+    '“Which one are you?” answers',
+    'Every week on record.',
+    'which-one-are-you',
+    uptake,
+    UptakeCard,
+  ],
+] as const)('%s card: window and all-time reads', (name, title, note, csvPrefix, body, Card) => {
+  it(
+    'reads the window for the chart and all time for fullscreen and the CSV',
+    async () => {
+      const seen: (string | null)[] = [];
+      server.use(
+        http.get(`*/api/admin/analytics/${name}`, ({ request }) => {
+          seen.push(new URL(request.url).searchParams.get('since'));
+          return HttpResponse.json(body);
+        }),
+      );
+      const csv = captureCsv();
+      const { user } = renderWithProviders(<Card range={RANGE} />);
+      const card = await region(title);
+      const dialog = await openFullscreen(user, card, title);
+      expect(await within(dialog).findByText(note)).toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: 'CSV' }));
+      await waitFor(() => expect(csv.names).toEqual([`${csvPrefix}-2026-10-01.csv`]));
+      expect(seen).toEqual(['2026-08-07', null]);
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it('says why when the server refuses', async () => {
+    server.use(
+      http.get(`*/api/admin/analytics/${name}`, () =>
+        HttpResponse.json(
+          { error: { code: 'forbidden', message: 'Admin access required' } },
+          { status: 403 },
+        ),
+      ),
+    );
+    renderWithProviders(<Card range={RANGE} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Admins only');
   });
 });

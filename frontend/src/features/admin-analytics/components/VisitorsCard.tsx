@@ -43,7 +43,6 @@ export function VisitorsCard({ range }: { range: AnalyticsRange }) {
       </Card>
     );
   }
-  const model = visitorsModel(query.data, per);
   if (query.data.days.every((d) => d.devices === 0)) {
     return (
       <Card title={TITLE}>
@@ -51,6 +50,7 @@ export function VisitorsCard({ range }: { range: AnalyticsRange }) {
       </Card>
     );
   }
+  const model = visitorsModel(query.data, per);
   return (
     <>
       <ChartFrame
