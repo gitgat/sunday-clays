@@ -224,6 +224,7 @@ describe('MePanel', () => {
     );
     renderWithProviders(<MePanel meId={999} onCleared={onCleared} widgets={[]} />);
     expect(await screen.findByText(/couldn’t find your shooter profile/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Not me' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Choose again' }));
     expect(getMe()).toBeNull();
     expect(onCleared).toHaveBeenCalledTimes(1);

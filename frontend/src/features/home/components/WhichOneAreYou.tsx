@@ -23,7 +23,9 @@ export function WhichOneAreYou({
   const query = q.trim();
   const asked = query.length >= MIN_QUERY;
   const search = useShooters(query, false, { enabled: asked });
-  const found = asked ? (search.data ?? []) : [];
+  // Stale rows kept from the previous query are not this query's answer: show nothing until it lands.
+  const current = asked && !search.isPlaceholderData;
+  const found = current ? (search.data ?? []) : [];
   const matches = found.slice(0, SHOWN);
   return (
     <Card title="Which one are you?" subtitle="Pick your name once; this browser remembers it.">
@@ -39,11 +41,11 @@ export function WhichOneAreYou({
           autoComplete="off"
           className="min-h-11 rounded-button border border-outline-variant bg-surface px-3 text-text"
         />
-        <div role="status" className="empty:hidden">
-          {asked && search.isError && (
+        <div aria-live="polite" aria-atomic="true" className="min-h-5 text-sm">
+          {current && search.isError && (
             <p className="text-sm text-text-muted">Couldn’t search the shooters just now.</p>
           )}
-          {asked && search.isSuccess && matches.length === 0 && (
+          {current && search.isSuccess && matches.length === 0 && (
             <p className="text-sm text-text-muted">{`No shooter matches “${query}”.`}</p>
           )}
           {matches.length > 0 && (
@@ -80,7 +82,7 @@ export function WhichOneAreYou({
             onSkipped();
           }}
         >
-          Not a shooter / skip
+          Skip, I’m not a shooter
         </Button>
       </div>
     </Card>

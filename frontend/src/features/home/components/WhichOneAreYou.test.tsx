@@ -11,6 +11,13 @@ afterEach(() => {
   localStorage.clear();
 });
 
+/** The permanent live region: found by aria-live, never role="status" (e2e settled() reads that as loading). */
+function liveRegion(): HTMLElement {
+  const el = document.querySelector<HTMLElement>('[aria-live="polite"]');
+  if (el === null) throw new Error('no aria-live region');
+  return el;
+}
+
 function searched() {
   const asked: (string | null)[] = [];
   server.use(
@@ -69,14 +76,19 @@ describe('WhichOneAreYou', () => {
     await user.type(screen.getByLabelText('Your name'), 'An');
     const list = await screen.findByRole('list', { name: 'Matching shooters' });
     expect(within(list).getAllByRole('button')).toHaveLength(8);
-    expect(screen.getByRole('status')).toHaveTextContent('Showing 8 of 10 matches');
+    expect(liveRegion()).toHaveTextContent('Showing 8 of 10 matches');
   });
 
   it('announces the feedback in a live region that is there before the search', async () => {
     searched();
     const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
-    const live = screen.getByRole('status');
+    const live = liveRegion();
     expect(live).toBeEmptyDOMElement();
+    expect(live).toBeVisible();
+    expect(live).not.toHaveAttribute('hidden');
+    expect(live.className).not.toMatch(/hidden/);
+    expect(live).toHaveAttribute('aria-atomic', 'true');
+    expect(screen.queryByRole('status')).toBeNull();
     await user.type(screen.getByLabelText('Your name'), 'Zz');
     expect(await within(live).findByText('No shooter matches “Zz”.')).toBeInTheDocument();
   });
@@ -90,7 +102,7 @@ describe('WhichOneAreYou', () => {
     const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
     await user.type(screen.getByLabelText('Your name'), 'Hadley');
     expect(
-      await within(screen.getByRole('status')).findByText('Couldn’t search the shooters just now.'),
+      await within(liveRegion()).findByText('Couldn’t search the shooters just now.'),
     ).toBeInTheDocument();
   });
 
@@ -99,9 +111,36 @@ describe('WhichOneAreYou', () => {
     const { user } = renderWithProviders(
       <WhichOneAreYou onPicked={vi.fn()} onSkipped={onSkipped} />,
     );
-    await user.click(screen.getByRole('button', { name: 'Not a shooter / skip' }));
+    await user.click(screen.getByRole('button', { name: 'Skip, I’m not a shooter' }));
     expect(isMeSkipped()).toBe(true);
     expect(onSkipped).toHaveBeenCalledTimes(1);
     expect(getMe()).toBeNull();
+  });
+
+  it('does not show the previous search while a new one loads', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get('*/api/shooters', async ({ request }) => {
+        const q = new URL(request.url).searchParams.get('q');
+        if (q === 'Hb') {
+          await held;
+          return HttpResponse.json([]);
+        }
+        return HttpResponse.json(shooterList.filter((s) => s.display_name.includes('Hadley')));
+      }),
+    );
+    const { user } = renderWithProviders(<WhichOneAreYou onPicked={vi.fn()} onSkipped={vi.fn()} />);
+    const input = screen.getByLabelText('Your name');
+    await user.type(input, 'Ha');
+    await screen.findByRole('button', { name: 'Hadley, Ike' });
+    await user.type(input, '{Backspace}b');
+    // "Hb" is still loading: the "Ha" names and any "no match" line must not be on screen.
+    expect(screen.queryByRole('button', { name: 'Hadley, Ike' })).toBeNull();
+    expect(screen.queryByText(/No shooter matches/)).toBeNull();
+    release();
+    expect(await screen.findByText('No shooter matches “Hb”.')).toBeInTheDocument();
   });
 });

@@ -23,6 +23,7 @@ export function HomePage({ widgets = homeWidgets }: { widgets?: HomeWidget[] }) 
     const heading = personal.current?.querySelector<HTMLElement>('h2');
     if (heading === null || heading === undefined) return;
     heading.tabIndex = -1;
+    heading.classList.add('focus:outline-none');
     heading.focus();
   }, [slot]);
   return (

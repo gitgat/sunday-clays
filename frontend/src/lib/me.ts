@@ -1,6 +1,6 @@
 /** "That's me" personalization: the viewer's own shooter id, kept only in this browser. */
 const KEY = 'sc.me';
-/** "Not a shooter / skip" on Home (Plan 15): stop asking "Which one are you?". */
+/** "Skip, I’m not a shooter" on Home (Plan 15): stop asking "Which one are you?". */
 const SKIP_KEY = 'sc.me.skip';
 
 export function getMe(): number | null {
@@ -31,7 +31,7 @@ export function clearMe(): void {
   }
 }
 
-/** True once this browser said "Not a shooter / skip". */
+/** True once this browser said "Skip, I’m not a shooter". */
 export function isMeSkipped(): boolean {
   try {
     return localStorage.getItem(SKIP_KEY) === '1';

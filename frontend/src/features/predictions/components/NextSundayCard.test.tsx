@@ -1,11 +1,16 @@
 import { screen, within } from '@testing-library/react';
 import { http, HttpResponse, type JsonBodyType } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { skipMe } from '../../../lib/me';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import { expectExplainer } from '../../../test/charts';
 import { NEXT_PREDICTIONS } from '../mocks';
 import { NextSundayCard } from './NextSundayCard';
+
+afterEach(() => {
+  localStorage.clear();
+});
 
 function serve(body: JsonBodyType, status = 200) {
   server.use(http.get('*/api/predictions/next', () => HttpResponse.json(body, { status })));
@@ -56,6 +61,20 @@ describe('NextSundayCard', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^Choose “That’s me”/)).toBeNull();
+  });
+
+  it('names only the Shooters route once the question has been skipped', async () => {
+    skipMe();
+    serve(NEXT_PREDICTIONS);
+    renderWithProviders(<NextSundayCard meId={null} />, { route: '/?rt=sporting' });
+    const link = await screen.findByRole('link', { name: 'Go to Shooters' });
+    expect(link).toHaveAttribute('href', '/shooters?rt=sporting');
+    expect(
+      screen.getByText(
+        'Choose “That’s me” on your Shooters profile to see your own expected score here.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Which one are you/)).toBeNull();
   });
 
   it('says so when the viewer has no expectation yet', async () => {

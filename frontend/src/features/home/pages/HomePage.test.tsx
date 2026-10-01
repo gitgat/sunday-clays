@@ -117,8 +117,11 @@ describe('HomePage', () => {
     const user = userEvent.setup();
     const { unmount } = renderWithProviders(<HomePage widgets={widgets} />);
     const panel = screen.getByRole('complementary', { name: 'Personal' });
-    await user.click(within(panel).getByRole('button', { name: 'Not a shooter / skip' }));
+    await user.click(within(panel).getByRole('button', { name: 'Skip, I’m not a shooter' }));
     expect(within(panel).getByRole('heading', { name: 'Your panel' })).toHaveFocus();
+    expect(within(panel).getByRole('heading', { name: 'Your panel' })).toHaveClass(
+      'focus:outline-none',
+    );
     expect(within(panel).getByText(/tap “That’s me”/)).toBeInTheDocument();
     expect(isMeSkipped()).toBe(true);
     await chartLoaded();
