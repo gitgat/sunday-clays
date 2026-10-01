@@ -133,18 +133,17 @@ export function HomeInsights({ meId }: { meId: number | null }) {
   const f = feed.data;
   const hasInsights =
     f.spotlight != null || f.top.length > 0 || f.kudos.length > 0 || f.more.length > 0;
-  // "Bumps need this browser to remember you" goes inside a card, once: the Insights card, or the
-  // Top story card when that is the only one with insights.
-  const noteInInsights = hasInsights;
+  // "Bumps need this browser to remember you" goes inside a card, once: the Insights card, else the
+  // Top story card, else the recap's card. Never a bare line between widgets.
+  const noteHome = hasInsights ? 'insights' : f.hero != null ? 'hero' : 'recap';
   return (
     <BumpsProvider keys={feedKeys(f)} note={false}>
-      {!hasInsights && f.hero == null && <BumpsOffNote />}
       {(f.pinned != null || f.hero != null) && (
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-          {f.pinned != null && <RecapCard insight={f.pinned} />}
+          {f.pinned != null && <RecapCard insight={f.pinned} withNote={noteHome === 'recap'} />}
           {f.hero != null && (
             <Card title="Top story" subtitle={latestSubtitle(f.hero.anchor_date)}>
-              {!noteInInsights && <BumpsOffNote />}
+              {noteHome === 'hero' && <BumpsOffNote />}
               <ul aria-label="Top story" className="flex flex-col gap-3">
                 <InsightCard insight={f.hero} you={isMine(f.hero, meId)} />
               </ul>
@@ -162,7 +161,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
           }
         >
           <div className="flex min-w-0 flex-col gap-3">
-            <BumpsOffNote />
+            {noteHome === 'insights' && <BumpsOffNote />}
             {f.spotlight != null && (
               <section aria-label="Shooter to know" className="flex flex-col gap-2">
                 <h3 className="text-sm font-medium text-text-muted">Shooter to know</h3>

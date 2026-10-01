@@ -118,14 +118,14 @@ export function KudosStrip({
                 >
                   {naturalName(chip.display_name)}
                 </Link>
-                <p id={`${rowId}-${chip.insight.key}`} className="text-sm text-text-muted">
+                <p id={`${rowId}-${String(chip.shooter_id)}`} className="text-sm text-text-muted">
                   <Segments
                     segments={you ? (chip.insight.headline_you ?? []) : chip.insight.headline}
                   />
                 </p>
                 <InsightBump
                   insightKey={chip.insight.key}
-                  describedBy={`${rowId}-${chip.insight.key}`}
+                  describedBy={`${rowId}-${String(chip.shooter_id)}`}
                 />
               </li>
             );

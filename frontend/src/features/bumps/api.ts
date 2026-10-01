@@ -1,4 +1,10 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, unwrap } from '../../api/client';
 import type { components } from '../../api/schema';
@@ -21,6 +27,21 @@ export function bumpsKey(keys: readonly string[], deviceId: string | null) {
 }
 export type BumpsKey = ReturnType<typeof bumpsKey>;
 
+/**
+ * Which counts maps have had a successful load from the server. Our own optimistic writes never
+ * count: only an answer that reached the client does (ruling P15-R2).
+ */
+const served = new WeakMap<QueryClient, Set<string>>();
+const servedKey = (queryKey: BumpsKey) => JSON.stringify(queryKey);
+function markServed(qc: QueryClient, queryKey: BumpsKey) {
+  const keys = served.get(qc) ?? new Set<string>();
+  keys.add(servedKey(queryKey));
+  served.set(qc, keys);
+}
+function hasServed(qc: QueryClient, queryKey: BumpsKey) {
+  return served.get(qc)?.has(servedKey(queryKey)) ?? false;
+}
+
 async function fetchCounts(keys: readonly string[], deviceId: string | null): Promise<BumpCounts> {
   const chunks: string[][] = [];
   for (let i = 0; i < keys.length; i += BATCH) chunks.push(keys.slice(i, i + BATCH));
@@ -39,9 +60,16 @@ async function fetchCounts(keys: readonly string[], deviceId: string | null): Pr
  * new set of keys loads (a profile's "Show all"), the previous counts stay on screen.
  */
 export function useBumps(keys: readonly string[], deviceId: string | null) {
+  const qc = useQueryClient();
+  const queryKey = bumpsKey(keys, deviceId);
   return useQuery({
-    queryKey: bumpsKey(keys, deviceId),
-    queryFn: () => fetchCounts(keys, deviceId),
+    queryKey,
+    queryFn: async ({ signal }) => {
+      const counts = await fetchCounts(keys, deviceId);
+      // A fetch cancelled by a tap did not deliver its answer.
+      if (!signal.aborted) markServed(qc, queryKey);
+      return counts;
+    },
     enabled: keys.length > 0,
     staleTime: 0,
     placeholderData: keepPreviousData,
@@ -115,22 +143,28 @@ export function useBumpToggle(
   function send(bump: boolean) {
     setFailed(false);
     const cached = qc.getQueryData<BumpCounts>(queryKey);
-    const loaded = cached !== undefined && qc.getQueryState(queryKey)?.status !== 'error';
+    // Has the server ever answered for this map? A tap's own optimistic write never counts.
+    const loaded = hasServed(qc, queryKey);
     // While a new key set loads ("Show all"), this key's entry is empty but the section still shows
     // the previous counts (keepPreviousData). Seed from those, so no other card flashes to 0.
     const counts = cached ?? shown;
-    // A load still in flight is left alone: cancelling it would leave every other insight at 0.
-    // (If it lands before this request settles, this insight may briefly look un-bumped;
-    // onSuccess or the refetch in onSettled then corrects it.)
+    // Read before any cancel: a fetch in flight now is one this tap may kill.
+    const inFlight = qc.isFetching({ queryKey, exact: true }) > 0;
+    // Once loaded, an ask still in flight is stale next to this tap: drop it. Before the first load
+    // it is never cancelled (it is the only way the other cards get their counts).
     if (loaded) void qc.cancelQueries({ queryKey });
     qc.setQueryData<BumpCounts>(queryKey, toggled(counts, insightKey, bump));
-    // A tap still queued for this insight that owes a refetch hands that duty on: its own write made
-    // the map look loaded, but only the last queued tap invalidates, so it must carry it.
+    // Owed: a fetch after the last queued tap settles. Before the first load always; after it, only
+    // when a fetch was cancelled above. A tap still queued for this insight hands its duty on.
     const owes = qc
       .getMutationCache()
       .findAll({ mutationKey, status: 'pending' })
       .some((m) => (m.state.variables as { refetch?: boolean } | undefined)?.refetch === true);
-    mutation.mutate({ bump, previous: counts?.[insightKey], refetch: !loaded || owes });
+    mutation.mutate({
+      bump,
+      previous: counts?.[insightKey],
+      refetch: !loaded || inFlight || owes,
+    });
   }
   return { send, failed };
 }

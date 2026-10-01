@@ -3,7 +3,7 @@ import { delay, http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../test/msw/server';
 import { createTestQueryClient, renderWithProviders } from '../../test/render';
-import { bumpsKey, useBumps, type BumpCounts } from './api';
+import { bumpsKey, useBumps, type BumpCounts, type BumpState } from './api';
 import { BumpButton } from './BumpButton';
 
 const DEVICE = '00000000-0000-4000-8000-00000000000a';
@@ -288,30 +288,153 @@ describe('BumpButton', () => {
   });
 
   it('drops a stale refetch that was in flight when the counts were already loaded', async () => {
+    let truth: BumpState = { bumps: 2, bumped: false };
     let gets = 0;
     let releaseStale: () => void = () => undefined;
     const staleHeld = new Promise<void>((resolve) => {
       releaseStale = resolve;
     });
-    const queryClient = seeded(KEYS, { [KEY]: { bumps: 2, bumped: false } });
+    let releasePost: () => void = () => undefined;
+    const postHeld = new Promise<void>((resolve) => {
+      releasePost = resolve;
+    });
     server.use(
       http.get('*/api/bumps', async () => {
         gets += 1;
-        await staleHeld;
-        return HttpResponse.json({ [KEY]: { bumps: 2, bumped: false } });
+        // The server's truth when asked; the second ask is held, so it lands late and stale.
+        const asked = { [KEY]: truth };
+        if (gets === 2) await staleHeld;
+        return HttpResponse.json(gets === 2 ? asked : { [KEY]: truth });
       }),
-      http.post('*/api/bumps', () => HttpResponse.json({ bumps: 3, bumped: true })),
+      http.post('*/api/bumps', async () => {
+        await postHeld;
+        truth = { bumps: 3, bumped: true };
+        return HttpResponse.json(truth);
+      }),
     );
+    const queryClient = createTestQueryClient();
     const { user } = renderWithProviders(<Harness />, { queryClient });
-    await waitFor(() => expect(gets).toBe(1));
+    await screen.findByRole('button', { name: 'Fist bump, 2 bumps' });
+    void queryClient.invalidateQueries();
+    await waitFor(() => expect(gets).toBe(2));
     await user.click(screen.getByRole('button', { name: 'Fist bump, 2 bumps' }));
-    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+    // The held ask lands while the POST is still out: it must not undo the tap.
     releaseStale();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(screen.getByRole('button', { name: 'Fist bump, 3 bumps' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
+    releasePost();
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+    expect(await screen.findByRole('button', { name: 'Fist bump, 3 bumps' })).toBeInTheDocument();
+    // The ask it dropped is owed: one fresh ask goes out once the tap settles.
+    await waitFor(() => expect(gets).toBe(3));
+  });
+
+  it('hands that owed ask to the last queued tap when two taps follow a dropped refetch', async () => {
+    let gets = 0;
+    let releaseStale: () => void = () => undefined;
+    const staleHeld = new Promise<void>((resolve) => {
+      releaseStale = resolve;
+    });
+    let releasePost: () => void = () => undefined;
+    const postHeld = new Promise<void>((resolve) => {
+      releasePost = resolve;
+    });
+    server.use(
+      http.get('*/api/bumps', async () => {
+        gets += 1;
+        if (gets === 2) await staleHeld;
+        return HttpResponse.json({ [KEY]: { bumps: 2, bumped: false } });
+      }),
+      http.post('*/api/bumps', async () => {
+        await postHeld;
+        return HttpResponse.json({ bumps: 3, bumped: true });
+      }),
+      http.delete('*/api/bumps', () => HttpResponse.json({ bumps: 2, bumped: false })),
+    );
+    const queryClient = createTestQueryClient();
+    const { user } = renderWithProviders(<Harness />, { queryClient });
+    await screen.findByRole('button', { name: 'Fist bump, 2 bumps' });
+    void queryClient.invalidateQueries();
+    await waitFor(() => expect(gets).toBe(2));
+    await user.click(screen.getByRole('button', { name: 'Fist bump, 2 bumps' }));
+    await user.click(screen.getByRole('button', { name: 'Fist bump, 3 bumps' }));
+    releasePost();
+    releaseStale();
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+    await waitFor(() => expect(gets).toBe(3));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(gets).toBe(3);
+  });
+
+  describe.each([
+    ['succeeds', 201],
+    ['fails', 429],
+  ])('a tap while the catch-up refetch is in flight, when the first tap %s', (_name, status) => {
+    it('never cancels that refetch, so the untapped cards get the server counts', async () => {
+      const C = 'k-c';
+      const ALL = [A, B, C];
+      const truth: BumpCounts = {
+        [A]: { bumps: 1, bumped: true },
+        [B]: { bumps: 3, bumped: true },
+        [C]: { bumps: 7, bumped: false },
+      };
+      let gets = 0;
+      let releaseRefetch: () => void = () => undefined;
+      const refetchHeld = new Promise<void>((resolve) => {
+        releaseRefetch = resolve;
+      });
+      server.use(
+        http.get('*/api/bumps', async () => {
+          gets += 1;
+          if (gets === 1) await delay('infinite');
+          if (gets === 2) await refetchHeld;
+          return HttpResponse.json(truth);
+        }),
+        http.post('*/api/bumps', async ({ request }) => {
+          const { key } = (await request.json()) as { key: string };
+          if (key === A && status === 429) {
+            return HttpResponse.json({ error: { code: 'rate_limited', message: 'x' } }, { status });
+          }
+          return HttpResponse.json(truth[key]);
+        }),
+      );
+      function Three() {
+        const bumps = useBumps(ALL, DEVICE);
+        return (
+          <>
+            <p id="note">off</p>
+            {ALL.map((k) => (
+              <section key={k} aria-label={k}>
+                <BumpButton
+                  queryKey={bumpsKey(ALL, DEVICE)}
+                  insightKey={k}
+                  deviceId={DEVICE}
+                  state={bumps.data?.[k]}
+                  noteId="note"
+                />
+              </section>
+            ))}
+          </>
+        );
+      }
+      const queryClient = createTestQueryClient();
+      const { user } = renderWithProviders(<Three />, { queryClient });
+      await waitFor(() => expect(gets).toBe(1));
+      await user.click(buttonIn(A));
+      // A settles and starts the catch-up refetch, which is held.
+      await waitFor(() => expect(gets).toBe(2));
+      await user.click(buttonIn(B));
+      await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+      releaseRefetch();
+      expect(
+        await within(screen.getByRole('region', { name: C })).findByRole('button', {
+          name: 'Fist bump, 7 bumps',
+        }),
+      ).toBeInTheDocument();
+    });
   });
 
   it('asks for the counts again once, after two quick taps before they ever loaded', async () => {

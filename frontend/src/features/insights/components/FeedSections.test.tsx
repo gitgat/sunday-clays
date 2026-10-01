@@ -564,21 +564,19 @@ describe('fist bumps on every feed', () => {
   });
 
   it.each([
-    ['a lone top story', { hero: insightFixture({ key: 'hero' }) }, 'Top story'],
-    ['a lone recap', { pinned: insightFixture({ key: 'recap' }) }, null],
-  ])('says why bumps are off once for %s', async (_name, feedBits, card) => {
+    ['the Insights card', homeBumpFeed, 'Insights'],
+    ['the Top story card', { hero: insightFixture({ key: 'hero' }) }, 'Top story'],
+    ['the recap card', { pinned: insightFixture({ key: 'recap' }) }, 'Last Sunday'],
+  ])('says why bumps are off once, inside %s', async (_name, feedBits, card) => {
     server.use(http.get('*/api/insights/home', () => HttpResponse.json(feedFixture(feedBits))));
     bumpCounts();
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new DOMException('blocked', 'SecurityError');
     });
     renderWithProviders(<HomeInsights meId={null} />);
-    await screen.findByRole('button', { name: /^Fist bump/ });
-    const note = screen.getByText('Bumps need this browser to remember you');
-    if (card !== null) {
-      expect(
-        within(screen.getByRole('region', { name: card })).getByText(note.textContent ?? ''),
-      ).toBe(note);
-    }
+    await screen.findAllByRole('button', { name: /^Fist bump/ });
+    const notes = screen.getAllByText('Bumps need this browser to remember you');
+    expect(notes).toHaveLength(1);
+    expect(screen.getByRole('region', { name: card })).toContainElement(notes[0] ?? null);
   });
 });
