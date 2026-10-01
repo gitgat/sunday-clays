@@ -1,7 +1,7 @@
 """/api/admin/analytics/* (Plan 16 Task 2): admin-only, read-only, no-store, windowed."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
 
+from sunday_clays.api.routes import admin_analytics
 from sunday_clays.config import Settings
 from sunday_clays.models import Base, PageView
 
@@ -85,3 +86,15 @@ def test_reading_analytics_writes_nothing(admin_client: TestClient, session: Ses
         assert admin_client.get(f"/api/admin/analytics/{path}").status_code == 200
     assert session.scalar(select(func.count()).select_from(audit)) == before
     assert session.scalar(select(func.count()).select_from(PageView)) == 0
+
+
+def test_the_default_as_of_is_the_club_date_on_a_pacific_evening(
+    admin_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 2026-09-20 22:00 Pacific is already Monday 2026-09-21 in UTC.
+    frozen = datetime(2026, 9, 21, 5, 0, tzinfo=UTC)
+    monkeypatch.setattr(admin_analytics, "_now", lambda tz: frozen.astimezone(tz))
+    days = admin_client.get("/api/admin/analytics/visitors", params={"since": "2026-09-19"}).json()[
+        "days"
+    ]
+    assert [d["day"] for d in days] == ["2026-09-19", "2026-09-20"]

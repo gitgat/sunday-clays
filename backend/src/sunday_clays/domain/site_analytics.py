@@ -5,6 +5,12 @@ Each read merges the rollups with the raw page_views still kept. The two never o
 rollup deletes the raw rows it counts, in whole weeks (domain/page_views.py). The sets are small
 (one rollup row per day and week, raw rows for at most 96 days, one fist bump per insight and
 device), so each read loads its buckets once and filters by the span in Python (Decision 10).
+
+Invariant (ruling P16-R1): a rollup row and a raw row never cover the same day or week, because
+the rollup only takes whole weeks. Each read still keeps one source per key, raw over rollup
+(``rolled | raw``), so a bug elsewhere can never double-count. A week's unique devices come from
+its own week row or raw rows, never from summing days. A ``since`` before the first data is
+clamped to the first data day, so a far-past ``since`` cannot zero-fill decades.
 """
 
 from __future__ import annotations
@@ -134,7 +140,33 @@ def _first(span: Span, days: Iterable[date]) -> date | None:
 
 
 def _weeks_from(first: date | None) -> date | None:
+    # A mid-week ``since`` starts the first weekly bucket on that week's Monday.
     return None if first is None else monday(first)
+
+
+def _earliest(session: Session, tz: str) -> date | None:
+    """The first local day with any data: oldest raw view, rollup day or fist bump."""
+    local_bump = cast(func.timezone(tz, FistBump.created_at), Date)
+    first_view = session.scalar(select(func.min(PageView.at)))
+    found = [
+        session.scalar(
+            select(func.min(PageViewRollup.start_day)).where(PageViewRollup.period == "day")
+        ),
+        session.scalar(select(func.min(PageKindRollup.day))),
+        session.scalar(select(func.min(local_bump))),
+        None if first_view is None else first_view.astimezone(ZoneInfo(tz)).date(),
+    ]
+    return min((day for day in found if day is not None), default=None)
+
+
+def _clamped(session: Session, tz: str, span: Span) -> Span:
+    """Move a ``since`` earlier than all data up to the first data day (no data: unchanged)."""
+    if span.since is None:
+        return span
+    first = _earliest(session, tz)
+    if first is None or first <= span.since:
+        return span
+    return Span(first, span.as_of)
 
 
 def _rolled_devices(session: Session, period: Period) -> dict[date, int]:
@@ -155,6 +187,7 @@ def _raw_devices(session: Session, tz: str, period: Period) -> dict[date, int]:
 
 
 def visitors(session: Session, tz: str, span: Span) -> Visitors:
+    span = _clamped(session, tz, span)
     by_day = _rolled_devices(session, "day") | _raw_devices(session, tz, "day")
     by_week = _rolled_devices(session, "week") | _raw_devices(session, tz, "week")
     first = _first(span, by_day)
@@ -170,13 +203,17 @@ def visitors(session: Session, tz: str, span: Span) -> Visitors:
 
 
 def page_kinds(session: Session, tz: str, span: Span) -> list[PageKindViews]:
+    span = _clamped(session, tz, span)
     raw = select(bucket_of("day", tz).label("day"), PageView.page_kind).subquery()
     raw_counts = select(raw.c.day, raw.c.page_kind, func.count()).group_by(
         raw.c.day, raw.c.page_kind
     )
     rolled = select(PageKindRollup.day, PageKindRollup.page_kind, PageKindRollup.views)
+    by_key = {(d, k): v for d, k, v in session.execute(rolled)} | {
+        (d, k): v for d, k, v in session.execute(raw_counts)
+    }
     totals: Counter[str] = Counter()
-    for day, kind, views in [*session.execute(raw_counts), *session.execute(rolled)]:
+    for (day, kind), views in by_key.items():
         if span.has(day):
             totals[kind] += views
     ranked = sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
@@ -184,6 +221,7 @@ def page_kinds(session: Session, tz: str, span: Span) -> list[PageKindViews]:
 
 
 def bumps(session: Session, tz: str, span: Span) -> Bumps:
+    span = _clamped(session, tz, span)
     local_day = cast(func.timezone(tz, FistBump.created_at), Date)
     rows = [
         (day, key, device)
@@ -212,6 +250,7 @@ def bumps(session: Session, tz: str, span: Span) -> Bumps:
 
 
 def uptake(session: Session, tz: str, span: Span) -> Uptake:
+    span = _clamped(session, tz, span)
     rolled = {
         start: (picked, skipped, none)
         for start, picked, skipped, none in session.execute(

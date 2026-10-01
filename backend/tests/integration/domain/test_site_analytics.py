@@ -63,7 +63,7 @@ def _seed(session: Session) -> None:
             {
                 "period": "week",
                 "start_day": date(2026, 6, 22),
-                "devices": 3,
+                "devices": 2,
                 "me_picked": 0,
                 "me_skipped": 1,
                 "me_none": 2,
@@ -122,7 +122,8 @@ def test_all_time_visitors_start_at_the_first_rolled_day(session: Session) -> No
     result = visitors(session, TZ, Span(None, date(2026, 9, 20)))
     assert result.days[0] == VisitorDay(date(2026, 6, 23), 2)
     assert len(result.days) == 90  # Jun 23 to Sep 20, zero-filled
-    assert result.weeks[0] == VisitorWeek(date(2026, 6, 22), 3)
+    # One device on both days: the week is 2 devices, not the 3 day-devices summed.
+    assert result.weeks[0] == VisitorWeek(date(2026, 6, 22), 2)
     assert result.weeks[-1] == VisitorWeek(date(2026, 9, 14), 3)
     assert len(result.weeks) == 13
 
@@ -173,8 +174,8 @@ def test_uptake_weeks_include_rollups_and_detail_starts_at_the_first_raw_day(
 ) -> None:
     _seed(session)
     result = uptake(session, TZ, Span(date(2026, 6, 1), date(2026, 9, 20)))
-    assert result.weeks[0] == WeekMeStates(date(2026, 6, 1), 0, 0, 0)
-    assert WeekMeStates(date(2026, 6, 22), 0, 1, 2) in result.weeks
+    # since Jun 1 is clamped to the first data (Jun 23), so the weeks start at its Monday.
+    assert result.weeks[0] == WeekMeStates(date(2026, 6, 22), 0, 1, 2)
     assert result.latest_since == date(2026, 9, 14)
     assert result.latest == MeStates(picked=1, skipped=1, none=1)
 
@@ -213,3 +214,122 @@ def test_bumps_per_day_top_insights_and_devices(fx_session: Session) -> None:
     assert result.top == [TopInsight(key, plain(headline), 2), TopInsight(GONE, None, 1)]
     assert result.devices == 2
     assert result.devices_all_time == 3
+
+
+def test_bumps_are_bucketed_by_the_club_day_not_utc(fx_session: Session) -> None:
+    key = fx_session.execute(select(Insight.key).limit(1)).scalar_one()
+    # Sunday 23:30 Pacific is Monday in UTC: it counts on Sunday Sep 20, inside the week.
+    fx_session.execute(
+        insert(FistBump).values(
+            insight_key=key, device_id=C, created_at=datetime(2026, 9, 20, 23, 30, tzinfo=PT)
+        )
+    )
+    result = bumps(fx_session, TZ, WEEK)
+    assert result.days[-1] == BumpDay(date(2026, 9, 20), 1)
+    assert [t.bumps for t in result.top] == [1]
+    assert result.devices == 1
+
+
+def test_uptake_detail_starts_on_the_local_day_of_the_first_view(session: Session) -> None:
+    _view(session, A, "home", "picked", datetime(2026, 9, 13, 23, 30, tzinfo=PT))  # Mon in UTC
+    result = uptake(session, TZ, Span(None, date(2026, 9, 20)))
+    assert result.latest_since == date(2026, 9, 13)
+    assert result.latest == MeStates(picked=1, skipped=0, none=0)
+
+
+def test_boundary_each_value_comes_from_one_source_not_the_sum(session: Session) -> None:
+    sep14 = date(2026, 9, 14)
+    session.execute(
+        insert(PageViewRollup),
+        [
+            {
+                "period": "day",
+                "start_day": sep14,
+                "devices": 5,
+                "me_picked": 0,
+                "me_skipped": 0,
+                "me_none": 0,
+            },
+            {
+                "period": "week",
+                "start_day": sep14,
+                "devices": 6,
+                "me_picked": 4,
+                "me_skipped": 0,
+                "me_none": 0,
+            },
+        ],
+    )
+    session.execute(insert(PageKindRollup).values(day=sep14, page_kind="home", views=9))
+    _view(session, A, "home", "picked", datetime(2026, 9, 14, 10, 0, tzinfo=PT))
+    _view(session, B, "home", "none", datetime(2026, 9, 14, 11, 0, tzinfo=PT))
+    assert visitors(session, TZ, WEEK).days[0] == VisitorDay(sep14, 2)
+    assert visitors(session, TZ, WEEK).weeks == [VisitorWeek(sep14, 2)]
+    assert uptake(session, TZ, WEEK).weeks == [WeekMeStates(sep14, 1, 0, 1)]
+    assert page_kinds(session, TZ, WEEK) == [PageKindViews("home", 2)]
+
+
+def test_rolled_days_then_raw_days_take_each_week_from_one_source(session: Session) -> None:
+    session.execute(
+        insert(PageViewRollup),
+        [
+            *(
+                {
+                    "period": "day",
+                    "start_day": date(2026, 9, d),
+                    "devices": 1,
+                    "me_picked": 0,
+                    "me_skipped": 0,
+                    "me_none": 0,
+                }
+                for d in range(7, 14)
+            ),
+            {
+                "period": "week",
+                "start_day": date(2026, 9, 7),
+                "devices": 2,
+                "me_picked": 1,
+                "me_skipped": 0,
+                "me_none": 1,
+            },
+        ],
+    )
+    _view(session, A, "home", "picked", datetime(2026, 9, 14, 10, 0, tzinfo=PT))
+    _view(session, B, "home", "none", datetime(2026, 9, 20, 10, 0, tzinfo=PT))
+    span = Span(date(2026, 9, 7), date(2026, 9, 20))
+    result = visitors(session, TZ, span)
+    assert result.weeks == [VisitorWeek(date(2026, 9, 7), 2), VisitorWeek(date(2026, 9, 14), 2)]
+    assert [d.devices for d in result.days] == [1] * 7 + [1, 0, 0, 0, 0, 0, 1]
+    assert uptake(session, TZ, span).weeks == [
+        WeekMeStates(date(2026, 9, 7), 1, 0, 1),
+        WeekMeStates(date(2026, 9, 14), 1, 0, 1),
+    ]
+
+
+def test_top_insights_are_cut_at_ten_with_ties_key_ascending(session: Session) -> None:
+    for n in range(11):
+        session.execute(
+            insert(FistBump).values(
+                insight_key=f"k{n:02d}",
+                device_id=uuid.UUID(int=n + 1),
+                created_at=datetime(2026, 9, 16, 12, 0, tzinfo=PT),
+            )
+        )
+    top = bumps(session, TZ, WEEK).top
+    assert [t.key for t in top] == [f"k{n:02d}" for n in range(10)]
+
+
+def test_a_since_before_the_first_data_is_clamped_to_it(session: Session) -> None:
+    _seed(session)
+    ancient = Span(date(1900, 1, 1), date(2026, 9, 20))
+    result = visitors(session, TZ, ancient)
+    assert result.days[0] == VisitorDay(date(2026, 6, 23), 2)
+    assert len(result.days) == 90
+    assert len(result.weeks) == 13
+    assert uptake(session, TZ, ancient).weeks[0].week == date(2026, 6, 22)
+    session.execute(
+        insert(FistBump).values(
+            insight_key="k", device_id=A, created_at=datetime(2026, 5, 4, 12, 0, tzinfo=PT)
+        )
+    )
+    assert bumps(session, TZ, ancient).days[0].day == date(2026, 5, 4)

@@ -27,13 +27,17 @@ class Window(NamedTuple):
     span: Span
 
 
+def _now(tz: ZoneInfo) -> datetime:
+    return datetime.now(tz)
+
+
 def analytics_window(
     settings: Annotated[Settings, Depends(get_settings)],
     since: date | None = None,
     as_of: date | None = None,
 ) -> Window:
     """``as_of`` defaults to today in the club's timezone; no ``since`` reaches back to the data."""
-    end = as_of if as_of is not None else datetime.now(ZoneInfo(settings.timezone)).date()
+    end = as_of if as_of is not None else _now(ZoneInfo(settings.timezone)).date()
     check_window(since, end)
     return Window(settings.timezone, Span(since, end))
 
