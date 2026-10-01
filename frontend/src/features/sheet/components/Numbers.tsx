@@ -8,7 +8,7 @@ import { sheetExplainers } from '../explainers';
 export function Numbers({ issue }: { issue: SheetIssue }) {
   const n = issue.numbers;
   return (
-    <Card title="This Sunday in numbers" subtitle="Not affected by the time filter">
+    <Card title="This Sunday in numbers" subtitle="Not affected by the filters">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Shooters" value={String(n.shooters)} explainer={sheetExplainers.shooters} />
         <Stat

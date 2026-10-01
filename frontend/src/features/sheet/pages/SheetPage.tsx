@@ -21,6 +21,9 @@ function SheetBody({ issue, deviceId }: { issue: SheetIssue; deviceId: string | 
     <div className="flex flex-col gap-4">
       <Masthead issue={issue} />
       <Numbers issue={issue} />
+      {bumps.isError && (
+        <p className="text-sm text-text-muted">Bump counts aren't available right now</p>
+      )}
       <Feed {...shared} />
       <MoreFromSunday {...shared} />
     </div>
@@ -46,7 +49,7 @@ function SheetError({ error }: { error: Error }) {
       />
     );
   }
-  return <EmptyState title="Couldn't load the Sunday Sheet" description={error.message} />;
+  return <EmptyState title="Couldn't load the Sunday Sheet" description="Try again in a moment." />;
 }
 
 /** The Sunday Sheet: `/sheet/:date` (and, once Home retires, `/` for the latest issue). */

@@ -1,16 +1,9 @@
 import { EmptyState } from '../../../components/ui/EmptyState';
-import type { BumpCounts, SheetIssue } from '../api';
-import { PostList } from './PostList';
+import { PostList, type FeedProps } from './PostList';
+
+export type { FeedProps };
 
 export const BUMPS_OFF = 'Bumps need this browser to remember you';
-
-export interface FeedProps {
-  issue: SheetIssue;
-  bumps: BumpCounts | undefined;
-  deviceId: string | null;
-  meId: number | null;
-  noteId: string;
-}
 
 /** The Sunday's posts in the server's order (best first, interleaved by type). */
 export function Feed({ issue, bumps, deviceId, meId, noteId }: FeedProps) {

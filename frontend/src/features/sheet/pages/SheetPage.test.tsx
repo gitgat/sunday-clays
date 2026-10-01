@@ -143,6 +143,8 @@ describe('SheetPage', () => {
     );
     renderAt();
     expect(await screen.findByText("Couldn't load the Sunday Sheet")).toBeInTheDocument();
+    expect(screen.getByText('Try again in a moment.')).toBeInTheDocument();
+    expect(screen.queryByText('Boom')).toBeNull();
   });
 
   it('says so when a Sunday has no posts yet', async () => {
@@ -214,7 +216,7 @@ describe('SheetPage', () => {
   it('lists everyone who earned a trophy: eight at first, the rest in place', async () => {
     const holders = Array.from({ length: 10 }, (_, i) => ({
       shooter_id: 100 + i,
-      name: `Pat Shooter${String(i + 1)}`,
+      name: `Amy Ace${String(i + 1)}`,
     }));
     server.use(
       http.get('*/api/sheet/:date', () =>
@@ -278,5 +280,41 @@ describe('SheetPage', () => {
     expect(within(post).getByText('The best round beats every earlier round.')).toBeInTheDocument();
     await user.click(within(otd).getByRole('button', { name: 'How we worked it out' }));
     expect(within(otd).getByText(sheetExplainers.onThisDay.what)).toBeInTheDocument();
+  });
+
+  it('says so when the bump counts cannot be loaded, instead of showing silent zeros', async () => {
+    server.use(
+      http.get('*/api/sheet/:date/bumps', () =>
+        HttpResponse.json({ error: { code: 'internal', message: 'Boom' } }, { status: 500 }),
+      ),
+    );
+    renderAt();
+    expect(await screen.findByText("Bump counts aren't available right now")).toBeInTheDocument();
+  });
+
+  it('reads an extra chart link in the second person for the viewer’s own insight', async () => {
+    setMe(3);
+    const insight = insightFixture();
+    const also = {
+      ...insight.chart,
+      label: 'Hadley turnout',
+      label_you: 'Your turnout',
+      also: [],
+    };
+    server.use(
+      http.get('*/api/sheet/:date', () =>
+        HttpResponse.json(
+          sheetFixture({
+            posts: [
+              postFixture({ insight: { ...insight, chart: { ...insight.chart, also: [also] } } }),
+            ],
+          }),
+        ),
+      ),
+    );
+    renderAt();
+    expect(
+      await screen.findByRole('link', { name: 'See the chart: Your turnout' }),
+    ).toBeInTheDocument();
   });
 });

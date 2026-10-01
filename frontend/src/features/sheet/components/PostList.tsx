@@ -1,6 +1,13 @@
-import type { SheetPost } from '../api';
-import type { FeedProps } from './Feed';
+import type { BumpCounts, SheetIssue, SheetPost } from '../api';
 import { PostCard } from './PostCard';
+
+export interface FeedProps {
+  issue: SheetIssue;
+  bumps: BumpCounts | undefined;
+  deviceId: string | null;
+  meId: number | null;
+  noteId: string;
+}
 
 type PostListProps = Omit<FeedProps, 'issue'> & {
   date: string;

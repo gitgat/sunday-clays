@@ -1,5 +1,4 @@
-import type { FeedProps } from './Feed';
-import { PostList } from './PostList';
+import { PostList, type FeedProps } from './PostList';
 
 /** The Sunday's other posts, grouped by family, closed until asked for. Still bumpable. */
 export function MoreFromSunday({ issue, bumps, deviceId, meId, noteId }: FeedProps) {
@@ -12,8 +11,14 @@ export function MoreFromSunday({ issue, bumps, deviceId, meId, noteId }: FeedPro
       </summary>
       <div className="flex flex-col gap-4 pt-2">
         {issue.more.map((group) => (
-          <section key={group.family} aria-label={group.label} className="flex flex-col gap-2">
-            <h3 className="text-sm text-text-muted">{group.label}</h3>
+          <section
+            key={group.family}
+            aria-labelledby={`more-${group.family}`}
+            className="flex flex-col gap-2"
+          >
+            <h3 id={`more-${group.family}`} className="text-sm text-text-muted">
+              {group.label}
+            </h3>
             <PostList
               date={issue.masthead.date}
               posts={group.posts}

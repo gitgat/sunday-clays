@@ -60,7 +60,7 @@ export function toggled(old: BumpCounts | undefined, postKey: string, bump: bool
 /**
  * Bump or take back a bump on one post. The count changes at once (optimistic); the request runs
  * after any earlier one for the same post (one mutation scope per post), so two quick taps reach
- * the server in order. A failure puts the counts back and sets `failed`; only the last request
+ * the server in order. A failure puts this post's count back and sets `failed`; only the last request
  * for a post writes the server's answer, so an earlier answer never undoes a newer tap.
  */
 export function useBumpToggle(date: string, deviceId: string, postKey: string) {
@@ -71,14 +71,18 @@ export function useBumpToggle(date: string, deviceId: string, postKey: string) {
   const mutation = useMutation({
     mutationKey,
     scope: { id: `bump:${date}:${postKey}` },
-    mutationFn: ({ bump }: { bump: boolean; previous: BumpCounts | undefined }) => {
+    mutationFn: ({ bump }: { bump: boolean; previous: BumpState | undefined }) => {
       const body = { post_key: postKey, device_id: deviceId };
       return bump
         ? unwrap(api.POST('/api/sheet/bumps', { body }))
         : unwrap(api.DELETE('/api/sheet/bumps', { body }));
     },
     onError: (_error, { previous }) => {
-      qc.setQueryData(key, previous);
+      // Only this post goes back: a bump on another post may have succeeded meanwhile.
+      qc.setQueryData<BumpCounts>(key, (old) => ({
+        ...old,
+        [postKey]: previous ?? { bumps: 0, bumped: false },
+      }));
       setFailed(true);
     },
     onSuccess: (state) => {
@@ -90,10 +94,10 @@ export function useBumpToggle(date: string, deviceId: string, postKey: string) {
   });
   function send(bump: boolean) {
     setFailed(false);
-    const previous = qc.getQueryData<BumpCounts>(key);
+    const counts = qc.getQueryData<BumpCounts>(key);
     void qc.cancelQueries({ queryKey: key });
-    qc.setQueryData<BumpCounts>(key, toggled(previous, postKey, bump));
-    mutation.mutate({ bump, previous });
+    qc.setQueryData<BumpCounts>(key, toggled(counts, postKey, bump));
+    mutation.mutate({ bump, previous: counts?.[postKey] });
   }
   return { send, failed };
 }

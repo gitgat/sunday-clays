@@ -121,6 +121,4 @@ export const handlers = [
   http.get('*/api/sheet/latest', () => HttpResponse.json(sheetFixture())),
   http.get('*/api/sheet/:date/bumps', () => HttpResponse.json(bumpsFixture)),
   http.get('*/api/sheet/:date', () => HttpResponse.json(sheetFixture())),
-  http.post('*/api/sheet/bumps', () => HttpResponse.json({ bumps: 3, bumped: true })),
-  http.delete('*/api/sheet/bumps', () => HttpResponse.json({ bumps: 2, bumped: false })),
 ];
