@@ -9,7 +9,9 @@ import { expect } from './fixtures';
 export async function whenSettled(page: Page): Promise<void> {
   // Placeholders hold their space until the feeds arrive; give slow CI runs room to load them.
   const settled = { timeout: 15_000 };
-  await expect(page.getByRole('status')).toHaveCount(0, settled);
+  // An <output> has an implicit status role: a slider's value ("Board as of: Latest") is a
+  // permanent live region, not a placeholder, so only explicit [role=status] counts as loading.
+  await expect(page.locator('[role="status"]:not(output)')).toHaveCount(0, settled);
   await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, settled);
 }
 
