@@ -1,8 +1,9 @@
 import { Ellipsis } from 'lucide-react';
-import { matchPath, NavLink, useLocation } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import type { NavItem } from '../../app/registry';
 import { useRoundTypeLink } from '../../lib/roundTypes';
 import { cx } from '../ui/cx';
+import { isNavActive } from './nav';
 
 const TAB = 'flex min-h-14 min-w-11 flex-1 flex-col items-center justify-center gap-0.5 text-xs';
 
@@ -13,17 +14,15 @@ const TAB = 'flex min-h-14 min-w-11 flex-1 flex-col items-center justify-center 
 const tabTone = (active: boolean) => cx(TAB, active ? 'font-medium text-text' : 'text-text-muted');
 const iconTone = (active: boolean) => cx('size-5', active && 'stroke-accent');
 
-function TabLink({ item: { path, label, icon: Icon } }: { item: NavItem }) {
+function TabLink({ item }: { item: NavItem }) {
+  const { path, label, icon: Icon } = item;
   const to = useRoundTypeLink(path);
+  const active = isNavActive(item, useLocation().pathname);
   return (
-    <NavLink to={to} end={path === '/'} className={({ isActive }) => tabTone(isActive)}>
-      {({ isActive }) => (
-        <>
-          <Icon aria-hidden="true" className={iconTone(isActive)} />
-          {label}
-        </>
-      )}
-    </NavLink>
+    <Link to={to} aria-current={active ? 'page' : undefined} className={tabTone(active)}>
+      <Icon aria-hidden="true" className={iconTone(active)} />
+      {label}
+    </Link>
   );
 }
 
@@ -40,9 +39,7 @@ export function BottomTabs({
   onMore: () => void;
 }) {
   const { pathname } = useLocation();
-  const moreActive = more.some(
-    (item) => matchPath({ path: item.path, end: item.path === '/' }, pathname) !== null,
-  );
+  const moreActive = more.some((item) => isNavActive(item, pathname));
   return (
     <nav
       aria-label="Tabs"

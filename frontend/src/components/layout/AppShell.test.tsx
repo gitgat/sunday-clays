@@ -9,7 +9,7 @@ import { stubViewport } from '../../test/viewport';
 import { AppShell, type AppShellProps } from './AppShell';
 
 const ITEMS: NavItem[] = [
-  { label: 'Home', path: '/', icon: House, order: 10, mobileTab: true },
+  { label: 'Home', path: '/', icon: House, order: 10, mobileTab: true, alsoActive: ['/sheet/*'] },
   { label: 'Events', path: '/events', icon: CalendarDays, order: 20, mobileTab: true },
   { label: 'Leaderboards', path: '/leaderboards', icon: Trophy, order: 30, mobileTab: true },
   { label: 'Shooters', path: '/shooters', icon: Users, order: 40, mobileTab: true },
@@ -33,6 +33,11 @@ function renderShell(route: string, props: AppShellProps = {}) {
             handle: { filters: ROUND_TYPE_ONLY },
           },
           { path: 'trophies', element: <p>trophies page</p>, handle: { filters: NO_FILTERS } },
+          {
+            path: 'sheet/:date',
+            element: <p>sheet page</p>,
+            handle: { filters: ROUND_TYPE_ONLY },
+          },
           { path: 'undeclared', element: <p>undeclared page</p> },
         ],
       },
@@ -106,6 +111,14 @@ afterEach(() => {
 });
 
 describe('AppShell on desktop', () => {
+  it('keeps the Sheet item current on a past issue', () => {
+    stubViewport('desktop');
+    renderShell('/sheet/2026-09-20');
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    expect(within(nav).getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: 'Events' })).not.toHaveAttribute('aria-current');
+  });
+
   it('renders the side nav with every visible item and the page in main', () => {
     stubViewport('desktop');
     renderShell('/explorer', { account: <button type="button">Log out</button> });
@@ -254,6 +267,14 @@ describe('AppShell on mobile', () => {
     expect(tab).not.toHaveClass('text-accent');
     expect(tab.querySelector('svg')).toHaveClass('stroke-accent');
     expect(screen.getByRole('button', { name: 'More' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('keeps the Sheet tab current on a past issue, and only that tab', () => {
+    stubViewport('mobile');
+    renderShell('/sheet/2026-09-20');
+    const tabs = within(screen.getByRole('navigation', { name: 'Tabs' }));
+    expect(tabs.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
+    expect(tabs.getByRole('link', { name: 'Events' })).not.toHaveAttribute('aria-current');
   });
 
   it('marks More as current while a page that lives in More is open', () => {

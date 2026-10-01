@@ -74,8 +74,12 @@ export interface ChartFrameProps {
   windowKey?: string | undefined;
   /** What the trimmed-table note calls the window; default "the time window" (the Sheet: "these 8 weeks"). */
   windowName?: string | undefined;
-  /** Wording for an empty window: "No rounds in the last 8 weeks. Last shot Aug 2, 2026." */
-  emptyWindow?: { none: string; last: string } | undefined;
+  /**
+   * Wording for an empty window: "No rounds in the last 8 weeks. Last shot Aug 2, 2026." With
+   * `fixed`, the window is the page's own (the Sheet's 8 weeks): it is named by `windowName` and
+   * offers no widen buttons.
+   */
+  emptyWindow?: { none: string; last: string; fixed?: boolean } | undefined;
   /** Static full data for fullscreen and the CSV, when it is already loaded. */
   full?: ChartFull | undefined;
   /**
@@ -244,9 +248,11 @@ export function ChartFrame({
   const emptyInWindow = trimBy !== null && inlineRows.length === 0 && target.window === null;
   const emptyMessage = emptyInWindow && (
     <EmptyState
-      title={`${emptyWindow.none} in ${windowPhrase(choice, initialWindow ?? null)}.`}
+      title={`${emptyWindow.none} in ${
+        emptyWindow.fixed === true ? windowName : windowPhrase(choice, initialWindow ?? null)
+      }.`}
       description={lastRow === null ? undefined : `${emptyWindow.last} ${formatDate(lastRow)}.`}
-      action={<WidenWindowButtons />}
+      action={emptyWindow.fixed === true ? undefined : <WidenWindowButtons />}
     />
   );
   const trimmedNote = trimBy !== null && inlineRows.length < rows.length;

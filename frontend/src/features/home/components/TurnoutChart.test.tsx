@@ -12,6 +12,7 @@ import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { server } from '../../../test/msw/server';
 import { createTestQueryClient, renderWithProviders } from '../../../test/render';
 import { windowRange } from '../../../lib/timeWindow';
+import { homeExplainers } from '../explainers';
 import { seasonEvents } from '../mocks';
 import { TurnoutChart, turnoutModel } from './TurnoutChart';
 
@@ -40,7 +41,12 @@ describe('turnoutModel', () => {
 describe('TurnoutChart', () => {
   it('renders turnout per Sunday in a ChartFrame with Table and CSV controls', () => {
     renderWithProviders(
-      <TurnoutChart events={seasonEvents} range={threeMonths} label="Last 3 months" />,
+      <TurnoutChart
+        events={seasonEvents}
+        range={threeMonths}
+        label="Last 3 months"
+        explainer={homeExplainers.pulseSheet}
+      />,
     );
     const region = screen.getByRole('region', { name: 'Turnout per Sunday' });
     expectChartControls(region);
@@ -50,10 +56,15 @@ describe('TurnoutChart', () => {
   });
 
   it(
-    'explains itself and tags the time window',
+    'explains itself and tags a windowed explainer with the time window',
     async () => {
       renderWithProviders(
-        <TurnoutChart events={seasonEvents} range={threeMonths} label="Last 3 months" />,
+        <TurnoutChart
+          events={seasonEvents}
+          range={threeMonths}
+          label="Last 3 months"
+          explainer={{ ...homeExplainers.pulseSheet, scope: 'windowed' }}
+        />,
       );
       const region = screen.getByRole('region', { name: 'Turnout per Sunday' });
       await expectExplainer(region, 'About this chart', { read: true });
@@ -91,7 +102,12 @@ describe('TurnoutChart full data', () => {
 
   const render = (route = '/') =>
     renderWithProviders(
-      <TurnoutChart events={[early, ...seasonEvents]} range={threeMonths} label="Last 3 months" />,
+      <TurnoutChart
+        events={[early, ...seasonEvents]}
+        range={threeMonths}
+        label="Last 3 months"
+        explainer={homeExplainers.pulseSheet}
+      />,
       { route },
     );
 
@@ -170,7 +186,12 @@ describe('TurnoutChart full data', () => {
         [base, { ...base, event_date: '2025-01-05' }],
       );
       const { user } = renderWithProviders(
-        <TurnoutChart events={seasonEvents} range={threeMonths} label="Last 3 months" />,
+        <TurnoutChart
+          events={seasonEvents}
+          range={threeMonths}
+          label="Last 3 months"
+          explainer={homeExplainers.pulseSheet}
+        />,
         { queryClient },
       );
       const region = screen.getByRole('region', { name: 'Turnout per Sunday' });

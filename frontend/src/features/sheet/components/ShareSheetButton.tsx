@@ -1,8 +1,11 @@
 import { Link2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { shareLink } from '../../../lib/share';
 import { formatDay, formatScore } from '../../home/format';
 import type { SheetIssue } from '../api';
+
+/** How long "Link copied." stays before the line goes quiet. */
+const COPIED_MS = 4000;
 
 const MESSAGES = { idle: '', copied: 'Link copied.', failed: 'Could not share the link.' } as const;
 
@@ -24,9 +27,16 @@ export function sheetShareText(issue: SheetIssue): string {
 export function ShareSheetButton({ issue }: { issue: SheetIssue }) {
   const [status, setStatus] = useState<keyof typeof MESSAGES>('idle');
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (status === 'idle') return;
+    const timer = setTimeout(() => setStatus('idle'), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [status]);
   async function share() {
     if (busy) return;
     setBusy(true);
+    // Quiet the line first, so a second success changes the live region and is announced again.
+    setStatus('idle');
     const url = new URL(`/sheet/${issue.masthead.date}`, window.location.origin).toString();
     try {
       const outcome = await shareLink({

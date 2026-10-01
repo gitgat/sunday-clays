@@ -47,35 +47,34 @@ export function ClubPulse({ range }: { range: WindowRange }) {
     );
   const stats = pulseStats(filterRowsByWindow(events, 'event_date', range));
   const tag = `${label} · not affected by the time filter`;
-  // The 8 weeks have no widen buttons: say so in their own words.
-  if (stats.scored === 0)
-    return (
-      <Card title="Club pulse" subtitle={tag}>
-        <EmptyState title="No scored Sundays in these 8 weeks" />
-      </Card>
-    );
   // The chart is a sibling card, not nested in the pulse card: nesting would cost its header
   // 32px on a phone and truncate the title beside the Table/CSV/Fullscreen buttons.
+  // With no scored Sunday in the 8 weeks the pulse says so, and the chart still shows: its Table,
+  // CSV and Fullscreen reach every Sunday on record (Home kept them), without widen buttons.
   return (
     <>
       <Card title="Club pulse" subtitle={tag}>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Stat
-            label="Sundays with full results"
-            value={String(stats.held)}
-            explainer={homeExplainers.pulseHeldSheet}
-          />
-          <Stat
-            label="Avg turnout"
-            value={formatScore(stats.avgTurnout)}
-            explainer={homeExplainers.pulseTurnoutSheet}
-          />
-          <Stat
-            label="Highest score"
-            value={formatScore(stats.seasonHigh)}
-            explainer={homeExplainers.pulseHighSheet}
-          />
-        </div>
+        {stats.scored === 0 ? (
+          <EmptyState title="No scored Sundays in these 8 weeks" />
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Stat
+              label="Sundays with full results"
+              value={String(stats.held)}
+              explainer={homeExplainers.pulseHeldSheet}
+            />
+            <Stat
+              label="Avg turnout"
+              value={formatScore(stats.avgTurnout)}
+              explainer={homeExplainers.pulseTurnoutSheet}
+            />
+            <Stat
+              label="Highest score"
+              value={formatScore(stats.seasonHigh)}
+              explainer={homeExplainers.pulseHighSheet}
+            />
+          </div>
+        )}
       </Card>
       <Suspense
         fallback={

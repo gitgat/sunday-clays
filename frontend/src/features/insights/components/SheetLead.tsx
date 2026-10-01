@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { Card } from '../../../components/ui/Card';
 import { useExplicitWindow } from '../../../lib/timeWindowChoice';
@@ -33,15 +33,20 @@ export function leadSubtitle(headline: Insight | null, date: string): string {
 function Deck({ recap }: { recap: Insight }) {
   const [all, setAll] = useState(false);
   const viewerWindow = useExplicitWindow();
+  const deckId = useId();
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <p className={all ? 'text-base text-text-muted' : 'line-clamp-3 text-base text-text-muted'}>
+      <p
+        id={deckId}
+        className={all ? 'text-base text-text-muted' : 'line-clamp-3 text-base text-text-muted'}
+      >
         <Segments segments={recap.headline} />
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           aria-expanded={all}
+          aria-controls={deckId}
           onClick={() => setAll((v) => !v)}
           className="min-h-11 rounded-button px-3 text-sm text-text-muted hover:text-text"
         >

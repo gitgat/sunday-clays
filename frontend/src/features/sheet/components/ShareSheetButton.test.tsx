@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { shareLink } from '../../../lib/share';
 import { renderWithProviders } from '../../../test/render';
@@ -31,6 +31,38 @@ describe('ShareSheetButton', () => {
     expect(await screen.findByText('Link copied.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Share this Sheet' }));
     expect(await screen.findByText('Could not share the link.')).toBeInTheDocument();
+  });
+
+  it('clears "Link copied." on the next tap, so a second copy is announced again', async () => {
+    let release: (v: 'copied') => void = () => undefined;
+    vi.mocked(shareLink)
+      .mockResolvedValueOnce('copied')
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+    const { user } = renderWithProviders(<ShareSheetButton issue={sheetFixture()} />);
+    await user.click(screen.getByRole('button', { name: 'Share this Sheet' }));
+    expect(await screen.findByText('Link copied.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Share this Sheet' }));
+    expect(screen.queryByText('Link copied.')).toBeNull();
+    release('copied');
+    expect(await screen.findByText('Link copied.')).toBeInTheDocument();
+  });
+
+  it('clears "Link copied." after a few seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(shareLink).mockResolvedValue('copied');
+      const { user } = renderWithProviders(<ShareSheetButton issue={sheetFixture()} />);
+      await user.click(screen.getByRole('button', { name: 'Share this Sheet' }));
+      expect(await screen.findByText('Link copied.')).toBeInTheDocument();
+      await act(() => vi.advanceTimersByTimeAsync(5000));
+      expect(screen.queryByText('Link copied.')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says nothing when the share sheet is dismissed', async () => {

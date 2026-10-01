@@ -17,8 +17,9 @@ export type PersonalBest = ShooterDetail['pbs'][number];
 export type ShooterInsights = JsonOf<paths['/api/shooters/{id}/insights']['get']>;
 
 /** The directory list; keeps the previous rows (`isPlaceholderData`) while a new search or filter loads. */
-export function useShooters(q: string, active: boolean) {
+export function useShooters(q: string, active: boolean, opts?: { enabled?: boolean }) {
   return useQuery({
+    ...opts,
     queryKey: ['/api/shooters', { q, active }],
     queryFn: () =>
       unwrap(
