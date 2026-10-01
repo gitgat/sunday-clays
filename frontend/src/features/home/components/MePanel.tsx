@@ -151,6 +151,36 @@ function MeDetails({
   );
 }
 
+/** The chosen shooter's card. "Not me" sits in the header, except when the details already offer "Choose again". */
+function ChosenPanel({
+  meId,
+  onCleared,
+  widgets,
+}: {
+  meId: number;
+  onCleared: () => void;
+  widgets: HomeWidget[];
+}) {
+  const detail = useShooterDetail(meId);
+  const stale = detail.isError && detail.error instanceof ApiError && detail.error.status === 404;
+  const notMe = stale ? undefined : (
+    <Button
+      variant="ghost"
+      onClick={() => {
+        clearMe();
+        onCleared();
+      }}
+    >
+      Not me
+    </Button>
+  );
+  return (
+    <Card title="Your panel" actions={notMe}>
+      <MeDetails meId={meId} onCleared={onCleared} widgets={widgets} />
+    </Card>
+  );
+}
+
 export function MePanel({
   meId,
   onCleared,
@@ -161,25 +191,19 @@ export function MePanel({
   widgets: HomeWidget[];
 }) {
   const shootersLink = useRoundTypeLink('/shooters');
+  if (meId !== null) return <ChosenPanel meId={meId} onCleared={onCleared} widgets={widgets} />;
   return (
     <Card title="Your panel">
-      {meId === null ? (
-        // The link stands on its own line: inline in the sentence it could not be 44px tall (C10).
-        <div className="flex flex-col gap-2">
-          <p>
-            Find yourself in Shooters and tap “That’s me” to see your last result, rating move and
-            odometer here.
-          </p>
-          <Link
-            to={shootersLink}
-            className="inline-flex min-h-11 items-center self-start underline"
-          >
-            Go to Shooters
-          </Link>
-        </div>
-      ) : (
-        <MeDetails meId={meId} onCleared={onCleared} widgets={widgets} />
-      )}
+      {/* The link stands on its own line: inline in the sentence it could not be 44px tall (C10). */}
+      <div className="flex flex-col gap-2">
+        <p>
+          Find yourself in Shooters and tap “That’s me” to see your last result, rating move and
+          odometer here.
+        </p>
+        <Link to={shootersLink} className="inline-flex min-h-11 items-center self-start underline">
+          Go to Shooters
+        </Link>
+      </div>
     </Card>
   );
 }

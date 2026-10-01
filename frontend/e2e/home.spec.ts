@@ -21,13 +21,16 @@ async function expectTapTargets(page: Page): Promise<void> {
   expect(small).toEqual([]);
 }
 
-test('home shows the latest event, the club pulse and the me prompt', async ({ page }) => {
+/** The turnout chart loads lazily; give it room when the stack is busy. */
+const CHARTS = { timeout: 20_000 };
+
+test('home shows the latest event, the club pulse and asks which one you are', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1, name: 'Sunday Clays' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sep 27, 2026' }).first()).toBeVisible();
   await expect(page.getByText('Winners: Finnegan, Stanton & Stockton, Ethan — 49')).toBeVisible();
-  await expect(page.getByText('Turnout per Sunday', { exact: true })).toBeVisible();
-  await expect(page.getByText(/tap “That’s me”/)).toBeVisible();
+  await expect(page.getByText('Turnout per Sunday', { exact: true })).toBeVisible(CHARTS);
+  await expect(page.getByRole('heading', { name: 'Which one are you?' })).toBeVisible();
 });
 
 test('the latest event link opens the full results', async ({ page }) => {
@@ -36,11 +39,30 @@ test('the latest event link opens the full results', async ({ page }) => {
   await expect(page).toHaveURL(/\/events\/2026-09-27$/);
 });
 
-test('every home tap target is at least 44px with the me prompt', async ({ page }) => {
+test('every home tap target is at least 44px while asking which one you are', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'CSV' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'CSV' })).toBeVisible(CHARTS);
+  await expect(page.getByRole('heading', { name: 'Which one are you?' })).toBeVisible();
+  await expectTapTargets(page);
+});
+
+test('every home tap target is at least 44px with the prompt after a skip', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('sc.me.skip', '1'));
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'CSV' })).toBeVisible(CHARTS);
   await expect(page.getByText(/tap “That’s me”/)).toBeVisible();
   await expectTapTargets(page);
+});
+
+test('picking a name fills Your panel and "Not me" brings the question back', async ({ page }) => {
+  await page.goto('/');
+  const personal = page.getByRole('complementary', { name: 'Personal' });
+  await personal.getByLabel('Your name').fill('Hadley');
+  await personal.getByRole('button', { name: 'Hadley, Ike' }).click();
+  await expect(personal.getByRole('heading', { name: 'Your panel' })).toBeVisible();
+  await expect(personal.getByText('Last out')).toBeVisible();
+  await personal.getByRole('button', { name: 'Not me' }).click();
+  await expect(personal.getByRole('heading', { name: 'Which one are you?' })).toBeVisible();
 });
 
 test('every home tap target is at least 44px with a me id', async ({ page }) => {
@@ -51,7 +73,7 @@ test('every home tap target is at least 44px with a me id', async ({ page }) => 
   expect(hadley).toBeDefined();
   await page.addInitScript((id) => localStorage.setItem('sc.me', String(id)), hadley?.shooter_id);
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'CSV' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'CSV' })).toBeVisible(CHARTS);
   await expect(page.getByText('Last out')).toBeVisible();
   await expectTapTargets(page);
 });
@@ -61,7 +83,7 @@ test('the turnout chart and the club numbers explain themselves and name the tim
 }) => {
   await page.goto('/');
   const chart = page.getByRole('region', { name: 'Turnout per Sunday' });
-  await expect(chart.getByRole('button', { name: 'CSV' })).toBeVisible();
+  await expect(chart.getByRole('button', { name: 'CSV' })).toBeVisible(CHARTS);
   const about = chart.getByRole('button', { name: 'About this chart' });
   await about.click();
   await expect(chart.getByRole('heading', { name: 'What this shows' })).toBeVisible();
@@ -144,7 +166,7 @@ test('the turnout chart lists and exports every Sunday on record, not just the t
   await page.goto('/');
   const chart = page.getByRole('region', { name: 'Turnout per Sunday' });
   const download = page.waitForEvent('download');
-  await chart.getByRole('button', { name: 'CSV' }).click({ timeout: 15_000 });
+  await chart.getByRole('button', { name: 'CSV' }).click(CHARTS);
   const file = await download;
   const text = (await readFile(await file.path(), 'utf8')).replace(/^\uFEFF/, '');
   expect(text.trimEnd().split('\r\n')).toHaveLength(scored + 1);
