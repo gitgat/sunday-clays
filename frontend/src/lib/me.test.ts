@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { clearMe, getMe, setMe } from './me';
+import { clearMe, getMe, isMeSkipped, setMe, skipMe } from './me';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -32,5 +32,18 @@ describe('me', () => {
     expect(getMe()).toBeNull();
     expect(() => setMe(1)).not.toThrow();
     expect(() => clearMe()).not.toThrow();
+    expect(isMeSkipped()).toBe(false);
+    expect(() => skipMe()).not.toThrow();
+  });
+
+  it('remembers a skip until someone is picked; "Not me" does not skip', () => {
+    expect(isMeSkipped()).toBe(false);
+    skipMe();
+    expect(isMeSkipped()).toBe(true);
+    setMe(42);
+    expect(isMeSkipped()).toBe(false);
+    clearMe();
+    expect(isMeSkipped()).toBe(false);
+    expect(getMe()).toBeNull();
   });
 });
