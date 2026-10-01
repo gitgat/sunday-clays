@@ -13,7 +13,7 @@ from collections.abc import Callable, Collection
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Path, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
@@ -327,10 +327,6 @@ def post_issue_dates(session: Session, post_keys: Collection[str]) -> dict[str, 
     return out
 
 
-def post_issue_date(session: Session, post_key: str) -> date | None:
-    return post_issue_dates(session, [post_key])[post_key]
-
-
 def resolves_all(session: Session, post_keys: Collection[str]) -> dict[str, bool]:
     """Per key: is it a post on its issue as the data stands now (feed or "More")? One issue build
     (memoised by data_version) per distinct date, however many keys."""
@@ -366,7 +362,7 @@ def sheet_for_date(day: Annotated[date, Path(alias="date")], session: SessionDep
 # --- Fist bumps (Plan 14 Task 3) ------------------------------------------------------------------
 class BumpIn(BaseModel):
     post_key: str = Field(min_length=1, max_length=200)
-    device_id: str = Field(min_length=1, max_length=64)
+    device_id: str = Field(min_length=1)
 
 
 class BumpStateOut(BaseModel):
@@ -389,7 +385,7 @@ def parse_device_id(value: str) -> uuid.UUID:
 def sheet_bumps(
     day: Annotated[date, Path(alias="date")],
     session: SessionDep,
-    device_id: Annotated[str | None, Query(max_length=64)] = None,
+    device_id: str | None = None,
 ) -> dict[str, BumpStateOut]:
     """Counts for every post on the issue (zeros included); a stale key is never listed."""
     held_or_404(session, day)

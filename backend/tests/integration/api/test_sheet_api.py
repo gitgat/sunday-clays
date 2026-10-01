@@ -181,7 +181,9 @@ def test_without_a_held_sunday_there_is_no_sheet(
     response = viewer_client.get("/api/sheet/latest")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "sheet_not_found"
-    assert sheet_routes.post_issue_date(session, "otd:2026-09-27:1") is None
+    assert sheet_routes.post_issue_dates(session, ["otd:2026-09-27:1"]) == {
+        "otd:2026-09-27:1": None
+    }
 
 
 @pytest.mark.parametrize(
