@@ -17,6 +17,7 @@ const FIXED_ORDER: Record<string, number> = {
   yir: 110,
   records: 120,
   race: 130,
+  about: 140,
   admin: 900,
   'admin-identity': 910,
   'admin-ops': 920,
