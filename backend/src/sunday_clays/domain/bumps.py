@@ -80,10 +80,8 @@ def bump_state(session: Session, post_key: str, device_id: uuid.UUID | None) -> 
 
 def wipe_bumps(session: Session, post_key: str) -> int:
     """Delete every bump on one post; returns how many there were."""
-    removed = session.scalars(
-        delete(FistBump).where(FistBump.post_key == post_key).returning(FistBump.device_id)
-    )
-    return len(removed.all())
+    result = session.execute(delete(FistBump).where(FistBump.post_key == post_key))
+    return int(result.rowcount)  # type: ignore[attr-defined]
 
 
 def bump_totals(session: Session, limit: int) -> list[BumpTotal]:

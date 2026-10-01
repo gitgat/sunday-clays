@@ -110,3 +110,13 @@ def test_bumps_survive_a_rebuild_and_a_recompute(fx_session: Session) -> None:
     rebuild_live(fx_session)
     run_pipeline(fx_session)
     assert bump_state(fx_session, "k1", A) == BumpState(1, True)
+
+
+def test_remove_takes_back_one_device_on_one_post_only(session: Session) -> None:
+    add_bump(session, "k1", A)
+    add_bump(session, "k2", A)
+    add_bump(session, "k1", B)
+    remove_bump(session, "k1", A)
+    assert bump_state(session, "k2", A) == BumpState(1, True)
+    assert bump_state(session, "k1", B) == BumpState(1, True)
+    assert bump_state(session, "k1", A) == BumpState(1, False)
