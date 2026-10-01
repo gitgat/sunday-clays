@@ -128,9 +128,14 @@ C4_TABLES = {
     "insight_picks",  # 0003 (Plan 12)
     "fist_bumps",  # 0006 (Plan 15)
     "bump_attempts",  # 0006 (Plan 15)
+    "page_views",  # 0007 (Plan 16)
+    "page_view_attempts",  # 0007 (Plan 16)
+    "page_view_rollups",  # 0007 (Plan 16)
+    "page_kind_rollups",  # 0007 (Plan 16)
 }
 TABLES_0003 = {"insights", "insight_picks"}
 TABLES_0006 = {"fist_bumps", "bump_attempts"}
+TABLES_0007 = {"page_views", "page_view_attempts", "page_view_rollups", "page_kind_rollups"}
 
 
 def _alembic(eng: Engine, action: str, target: str) -> None:
@@ -254,14 +259,17 @@ def test_upgrade_downgrade_roundtrip(scratch_engine: Engine) -> None:
     _alembic(scratch_engine, "upgrade", "head")
     assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
     assert _round_id_index(scratch_engine) == ROUND_ID_INDEX_DEF
+    _alembic(scratch_engine, "downgrade", "0006")  # 0007 drops only its four tables
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0007) | {"alembic_version"}
+    later = TABLES_0006 | TABLES_0007
     _alembic(scratch_engine, "downgrade", "0005")  # 0006 drops only its two tables
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0006) | {"alembic_version"}
+    assert _tables(scratch_engine) == (C4_TABLES - later) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0004")  # 0005 drops the station labels
     _alembic(scratch_engine, "downgrade", "0003")  # 0004 is a data-only no-op
     _alembic(scratch_engine, "downgrade", "0002")  # 0003 drops only its two tables
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0003 - TABLES_0006) | {"alembic_version"}
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0003 - later) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0001")  # 0002 drops only its index
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0003 - TABLES_0006) | {"alembic_version"}
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0003 - later) | {"alembic_version"}
     assert _round_id_index(scratch_engine) is None
     _alembic(scratch_engine, "downgrade", "base")
     assert _tables(scratch_engine) == {"alembic_version"}

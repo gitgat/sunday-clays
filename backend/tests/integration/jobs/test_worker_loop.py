@@ -44,6 +44,10 @@ def worker_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "get_settings",
         lambda: SimpleNamespace(weather_enabled=False, timezone="America/Los_Angeles"),
     )
+    # Plan 16: the real scheduler queues page_view_rollup from 03:00 local every day, which would
+    # make these loop tests depend on the time of day. They test the loop; test_job_scheduler.py
+    # tests the schedule.
+    monkeypatch.setattr(worker, "schedule_due", lambda *_args, **_kwargs: [])
     return heartbeat
 
 
