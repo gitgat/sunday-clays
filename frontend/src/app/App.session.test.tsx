@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import { api, unwrap } from '../api/client';
+import { LAZY_CHART } from '../test/lazyChart';
 import { server } from '../test/msw/server';
 import { App } from './App';
 
@@ -12,7 +13,9 @@ afterEach(() => {
 describe('App session expiry', () => {
   it('routes a data 401 to the login page and forgets the cached session', async () => {
     render(<App />);
-    expect(await screen.findByRole('heading', { name: 'Sunday Clays' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'The Sunday Sheet' }, LAZY_CHART),
+    ).toBeInTheDocument();
     server.use(
       http.get('/api/health', () =>
         HttpResponse.json({ error: { code: 'unauthenticated', message: 'x' } }, { status: 401 }),

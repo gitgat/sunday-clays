@@ -20,17 +20,6 @@ export function useMeta() {
   return useQuery({ queryKey: ['/api/meta'], queryFn: () => unwrap(api.GET('/api/meta')) });
 }
 
-/** `date === null` waits (no event is known yet). */
-export function useEventDetail(date: string | null) {
-  return useQuery({
-    queryKey: ['/api/events/{date}', date],
-    // Only runs while enabled, i.e. with a non-null date.
-    queryFn: () =>
-      unwrap(api.GET('/api/events/{date}', { params: { path: { date: String(date) } } })),
-    enabled: date !== null,
-  });
-}
-
 export { useWindowEvents, type WindowEvents } from '../../lib/windowEvents';
 
 /** Detail + odometer for the remembered "me"; 404 when the id was merged away (Review Focus #2). */

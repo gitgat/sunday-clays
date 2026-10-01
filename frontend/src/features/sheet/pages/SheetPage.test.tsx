@@ -144,6 +144,25 @@ describe('SheetPage', () => {
     expect(screen.getByRole('link', { name: 'Latest issue' })).toHaveAttribute('href', '/');
   });
 
+  it('says there is no Sheet yet at / on a fresh install, and keeps the rail', async () => {
+    server.use(
+      http.get('*/api/sheet/latest', () =>
+        HttpResponse.json(
+          { error: { code: 'sheet_not_found', message: 'No Sunday Sheet' } },
+          { status: 404 },
+        ),
+      ),
+    );
+    renderWithProviders(<SheetPage />, { route: '/', path: '/' });
+    expect(await screen.findByText('No Sunday Sheet yet')).toBeInTheDocument();
+    expect(screen.getByText('An admin can upload the scores workbook.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'All Sundays' })).toHaveAttribute('href', '/events');
+    expect(screen.queryByRole('link', { name: 'Latest issue' })).toBeNull();
+    expect(screen.queryByText('No Sunday Sheet for this date')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Which one are you?' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Next Sunday' })).toBeInTheDocument();
+  });
+
   it('says so when the issue fails to load', async () => {
     server.use(
       http.get('*/api/sheet/:date', () =>

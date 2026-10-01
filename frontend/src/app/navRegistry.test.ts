@@ -4,7 +4,7 @@ import { featureRoutes, navItems, type FeatureModule } from './registry';
 
 /** C10: fixed nav orders; any other feature takes an unused value >= 140. */
 const FIXED_ORDER: Record<string, number> = {
-  home: 10,
+  sheet: 10,
   events: 20,
   leaderboards: 30,
   shooters: 40,
@@ -22,7 +22,7 @@ const FIXED_ORDER: Record<string, number> = {
   'admin-ops': 920,
 };
 /** C10: exactly these features are mobile tabs. */
-const MOBILE_TABS = new Set(['home', 'events', 'leaderboards', 'shooters']);
+const MOBILE_TABS = new Set(['sheet', 'events', 'leaderboards', 'shooters']);
 
 const modules = import.meta.glob<FeatureModule>('../features/*/routes.tsx', { eager: true });
 const features = Object.entries(modules).map(([file, mod]) => ({
@@ -31,8 +31,8 @@ const features = Object.entries(modules).map(([file, mod]) => ({
 }));
 
 describe('feature registry', () => {
-  it('discovers at least the home feature', () => {
-    expect(features.map((f) => f.name)).toContain('home');
+  it('discovers at least the sheet feature', () => {
+    expect(features.map((f) => f.name)).toContain('sheet');
   });
 
   it('uses the C10 nav order for listed features and an unused order >= 140 otherwise', () => {
@@ -56,16 +56,16 @@ describe('feature registry', () => {
     }
   });
 
-  it('lets only home, events, leaderboards and shooters be mobile tabs', () => {
+  it('lets only sheet, events, leaderboards and shooters be mobile tabs', () => {
     const tabFeatures = features
       .filter((f) => f.nav.some((i) => i.mobileTab === true))
       .map((f) => f.name);
     expect(tabFeatures.filter((name) => !MOBILE_TABS.has(name))).toEqual([]);
   });
 
-  it('makes home, events, leaderboards and shooters mobile tabs whenever they are registered', () => {
+  it('makes sheet, events, leaderboards and shooters mobile tabs whenever they are registered', () => {
     const present = features.filter((f) => MOBILE_TABS.has(f.name));
-    expect(present.map((f) => f.name)).toContain('home');
+    expect(present.map((f) => f.name)).toContain('sheet');
     for (const { name, nav } of present) {
       expect(
         nav.some((i) => i.mobileTab === true),

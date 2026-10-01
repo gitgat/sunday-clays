@@ -16,7 +16,7 @@ test('SPA shell renders with the security headers', async ({ page }) => {
   expect(headers['x-content-type-options']).toBe('nosniff');
   expect(headers['referrer-policy']).toBe('same-origin');
   expect(headers['cache-control']).toBe('no-cache');
-  await expect(page.getByRole('heading', { name: 'Sunday Clays' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'The Sunday Sheet' })).toBeVisible();
 });
 
 test('deep links fall back to index.html, hashed assets are immutable, missing assets 404', async ({

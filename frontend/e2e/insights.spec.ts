@@ -70,22 +70,24 @@ async function shooterWithInsights(
   throw new Error('the fx world needs a regular with a highlighted profile-chart insight');
 }
 
-test('home shows the recap, the top story, the insight cards and kudos', async ({ page }) => {
-  const feed = await getJson<Feed>(page, '/api/insights/home');
-  expect(feed.pinned, 'the fx world has a latest Sunday to recap').not.toBeNull();
+test('the Sunday Sheet leads with the top story, its recap deck and the spotlight', async ({
+  page,
+}) => {
+  const issue = await getJson<{
+    headline: Insight | null;
+    recap: Insight | null;
+    spotlight: Insight | null;
+  }>(page, '/api/sheet/latest');
+  expect(issue.recap, 'the fx world has a latest Sunday to recap').not.toBeNull();
   await page.goto('/');
   await whenSettled(page);
-  await expect(page.getByRole('region', { name: 'Last Sunday' })).toBeVisible();
-  if (feed.hero !== null) {
-    await expect(page.getByRole('list', { name: 'Top story' })).toBeVisible();
+  const lead = page.getByRole('region', { name: 'Top story' });
+  await expect(lead.getByRole('button', { name: 'Show all' })).toBeVisible();
+  if (issue.headline !== null) {
+    await expect(lead.getByRole('list', { name: 'Top story' })).toBeVisible();
   }
-  if (feed.top.length > 0) {
-    await expect(
-      page.getByRole('list', { name: 'Around the club' }).getByRole('listitem'),
-    ).toHaveCount(feed.top.length);
-  }
-  if (feed.kudos.length > 0) {
-    await expect(page.getByRole('region', { name: /^Kudos/ })).toBeVisible();
+  if (issue.spotlight !== null) {
+    await expect(page.getByRole('list', { name: 'Spotlight' })).toBeVisible();
   }
   await expectNoSideScroll(page);
 });

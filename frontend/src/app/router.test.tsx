@@ -1,6 +1,7 @@
 import { screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { LAZY_CHART } from '../test/lazyChart';
 import { renderRoute } from '../test/render';
 import { appRoutes, createAppRouter } from './router';
 
@@ -24,9 +25,11 @@ describe('app router', () => {
     router.dispose();
   });
 
-  it('renders the home page at /', async () => {
+  it('renders the Sunday Sheet at /', async () => {
     renderRoute('/');
 
-    expect(await screen.findByRole('heading', { name: 'Sunday Clays' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'The Sunday Sheet' }, LAZY_CHART),
+    ).toBeInTheDocument();
   });
 });

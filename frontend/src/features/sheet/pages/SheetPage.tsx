@@ -129,8 +129,55 @@ function SheetBody({
   );
 }
 
-function SheetError({ error }: { error: Error }) {
+/**
+ * `/` on a fresh install: no Sunday has been held, so there is no issue to show. The rail's
+ * personal and next-Sunday pieces need no issue, so they stay.
+ */
+function NoSheetYet({ widgets }: { widgets: HomeWidget[] }) {
+  const [meId, setMeId] = useState<number | null>(getMe);
+  const [skipped, setSkipped] = useState(isMeSkipped);
+  const showYou = meId !== null || !skipped;
+  return (
+    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-3 lg:items-start">
+      <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
+        <EmptyState
+          title="No Sunday Sheet yet"
+          description="An admin can upload the scores workbook."
+          action={
+            <Link to="/events" className="inline-flex min-h-11 items-center underline">
+              All Sundays
+            </Link>
+          }
+        />
+      </div>
+      <div className="flex min-w-0 flex-col gap-4">
+        {showYou && (
+          <YourSunday
+            meId={meId}
+            skipped={skipped}
+            widgets={widgets}
+            onPicked={setMeId}
+            onCleared={() => setMeId(null)}
+            onSkipped={() => setSkipped(true)}
+          />
+        )}
+        <WidgetSlot slot="main" widgets={widgets} meId={meId} />
+      </div>
+    </div>
+  );
+}
+
+function SheetError({
+  error,
+  dated,
+  widgets,
+}: {
+  error: Error;
+  dated: boolean;
+  widgets: HomeWidget[];
+}) {
   if (error instanceof ApiError && error.status === 404) {
+    if (!dated) return <NoSheetYet widgets={widgets} />;
     return (
       <EmptyState
         title="No Sunday Sheet for this date"
@@ -151,12 +198,14 @@ function SheetError({ error }: { error: Error }) {
   return <EmptyState title="Couldn't load the Sunday Sheet" description="Try again in a moment." />;
 }
 
-/** The Sunday Sheet: `/sheet/:date` (and, once Home retires, `/` for the latest issue). */
+/** The Sunday Sheet: `/` serves the latest issue and `/sheet/:date` any held Sunday's. */
 export function SheetPage({ widgets = homeWidgets }: { widgets?: HomeWidget[] }) {
   const { date } = useParams();
   const sheet = useSheet(date ?? 'latest');
   const [deviceId] = useState<string | null>(getDeviceId);
   if (sheet.isPending) return <SheetSkeleton />;
-  if (sheet.isError) return <SheetError error={sheet.error} />;
+  if (sheet.isError) {
+    return <SheetError error={sheet.error} dated={date !== undefined} widgets={widgets} />;
+  }
   return <SheetBody issue={sheet.data} deviceId={deviceId} widgets={widgets} />;
 }

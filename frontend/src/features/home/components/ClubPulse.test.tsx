@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
-import { expectChartControls, expectExplainer } from '../../../test/charts';
+import { expectExplainer } from '../../../test/charts';
 import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { renderWithProviders } from '../../../test/render';
 import type { EventSummary } from '../api';
@@ -72,9 +72,12 @@ const statOf = (within_: HTMLElement, label: string): HTMLElement | null =>
   within(within_).getByText(label).closest('.flex-col');
 const chart = () => screen.findByRole('region', { name: 'Turnout per Sunday' }, LAZY_CHART);
 
+/** The Sheet's 8 weeks up to the issue's Sunday. */
+const RANGE = { from: '2026-08-03', to: '2026-09-27' };
+
 describe('ClubPulse', () => {
   it(
-    'shows the stats and the turnout chart for the time window, in one request for its dates',
+    'shows the stats and the turnout chart for the 8 weeks, in one request for its dates',
     async () => {
       const seen: URLSearchParams[] = [];
       server.use(
@@ -84,74 +87,39 @@ describe('ClubPulse', () => {
           return HttpResponse.json(seasonEvents);
         }),
       );
-      renderWithProviders(<ClubPulse />);
-      await chart();
+      const { user } = renderWithProviders(<ClubPulse range={RANGE} />, { route: '/?w=all' });
+      const region = await chart();
       const pulse = screen.getByRole('region', { name: 'Club pulse' });
-      // The default window: the last 8 weeks, counted back from the latest scored Sunday.
-      expect(within(pulse).getAllByText('Last 8 weeks · Aug 3 – Sep 27').length).toBeGreaterThan(0);
+      // The header window (here All time) does not apply: the 8 weeks up to the issue do.
+      expect(
+        within(pulse).getByText('8 weeks to Sep 27, 2026 · not affected by the time filter'),
+      ).toBeInTheDocument();
       expect(within(pulse).getByText('20')).toBeInTheDocument();
       expect(within(pulse).getByText('49')).toBeInTheDocument();
       expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(1);
-      expect(seen).toHaveLength(1);
-      expect(seen[0]?.get('from')).toBe('2026-08-03');
-      expect(seen[0]?.get('to')).toBe('2026-09-27');
-      expect(seen[0]?.has('year')).toBe(false);
+      expect(seen.map((q) => [q.get('from'), q.get('to'), q.has('year')])).toEqual([
+        ['2026-08-03', '2026-09-27', false],
+      ]);
+      await user.click(within(region).getByRole('button', { name: 'About this chart' }));
+      expect(within(region).getByText(/the Sheet always shows the 8 weeks/)).toBeInTheDocument();
+      expect(within(region).queryByText(/Last 8 weeks|All time/)).toBeNull();
+      await user.click(within(pulse).getByRole('button', { name: 'About Highest score' }));
+      expect(within(pulse).getByText(/in those 8 weeks/)).toBeInTheDocument();
     },
     LAZY_TEST_TIMEOUT,
   );
 
   it(
-    'follows the time window: stats count only Sundays inside it',
+    'counts only Sundays inside its range',
     async () => {
       const week = seasonEvents[0] as EventSummary;
       const march = { ...week, event_date: '2026-03-01', top_score: 50, head_count: 40 };
       server.use(metaHandler(), events([...seasonEvents, march]));
-
-      const { unmount } = renderWithProviders(<ClubPulse />);
+      renderWithProviders(<ClubPulse range={RANGE} />);
       await chart();
-      let pulse = screen.getByRole('region', { name: 'Club pulse' });
+      const pulse = screen.getByRole('region', { name: 'Club pulse' });
       expect(statOf(pulse, 'Highest score')).toHaveTextContent('49');
       expect(statOf(pulse, 'Sundays with full results')).toHaveTextContent('3');
-      unmount();
-
-      renderWithProviders(<ClubPulse />, { route: '/?w=ytd' });
-      await chart();
-      pulse = screen.getByRole('region', { name: 'Club pulse' });
-      expect(
-        within(pulse).getAllByText('This year to date · Jan 1 – Sep 27').length,
-      ).toBeGreaterThan(0);
-      expect(statOf(pulse, 'Highest score')).toHaveTextContent('50');
-      expect(statOf(pulse, 'Sundays with full results')).toHaveTextContent('4');
-    },
-    LAZY_TEST_TIMEOUT,
-  );
-
-  it(
-    'asks once however many years the window spans, and leaves the start open for all time',
-    async () => {
-      const seen: URLSearchParams[] = [];
-      server.use(
-        metaHandler({ last_score_date: '2026-02-01', first_event_date: '2024-05-05' }),
-        http.get('*/api/events', ({ request }) => {
-          seen.push(new URL(request.url).searchParams);
-          const week = seasonEvents[0] as EventSummary;
-          return HttpResponse.json([{ ...week, event_date: '2026-01-25' }]);
-        }),
-      );
-      const { unmount } = renderWithProviders(<ClubPulse />);
-      await chart();
-      // 8 weeks back from 2026-02-01 crosses New Year: still one request.
-      expect(seen).toHaveLength(1);
-      expect(seen[0]?.get('from')).toBe('2025-12-08');
-      unmount();
-      seen.length = 0;
-      renderWithProviders(<ClubPulse />, { route: '/?w=all' });
-      await chart();
-      // All time spans three calendar years: one request, no start date, no year.
-      expect(seen).toHaveLength(1);
-      expect(seen[0]?.has('from')).toBe(false);
-      expect(seen[0]?.get('to')).toBe('2026-02-01');
-      expect(seen[0]?.has('year')).toBe(false);
     },
     LAZY_TEST_TIMEOUT,
   );
@@ -160,7 +128,7 @@ describe('ClubPulse', () => {
     'renders the turnout chart as its own card, not inside the pulse card',
     async () => {
       server.use(metaHandler(), events(seasonEvents));
-      renderWithProviders(<ClubPulse />);
+      renderWithProviders(<ClubPulse range={RANGE} />);
       const turnout = await chart();
       const pulse = screen.getByRole('region', { name: 'Club pulse' });
       // A card inside a card costs the chart header 32px on a phone, truncating its title.
@@ -173,7 +141,7 @@ describe('ClubPulse', () => {
     'explains each stat and the chart',
     async () => {
       server.use(metaHandler(), events(seasonEvents));
-      renderWithProviders(<ClubPulse />);
+      renderWithProviders(<ClubPulse range={RANGE} />);
       const turnout = await chart();
       const pulse = screen.getByRole('region', { name: 'Club pulse' });
       for (const stat of ['Sundays with full results', 'Avg turnout', 'Highest score']) {
@@ -195,7 +163,7 @@ describe('ClubPulse', () => {
           return HttpResponse.json(seasonEvents);
         }),
       );
-      renderWithProviders(<ClubPulse />, { route: '/?rt=super_sporting' });
+      renderWithProviders(<ClubPulse range={RANGE} />, { route: '/?rt=super_sporting' });
       await chart();
       expect(seen.at(-1)).toEqual(['super_sporting']);
     },
@@ -206,7 +174,7 @@ describe('ClubPulse', () => {
     'shows a dash, never "null", when no scored Sunday has a top score',
     async () => {
       server.use(metaHandler(), events(seasonEvents.map((e) => ({ ...e, top_score: null }))));
-      renderWithProviders(<ClubPulse />);
+      renderWithProviders(<ClubPulse range={RANGE} />);
       await chart();
       const pulse = screen.getByRole('region', { name: 'Club pulse' });
       expect(within(pulse).queryByText(/null/)).not.toBeInTheDocument();
@@ -223,7 +191,7 @@ describe('ClubPulse', () => {
         metaHandler(),
         events([{ ...week, event_date: '2026-09-20', results_complete: false, head_count: 27 }]),
       );
-      renderWithProviders(<ClubPulse />);
+      renderWithProviders(<ClubPulse range={RANGE} />);
       await chart();
       const pulse = screen.getByRole('region', { name: 'Club pulse' });
       expect(statOf(pulse, 'Sundays with full results')).toHaveTextContent('0');
@@ -232,32 +200,15 @@ describe('ClubPulse', () => {
     LAZY_TEST_TIMEOUT,
   );
 
-  it(
-    'says so when the time window has no scored Sundays, and keeps the chart card reachable',
-    async () => {
-      server.use(metaHandler(), events(seasonEvents.slice(3)));
-      const { user, router } = renderWithProviders(<ClubPulse />);
-      // One message, in the turnout card: no second "no Sundays" line in a pulse card above it.
-      const region = await screen.findByRole('region', { name: 'Turnout per Sunday' }, LAZY_CHART);
-      expect(screen.queryByRole('region', { name: 'Club pulse' })).toBeNull();
-      expect(screen.queryByText('No Sundays with scores in the last 8 weeks.')).toBeNull();
-      expectChartControls(region);
-      expect(within(region).getByRole('button', { name: 'Fullscreen' })).toBeVisible();
-      expect(
-        within(region).getByText('No scored Sundays in the last 8 weeks (Aug 3 – Sep 27).'),
-      ).toBeVisible();
-      // 12M and All, one tap each.
-      expect(within(region).getByRole('button', { name: 'Show the last 12 months' })).toBeVisible();
-      await user.click(within(region).getByRole('button', { name: 'Show all time' }));
-      expect(router.state.location.search).toBe('?w=all');
-    },
-    LAZY_TEST_TIMEOUT,
-  );
-
-  it('says no scored Sundays yet before any import', async () => {
-    server.use(metaHandler({ last_score_date: null, last_event_date: null }));
-    renderWithProviders(<ClubPulse />);
-    expect(await screen.findByText('No scored Sundays yet')).toBeInTheDocument();
+  it('says so when the 8 weeks have no scored Sundays', async () => {
+    server.use(metaHandler(), events(seasonEvents.slice(3)));
+    renderWithProviders(<ClubPulse range={RANGE} />);
+    expect(await screen.findByText('No scored Sundays in these 8 weeks')).toBeVisible();
+    const pulse = screen.getByRole('region', { name: 'Club pulse' });
+    expect(
+      within(pulse).getByText('8 weeks to Sep 27, 2026 · not affected by the time filter'),
+    ).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Turnout per Sunday' })).toBeNull();
   });
 
   it('shows a load failure', async () => {
@@ -270,50 +221,7 @@ describe('ClubPulse', () => {
         ),
       ),
     );
-    renderWithProviders(<ClubPulse />);
+    renderWithProviders(<ClubPulse range={RANGE} />);
     expect(await screen.findByText("Couldn't load these Sundays")).toBeInTheDocument();
   });
-
-  it('falls back to the empty state when meta fails', async () => {
-    server.use(
-      http.get('*/api/meta', () =>
-        HttpResponse.json(
-          { error: { code: 'internal', message: 'Internal server error' } },
-          { status: 500 },
-        ),
-      ),
-    );
-    renderWithProviders(<ClubPulse />);
-    expect(await screen.findByText('No scored Sundays yet')).toBeInTheDocument();
-  });
-
-  it(
-    'on the Sunday Sheet, shows the 8 weeks up to the issue whatever the header window says',
-    async () => {
-      const seen: URLSearchParams[] = [];
-      server.use(
-        metaHandler(),
-        http.get('*/api/events', ({ request }) => {
-          seen.push(new URL(request.url).searchParams);
-          return HttpResponse.json(seasonEvents);
-        }),
-      );
-      const { user } = renderWithProviders(
-        <ClubPulse range={{ from: '2026-07-20', to: '2026-09-13' }} />,
-        { route: '/?w=all' },
-      );
-      const region = await chart();
-      const pulse = screen.getByRole('region', { name: 'Club pulse' });
-      expect(
-        within(pulse).getByText('8 weeks to Sep 13, 2026 · not affected by the time filter'),
-      ).toBeInTheDocument();
-      expect(seen.map((q) => [q.get('from'), q.get('to')])).toEqual([['2026-07-20', '2026-09-13']]);
-      await user.click(within(region).getByRole('button', { name: 'About this chart' }));
-      expect(within(region).getByText(/the Sheet always shows the 8 weeks/)).toBeInTheDocument();
-      expect(within(region).queryByText(/Last 8 weeks|All time/)).toBeNull();
-      await user.click(within(pulse).getByRole('button', { name: 'About Highest score' }));
-      expect(within(pulse).getByText(/in those 8 weeks/)).toBeInTheDocument();
-    },
-    LAZY_TEST_TIMEOUT,
-  );
 });
