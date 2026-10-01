@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   formatAvg,
   formatDay,
-  formatFullDay,
   formatInt,
   joinNames,
   monthName,
@@ -17,7 +16,6 @@ describe('year in review formatting', () => {
     expect(formatAvg(35.2668)).toBe('35.27');
     expect(formatAvg(null)).toBe('—');
     expect(formatDay('2025-08-03')).toBe('Aug 3');
-    expect(formatFullDay('2025-09-28')).toBe('Sun, Sep 28, 2025');
     expect(monthName(1)).toBe('Jan');
     expect(monthName(12)).toBe('Dec');
   });

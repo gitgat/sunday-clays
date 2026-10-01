@@ -43,6 +43,39 @@ const explainers = {
     ],
     scope: 'windowed',
   },
+  pulseSheet: {
+    what: 'How many people came to each Sunday in the 8 weeks up to this issue’s Sunday.',
+    read: [
+      'Tall bars are big turnouts; a dip is a slow Sunday (weather, holidays).',
+      'Fullscreen and the CSV download cover every Sunday on record.',
+    ],
+    computed: [
+      'One bar per Sunday with scores.',
+      'Bar height is the attendance head count, or the number of shooters with scores when there is no head count.',
+      'The round-type filter applies. The time filter does not: the Sheet always shows the 8 weeks up to its Sunday.',
+    ],
+  },
+  pulseHeldSheet: {
+    what: 'How many Sundays in the 8 weeks up to this issue’s Sunday have full results.',
+    computed: [
+      'A Sunday has full results when scores were entered and at least half of the people who came have scores.',
+      'The round-type filter applies; the time filter does not.',
+    ],
+  },
+  pulseTurnoutSheet: {
+    what: 'The typical crowd: the average number of people per scored Sunday in the 8 weeks up to this issue’s Sunday.',
+    computed: [
+      'Adds up the head count of each scored Sunday (or the number with scores when there is no head count) and divides by the number of Sundays, to 0.1.',
+      'The round-type filter applies; the time filter does not.',
+    ],
+  },
+  pulseHighSheet: {
+    what: 'The best single round anyone shot in the 8 weeks up to this issue’s Sunday, out of 50.',
+    computed: [
+      'The highest score of any round on a scored Sunday in those 8 weeks, second rounds included.',
+      'It is one round, not an average. The round-type filter applies; the time filter does not.',
+    ],
+  },
   latestShooters: {
     what: 'How many people have at least one recorded score at the latest Sunday.',
     computed: [

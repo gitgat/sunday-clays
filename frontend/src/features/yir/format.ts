@@ -1,12 +1,5 @@
 const INT = new Intl.NumberFormat('en-US');
 const DAY = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-const FULL_DAY = new Intl.DateTimeFormat('en-US', {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function formatInt(value: number): string {
@@ -20,11 +13,6 @@ export function formatAvg(value: number | null): string {
 /** "Aug 3" for a calendar date. */
 export function formatDay(iso: string): string {
   return DAY.format(new Date(`${iso}T00:00:00Z`));
-}
-
-/** "Sun, Sep 28, 2025". */
-export function formatFullDay(iso: string): string {
-  return FULL_DAY.format(new Date(`${iso}T00:00:00Z`));
 }
 
 export function monthName(month: number): string {

@@ -89,12 +89,3 @@ test("a leader's year opens from the club year and matches the API", async ({ pa
   await expectNoSideScroll(page);
   await expectTitlesUntruncated(page);
 });
-
-test('home shows On this day', async ({ page }) => {
-  await page.goto('/');
-  const card = page.getByRole('region', { name: 'On this day' });
-  await expect(card.getByRole('heading', { name: 'On this day' })).toBeVisible();
-  // Which Sundays appear depends on today's date, so only the loaded state is checked.
-  await expect(card.getByText(/years? ago|No Sunday near this date/).first()).toBeVisible();
-  await expectNoSideScroll(page);
-});

@@ -286,4 +286,34 @@ describe('ClubPulse', () => {
     renderWithProviders(<ClubPulse />);
     expect(await screen.findByText('No scored Sundays yet')).toBeInTheDocument();
   });
+
+  it(
+    'on the Sunday Sheet, shows the 8 weeks up to the issue whatever the header window says',
+    async () => {
+      const seen: URLSearchParams[] = [];
+      server.use(
+        metaHandler(),
+        http.get('*/api/events', ({ request }) => {
+          seen.push(new URL(request.url).searchParams);
+          return HttpResponse.json(seasonEvents);
+        }),
+      );
+      const { user } = renderWithProviders(
+        <ClubPulse range={{ from: '2026-07-20', to: '2026-09-13' }} />,
+        { route: '/?w=all' },
+      );
+      const region = await chart();
+      const pulse = screen.getByRole('region', { name: 'Club pulse' });
+      expect(
+        within(pulse).getByText('8 weeks to Sep 13, 2026 · not affected by the time filter'),
+      ).toBeInTheDocument();
+      expect(seen.map((q) => [q.get('from'), q.get('to')])).toEqual([['2026-07-20', '2026-09-13']]);
+      await user.click(within(region).getByRole('button', { name: 'About this chart' }));
+      expect(within(region).getByText(/the Sheet always shows the 8 weeks/)).toBeInTheDocument();
+      expect(within(region).queryByText(/Last 8 weeks|All time/)).toBeNull();
+      await user.click(within(pulse).getByRole('button', { name: 'About Highest score' }));
+      expect(within(pulse).getByText(/in those 8 weeks/)).toBeInTheDocument();
+    },
+    LAZY_TEST_TIMEOUT,
+  );
 });

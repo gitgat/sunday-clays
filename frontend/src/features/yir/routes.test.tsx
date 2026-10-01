@@ -4,7 +4,6 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../test/lazyChart';
 import { server } from '../../test/msw/server';
-import { homeWidget } from './homeWidget';
 import { leaderboardHandler } from './mocks';
 import { nav, routes } from './routes';
 import { ROUND_TYPE_ONLY } from '../../lib/pageFilters';
@@ -17,7 +16,7 @@ function renderAt(path: string) {
       {
         path: '/',
         HydrateFallback: () => null,
-        children: [...routes, { index: true, element: <homeWidget.Component meId={null} /> }],
+        children: routes,
       },
     ],
     { initialEntries: [path] },
@@ -61,14 +60,6 @@ describe('year in review registration', () => {
     renderAt('/yir/2025/shooters/307');
     expect(
       await screen.findByRole('region', { name: 'Grimsby, Gregor: 2025' }),
-    ).toBeInTheDocument();
-  });
-
-  it('puts On this day on the home page', async () => {
-    renderAt('/');
-    expect(homeWidget.slot).toBe('main');
-    expect(
-      await screen.findByText('23 shooters · won by Rookwood, Derek (45)'),
     ).toBeInTheDocument();
   });
 });
