@@ -24,16 +24,26 @@ NO_ETAG_PREFIXES: tuple[str, ...] = (
     "/api/predictions/",
 )
 NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/")
+# Plan 14: fist-bump counts change without a data_version bump, so a data_version ETag would
+# answer 304 with stale counts. They are never tagged and never stored.
+NO_STORE_SUFFIXES: tuple[str, ...] = ("/bumps",)
 
 
 def etag_eligible(method: str, path: str) -> bool:
-    """GET under /api/, except health, auth, admin and predictions."""
-    return method == "GET" and path.startswith("/api/") and not path.startswith(NO_ETAG_PREFIXES)
+    """GET under /api/, except health, auth, admin, predictions and bump counts."""
+    return (
+        method == "GET"
+        and path.startswith("/api/")
+        and not path.startswith(NO_ETAG_PREFIXES)
+        and not path.endswith(NO_STORE_SUFFIXES)
+    )
 
 
 def cache_control_for(path: str) -> str | None:
-    """`no-store` for auth/admin, `private, no-cache` for other /api paths."""
-    if path.startswith(NO_STORE_PREFIXES):
+    """`no-store` for auth, admin and bump counts, `private, no-cache` for other /api paths."""
+    if path.startswith(NO_STORE_PREFIXES) or (
+        path.startswith("/api/") and path.endswith(NO_STORE_SUFFIXES)
+    ):
         return "no-store"
     if path == "/api" or path.startswith("/api/"):
         return "private, no-cache"
