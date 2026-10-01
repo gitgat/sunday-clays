@@ -3,6 +3,7 @@ import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { useExplicitWindow } from '../../../lib/timeWindowChoice';
 import { ExplainerToggle } from '../../../components/ui/Explainer';
+import { InsightBump } from '../../bumps/BumpsProvider';
 import type { Insight } from '../api';
 import { chartHref } from '../chartLink';
 import { Segments } from '../segments';
@@ -29,6 +30,7 @@ export function InsightCard({ insight, you = false, className = '' }: InsightCar
   const label = you && chart.label_you ? chart.label_you : chart.label;
   return (
     <li
+      data-insight-key={insight.key}
       className={`flex min-w-0 flex-col gap-2 border-t border-outline-variant pt-3 first:border-t-0 first:pt-0 ${className}`.trim()}
     >
       <p className="break-words text-base text-text">
@@ -67,6 +69,7 @@ export function InsightCard({ insight, you = false, className = '' }: InsightCar
           open={open}
           onToggle={() => setOpen((v) => !v)}
         />
+        <InsightBump insightKey={insight.key} />
       </div>
       {open && <InsightExplainer id={panelId} insight={insight} you={you} />}
     </li>

@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
+import { BumpsProvider } from '../../bumps/BumpsProvider';
 import { insightFixture } from '../mocks';
 import { Segments } from '../segments';
 import { InsightCard } from './InsightCard';
@@ -186,5 +187,28 @@ describe('InsightCard', () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'How we worked it out' }));
     expect(screen.getByText('The best round beats every earlier round.')).toBeInTheDocument();
+  });
+});
+
+describe('InsightCard bumps', () => {
+  it('carries its key and a fist bump inside a BumpsProvider', async () => {
+    const { container } = renderWithProviders(
+      <BumpsProvider keys={['k-pb-3']}>
+        <ul>
+          <InsightCard insight={insightFixture()} />
+        </ul>
+      </BumpsProvider>,
+    );
+    expect(container.querySelector('li')).toHaveAttribute('data-insight-key', 'k-pb-3');
+    expect(await screen.findByRole('button', { name: 'Fist bump, 0 bumps' })).toBeInTheDocument();
+  });
+
+  it('has no fist bump on its own', () => {
+    renderWithProviders(
+      <ul>
+        <InsightCard insight={insightFixture()} />
+      </ul>,
+    );
+    expect(screen.queryByRole('button', { name: /^Fist bump/ })).toBeNull();
   });
 });

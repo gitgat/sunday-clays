@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { Sheet } from '../../../components/ui/Sheet';
+import { InsightBump } from '../../bumps/BumpsProvider';
 import { useIsDesktop } from '../../../lib/useMediaQuery';
 import type { InsightKudos } from '../api';
 import { Segments } from '../segments';
@@ -105,7 +106,11 @@ export function KudosStrip({
           {kudos.map((chip) => {
             const you = meId === chip.shooter_id && chip.insight.headline_you !== null;
             return (
-              <li key={chip.shooter_id} className="flex flex-col gap-1">
+              <li
+                key={chip.shooter_id}
+                data-insight-key={chip.insight.key}
+                className="flex flex-col gap-1"
+              >
                 <Link
                   to={`/shooters/${String(chip.shooter_id)}`}
                   className="inline-flex min-h-11 items-center self-start font-medium text-text underline-offset-2 hover:underline"
@@ -117,6 +122,7 @@ export function KudosStrip({
                     segments={you ? (chip.insight.headline_you ?? []) : chip.insight.headline}
                   />
                 </p>
+                <InsightBump insightKey={chip.insight.key} />
               </li>
             );
           })}

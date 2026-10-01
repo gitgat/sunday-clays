@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { useExplicitWindow } from '../../../lib/timeWindowChoice';
 import { formatDay } from '../../shooters/format';
 import { Card } from '../../../components/ui/Card';
+import { InsightBump } from '../../bumps/BumpsProvider';
 import type { Insight } from '../api';
 import { chartHref } from '../chartLink';
 import { Segments } from '../segments';
@@ -23,7 +24,7 @@ export function RecapCard({ insight }: { insight: Insight }) {
       <p className={all ? 'text-base text-text' : 'line-clamp-3 text-base text-text'}>
         <Segments segments={insight.headline} />
       </p>
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-insight-key={insight.key} className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           aria-expanded={all}
@@ -38,6 +39,7 @@ export function RecapCard({ insight }: { insight: Insight }) {
         >
           See the results
         </Link>
+        <InsightBump insightKey={insight.key} />
       </div>
     </Card>
   );

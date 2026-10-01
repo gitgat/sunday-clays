@@ -8,6 +8,8 @@ import { formatShortDate } from '../../../lib/format';
 import { getMe } from '../../../lib/me';
 import { formatDay } from '../../shooters/format';
 import { useHomeFeed, usePageFeed, useShooterFeed, useSundayFeed, type InsightFeed } from '../api';
+import { BumpsProvider } from '../../bumps/BumpsProvider';
+import { feedKeys } from '../feedKeys';
 import { InsightCard } from './InsightCard';
 import { InsightList, isMine } from './InsightList';
 import { KudosStrip } from './KudosStrip';
@@ -47,22 +49,24 @@ export function ProfileInsights({ shooterId }: { shooterId: number }) {
           : `As of ${formatDay(f.as_of)} · not affected by the time filter`
       }
     >
-      <div className="flex min-w-0 flex-col gap-3">
-        <InsightList
-          items={first}
-          you={you}
-          label="Top insights"
-          columns={3}
-          wideFirst={f.pinned != null}
-        />
-        <MoreInsights
-          items={f.more}
-          total={f.n_more}
-          you={you}
-          onShowAll={() => setAll(true)}
-          loadingAll={all && feed.isPlaceholderData}
-        />
-      </div>
+      <BumpsProvider keys={feedKeys(f)}>
+        <div className="flex min-w-0 flex-col gap-3">
+          <InsightList
+            items={first}
+            you={you}
+            label="Top insights"
+            columns={3}
+            wideFirst={f.pinned != null}
+          />
+          <MoreInsights
+            items={f.more}
+            total={f.n_more}
+            you={you}
+            onShowAll={() => setAll(true)}
+            loadingAll={all && feed.isPlaceholderData}
+          />
+        </div>
+      </BumpsProvider>
     </Card>
   );
 }
@@ -79,11 +83,13 @@ export function SundayInsights({ date }: { date: string }) {
   const first = f.conditions == null ? f.top : [f.conditions, ...f.top];
   return (
     <Card title="Insights" subtitle={`${formatDay(date)} · not affected by the time filter`}>
-      <div className="flex min-w-0 flex-col gap-3">
-        <InsightList items={first} meId={meId} label="Top insights" columns={4} />
-        <KudosStrip kudos={f.kudos} meId={meId} />
-        <MoreInsights items={f.more} total={f.n_more} meId={meId} />
-      </div>
+      <BumpsProvider keys={feedKeys(f)}>
+        <div className="flex min-w-0 flex-col gap-3">
+          <InsightList items={first} meId={meId} label="Top insights" columns={4} />
+          <KudosStrip kudos={f.kudos} meId={meId} />
+          <MoreInsights items={f.more} total={f.n_more} meId={meId} />
+        </div>
+      </BumpsProvider>
     </Card>
   );
 }
@@ -126,7 +132,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
   if (feed.data === undefined || isEmpty(feed.data)) return null;
   const f = feed.data;
   return (
-    <>
+    <BumpsProvider keys={feedKeys(f)}>
       {(f.pinned != null || f.hero != null) && (
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
           {f.pinned != null && <RecapCard insight={f.pinned} />}
@@ -167,7 +173,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
           </div>
         </Card>
       )}
-    </>
+    </BumpsProvider>
   );
 }
 
@@ -194,10 +200,12 @@ export function PageInsights({ page }: { page: PageKey }) {
           : `As of ${formatDay(f.as_of)} · not affected by the time filter`
       }
     >
-      <div className="flex min-w-0 flex-col gap-3">
-        <InsightList items={f.top} meId={getMe()} label="Top insights" columns={3} />
-        <MoreInsights items={f.more} total={f.n_more} meId={getMe()} />
-      </div>
+      <BumpsProvider keys={feedKeys(f)}>
+        <div className="flex min-w-0 flex-col gap-3">
+          <InsightList items={f.top} meId={getMe()} label="Top insights" columns={3} />
+          <MoreInsights items={f.more} total={f.n_more} meId={getMe()} />
+        </div>
+      </BumpsProvider>
     </Card>
   );
 }
