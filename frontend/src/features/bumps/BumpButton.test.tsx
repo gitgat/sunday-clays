@@ -93,7 +93,7 @@ describe('BumpButton', () => {
     const queryClient = seeded(KEYS, { [KEY]: { bumps: 2, bumped: false } });
     const { user } = renderWithProviders(<Harness />, { queryClient });
     await user.click(screen.getByRole('button', { name: 'Fist bump, 2 bumps' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t send that bump');
+    expect(await screen.findByText('Couldn’t send that bump')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fist bump, 2 bumps' })).toHaveAttribute(
       'aria-pressed',
       'false',
@@ -109,7 +109,7 @@ describe('BumpButton', () => {
     const queryClient = seeded(KEYS, { [KEY]: { bumps: 1, bumped: false } });
     const { user } = renderWithProviders(<Harness />, { queryClient });
     await user.click(screen.getByRole('button', { name: 'Fist bump, 1 bump' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t send that bump');
+    expect(await screen.findByText('Couldn’t send that bump')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fist bump, 1 bump' })).toHaveAttribute(
       'aria-pressed',
       'false',
@@ -182,7 +182,7 @@ describe('BumpButton', () => {
     await user.click(buttonIn(B));
     await waitFor(() => expect(buttonIn(B)).toHaveAccessibleName('Fist bump, 1 bump'));
     failA();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t send that bump');
+    expect(await screen.findByText('Couldn’t send that bump')).toBeInTheDocument();
     expect(buttonIn(A)).toHaveAttribute('aria-pressed', 'false');
     expect(buttonIn(B)).toHaveAttribute('aria-pressed', 'true');
   });
@@ -199,7 +199,7 @@ describe('BumpButton', () => {
     );
     const { user } = renderWithProviders(<Harness />, { queryClient: createTestQueryClient() });
     await user.click(screen.getByRole('button', { name: 'Fist bump, 0 bumps' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t send that bump');
+    expect(await screen.findByText('Couldn’t send that bump')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fist bump, 0 bumps' })).toHaveAttribute(
       'aria-pressed',
       'false',
@@ -266,6 +266,83 @@ describe('BumpButton', () => {
       }),
     ).toBeInTheDocument();
     releasePost();
+  });
+
+  it('clears the failure text when the next tap goes through', async () => {
+    let posts = 0;
+    server.use(
+      http.post('*/api/bumps', () => {
+        posts += 1;
+        return posts === 1
+          ? HttpResponse.json({ error: { code: 'rate_limited', message: 'x' } }, { status: 429 })
+          : HttpResponse.json({ bumps: 3, bumped: true });
+      }),
+    );
+    const queryClient = seeded(KEYS, { [KEY]: { bumps: 2, bumped: false } });
+    const { user } = renderWithProviders(<Harness />, { queryClient });
+    await user.click(screen.getByRole('button', { name: 'Fist bump, 2 bumps' }));
+    expect(await screen.findByText('Couldn’t send that bump')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Fist bump, 2 bumps' }));
+    expect(screen.queryByText('Couldn’t send that bump')).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Fist bump, 3 bumps' })).toBeInTheDocument();
+  });
+
+  it('drops a stale refetch that was in flight when the counts were already loaded', async () => {
+    let gets = 0;
+    let releaseStale: () => void = () => undefined;
+    const staleHeld = new Promise<void>((resolve) => {
+      releaseStale = resolve;
+    });
+    const queryClient = seeded(KEYS, { [KEY]: { bumps: 2, bumped: false } });
+    server.use(
+      http.get('*/api/bumps', async () => {
+        gets += 1;
+        await staleHeld;
+        return HttpResponse.json({ [KEY]: { bumps: 2, bumped: false } });
+      }),
+      http.post('*/api/bumps', () => HttpResponse.json({ bumps: 3, bumped: true })),
+    );
+    const { user } = renderWithProviders(<Harness />, { queryClient });
+    await waitFor(() => expect(gets).toBe(1));
+    await user.click(screen.getByRole('button', { name: 'Fist bump, 2 bumps' }));
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+    releaseStale();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.getByRole('button', { name: 'Fist bump, 3 bumps' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('asks for the counts again once, after two quick taps before they ever loaded', async () => {
+    let gets = 0;
+    let releasePost: () => void = () => undefined;
+    const postHeld = new Promise<void>((resolve) => {
+      releasePost = resolve;
+    });
+    server.use(
+      http.get('*/api/bumps', async () => {
+        gets += 1;
+        if (gets === 1) await delay('infinite');
+        return HttpResponse.json({ [KEY]: { bumps: 1, bumped: false } });
+      }),
+      http.post('*/api/bumps', async () => {
+        await postHeld;
+        return HttpResponse.json({ bumps: 1, bumped: true });
+      }),
+      http.delete('*/api/bumps', () => HttpResponse.json({ bumps: 0, bumped: false })),
+    );
+    const queryClient = createTestQueryClient();
+    const { user } = renderWithProviders(<Harness />, { queryClient });
+    await waitFor(() => expect(gets).toBe(1));
+    await user.click(screen.getByRole('button', { name: 'Fist bump, 0 bumps' }));
+    await user.click(screen.getByRole('button', { name: 'Fist bump, 1 bump' }));
+    // Both taps are queued behind the held POST: one ask after both settle, not one per tap.
+    releasePost();
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+    await waitFor(() => expect(gets).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(gets).toBe(2);
   });
 
   it('shows the count but is off when this browser cannot keep a device id', () => {

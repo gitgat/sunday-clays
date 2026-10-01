@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { Sheet } from '../../../components/ui/Sheet';
 import { InsightBump } from '../../bumps/BumpsProvider';
@@ -65,6 +65,7 @@ export function KudosStrip({
 }) {
   const [all, setAll] = useState(false);
   const [chosen, setChosen] = useState<InsightKudos | null>(null);
+  const rowId = useId();
   const isDesktop = useIsDesktop();
   if (kudos.length === 0) return null;
   const shown = kudos.slice(0, KUDOS_CAP);
@@ -117,12 +118,15 @@ export function KudosStrip({
                 >
                   {naturalName(chip.display_name)}
                 </Link>
-                <p className="text-sm text-text-muted">
+                <p id={`${rowId}-${chip.insight.key}`} className="text-sm text-text-muted">
                   <Segments
                     segments={you ? (chip.insight.headline_you ?? []) : chip.insight.headline}
                   />
                 </p>
-                <InsightBump insightKey={chip.insight.key} />
+                <InsightBump
+                  insightKey={chip.insight.key}
+                  describedBy={`${rowId}-${chip.insight.key}`}
+                />
               </li>
             );
           })}

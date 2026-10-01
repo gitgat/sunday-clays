@@ -403,9 +403,8 @@ describe('fist bumps on every feed', () => {
     for (const key of ['recap', 'spot', 't1', 't2', 'm1']) {
       const row = container.querySelector(`[data-insight-key="${key}"]`);
       expect(row, key).not.toBeNull();
-      expect(
-        within(row as HTMLElement).getByRole('button', { name: /^Fist bump/ }),
-      ).toBeInTheDocument();
+      const bump = within(row as HTMLElement).getByRole('button', { name: /^Fist bump/ });
+      expect(bump).toHaveAccessibleDescription(/\S/);
     }
   });
 
@@ -552,7 +551,34 @@ describe('fist bumps on every feed', () => {
     renderWithProviders(<HomeInsights meId={null} />);
     const button = await screen.findByRole('button', { name: 'Fist bump, 4 bumps' });
     expect(button).toBeDisabled();
-    expect(screen.getAllByText('Bumps need this browser to remember you')).toHaveLength(1);
+    const notes = screen.getAllByText('Bumps need this browser to remember you');
+    expect(notes).toHaveLength(1);
+    // The note sits inside the Insights card, not as a bare line between widgets.
+    expect(
+      within(screen.getByRole('region', { name: 'Insights' })).getByText(
+        notes[0]?.textContent ?? '',
+      ),
+    ).toBe(notes[0]);
+    expect(button).toHaveAccessibleDescription(/remember you .+/);
     expect(asked[0]?.has('device_id')).toBe(false);
+  });
+
+  it.each([
+    ['a lone top story', { hero: insightFixture({ key: 'hero' }) }, 'Top story'],
+    ['a lone recap', { pinned: insightFixture({ key: 'recap' }) }, null],
+  ])('says why bumps are off once for %s', async (_name, feedBits, card) => {
+    server.use(http.get('*/api/insights/home', () => HttpResponse.json(feedFixture(feedBits))));
+    bumpCounts();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    renderWithProviders(<HomeInsights meId={null} />);
+    await screen.findByRole('button', { name: /^Fist bump/ });
+    const note = screen.getByText('Bumps need this browser to remember you');
+    if (card !== null) {
+      expect(
+        within(screen.getByRole('region', { name: card })).getByText(note.textContent ?? ''),
+      ).toBe(note);
+    }
   });
 });

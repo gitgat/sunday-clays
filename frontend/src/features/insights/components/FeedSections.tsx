@@ -8,7 +8,7 @@ import { formatShortDate } from '../../../lib/format';
 import { getMe } from '../../../lib/me';
 import { formatDay } from '../../shooters/format';
 import { useHomeFeed, usePageFeed, useShooterFeed, useSundayFeed, type InsightFeed } from '../api';
-import { BumpsProvider } from '../../bumps/BumpsProvider';
+import { BumpsOffNote, BumpsProvider } from '../../bumps/BumpsProvider';
 import { feedKeys } from '../feedKeys';
 import { InsightCard } from './InsightCard';
 import { InsightList, isMine } from './InsightList';
@@ -131,13 +131,20 @@ export function HomeInsights({ meId }: { meId: number | null }) {
   // A failed fetch shows nothing: the other home cards already report an outage.
   if (feed.data === undefined || isEmpty(feed.data)) return null;
   const f = feed.data;
+  const hasInsights =
+    f.spotlight != null || f.top.length > 0 || f.kudos.length > 0 || f.more.length > 0;
+  // "Bumps need this browser to remember you" goes inside a card, once: the Insights card, or the
+  // Top story card when that is the only one with insights.
+  const noteInInsights = hasInsights;
   return (
-    <BumpsProvider keys={feedKeys(f)}>
+    <BumpsProvider keys={feedKeys(f)} note={false}>
+      {!hasInsights && f.hero == null && <BumpsOffNote />}
       {(f.pinned != null || f.hero != null) && (
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
           {f.pinned != null && <RecapCard insight={f.pinned} />}
           {f.hero != null && (
             <Card title="Top story" subtitle={latestSubtitle(f.hero.anchor_date)}>
+              {!noteInInsights && <BumpsOffNote />}
               <ul aria-label="Top story" className="flex flex-col gap-3">
                 <InsightCard insight={f.hero} you={isMine(f.hero, meId)} />
               </ul>
@@ -145,7 +152,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
           )}
         </div>
       )}
-      {(f.spotlight != null || f.top.length > 0 || f.kudos.length > 0 || f.more.length > 0) && (
+      {hasInsights && (
         <Card
           title="Insights"
           subtitle={
@@ -155,6 +162,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
           }
         >
           <div className="flex min-w-0 flex-col gap-3">
+            <BumpsOffNote />
             {f.spotlight != null && (
               <section aria-label="Shooter to know" className="flex flex-col gap-2">
                 <h3 className="text-sm font-medium text-text-muted">Shooter to know</h3>

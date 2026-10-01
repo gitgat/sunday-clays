@@ -25,6 +25,7 @@ export function InsightCard({ insight, you = false, className = '' }: InsightCar
   const [open, setOpen] = useState(false);
   const viewerWindow = useExplicitWindow();
   const panelId = useId();
+  const headlineId = useId();
   const headline = you && insight.headline_you !== null ? insight.headline_you : insight.headline;
   const chart = insight.chart;
   const label = you && chart.label_you ? chart.label_you : chart.label;
@@ -33,7 +34,7 @@ export function InsightCard({ insight, you = false, className = '' }: InsightCar
       data-insight-key={insight.key}
       className={`flex min-w-0 flex-col gap-2 border-t border-outline-variant pt-3 first:border-t-0 first:pt-0 ${className}`.trim()}
     >
-      <p className="break-words text-base text-text">
+      <p id={headlineId} className="break-words text-base text-text">
         {insight.is_new && (
           <span className="mr-2 rounded-button bg-primary px-2 py-0.5 align-middle text-xs font-bold">
             New
@@ -69,7 +70,7 @@ export function InsightCard({ insight, you = false, className = '' }: InsightCar
           open={open}
           onToggle={() => setOpen((v) => !v)}
         />
-        <InsightBump insightKey={insight.key} />
+        <InsightBump insightKey={insight.key} describedBy={headlineId} />
       </div>
       {open && <InsightExplainer id={panelId} insight={insight} you={you} />}
     </li>

@@ -124,7 +124,13 @@ export function useBumpToggle(
     // onSuccess or the refetch in onSettled then corrects it.)
     if (loaded) void qc.cancelQueries({ queryKey });
     qc.setQueryData<BumpCounts>(queryKey, toggled(counts, insightKey, bump));
-    mutation.mutate({ bump, previous: counts?.[insightKey], refetch: !loaded });
+    // A tap still queued for this insight that owes a refetch hands that duty on: its own write made
+    // the map look loaded, but only the last queued tap invalidates, so it must carry it.
+    const owes = qc
+      .getMutationCache()
+      .findAll({ mutationKey, status: 'pending' })
+      .some((m) => (m.state.variables as { refetch?: boolean } | undefined)?.refetch === true);
+    mutation.mutate({ bump, previous: counts?.[insightKey], refetch: !loaded || owes });
   }
   return { send, failed };
 }

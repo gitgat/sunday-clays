@@ -211,4 +211,19 @@ describe('InsightCard bumps', () => {
     );
     expect(screen.queryByRole('button', { name: /^Fist bump/ })).toBeNull();
   });
+
+  it('keeps the button’s name and describes it by the headline', async () => {
+    renderWithProviders(
+      <BumpsProvider keys={['k-pb-3']}>
+        <ul>
+          <InsightCard insight={insightFixture()} />
+        </ul>
+      </BumpsProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Fist bump, 0 bumps' });
+    const headline = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+    expect(headline).not.toBeNull();
+    expect(headline?.textContent).toContain('New personal best for');
+    expect(button).toHaveAccessibleDescription(/New personal best for.*Ike Hadley/);
+  });
 });

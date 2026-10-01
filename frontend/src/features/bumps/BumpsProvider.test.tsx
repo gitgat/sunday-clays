@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { server } from '../../test/msw/server';
@@ -61,5 +61,57 @@ describe('BumpsProvider', () => {
     expect(button).toHaveAccessibleDescription('Bumps need this browser to remember you');
     await waitFor(() => expect(asked).toHaveLength(1));
     expect(asked[0]?.has('device_id')).toBe(false);
+  });
+
+  it('announces several failures once, in one polite live region that is always there', async () => {
+    server.use(
+      http.get('*/api/bumps', () =>
+        HttpResponse.json({ a: { bumps: 0, bumped: false }, b: { bumps: 0, bumped: false } }),
+      ),
+      http.post('*/api/bumps', () =>
+        HttpResponse.json({ error: { code: 'rate_limited', message: 'x' } }, { status: 429 }),
+      ),
+    );
+    const { container, user } = renderWithProviders(
+      <BumpsProvider keys={['a', 'b']}>
+        <section aria-label="a">
+          <InsightBump insightKey="a" />
+        </section>
+        <section aria-label="b">
+          <InsightBump insightKey="b" />
+        </section>
+      </BumpsProvider>,
+    );
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    expect(live).toBeEmptyDOMElement();
+    expect(live).not.toHaveAttribute('role');
+    for (const name of ['a', 'b']) {
+      await user.click(
+        within(screen.getByRole('region', { name })).getByRole('button', { name: /^Fist bump/ }),
+      );
+    }
+    await waitFor(() => expect(live).toHaveTextContent(/^Couldn’t send that bump$/));
+    // Each failed button keeps its own visible text, but nothing is an alert or a status.
+    expect(screen.getAllByText('Couldn’t send that bump')).toHaveLength(3);
+    expect(screen.queryAllByRole('alert')).toHaveLength(0);
+    expect(screen.queryAllByRole('status')).toHaveLength(0);
+  });
+
+  it('describes the button by its headline as well as the off note', async () => {
+    asking();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    renderWithProviders(
+      <BumpsProvider keys={['a']}>
+        <p id="head-a">Pat Kim shot 44</p>
+        <InsightBump insightKey="a" describedBy="head-a" />
+      </BumpsProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Fist bump, 3 bumps' });
+    expect(button).toHaveAccessibleDescription(
+      'Bumps need this browser to remember you Pat Kim shot 44',
+    );
   });
 });
