@@ -68,13 +68,23 @@ export function ClubPulse({ range: fixed }: { range?: WindowRange } = {}) {
         range={range}
         label={label}
         explainer={fixed === undefined ? homeExplainers.pulse : homeExplainers.pulseSheet}
+        windowName={fixed === undefined ? undefined : 'these 8 weeks'}
       />
     </Suspense>
   );
   // An empty window shows the chart card alone, so there is one message: its Table, CSV and
   // Fullscreen still reach every Sunday, and it offers 12M and All instead of falling back to
   // all-time numbers under this tag.
-  if (stats.scored === 0) return chart;
+  if (stats.scored === 0) {
+    // On the Sheet the header window and its widen buttons do not apply: say so in the 8 weeks' own words.
+    if (fixed !== undefined)
+      return (
+        <Card title="Club pulse" subtitle={tag}>
+          <EmptyState title="No scored Sundays in these 8 weeks" />
+        </Card>
+      );
+    return chart;
+  }
   // The chart is a sibling card, not nested in the pulse card: nesting would cost its header
   // 32px on a phone and truncate the title beside the Table/CSV/Fullscreen buttons.
   return (

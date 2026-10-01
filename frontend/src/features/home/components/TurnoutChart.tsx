@@ -39,6 +39,7 @@ export function TurnoutChart({
   range,
   label,
   explainer = homeExplainers.pulse,
+  windowName,
 }: {
   events: EventSummary[];
   range: WindowRange;
@@ -46,6 +47,8 @@ export function TurnoutChart({
   label: string;
   /** The Sunday Sheet's fixed 8 weeks explain themselves differently (Plan 14). */
   explainer?: Explainer;
+  /** What the trimmed-table note calls the window (default: "the time window"). */
+  windowName?: string;
 }) {
   const [roundTypes] = useRoundTypes();
   const queryClient = useQueryClient();
@@ -72,12 +75,13 @@ export function TurnoutChart({
       subtitle="Head count each Sunday"
       option={model.option}
       window={range}
+      windowName={windowName}
       emptyWindow={{ none: 'No scored Sundays', last: 'Latest scored Sunday' }}
       fullQuery={fullQuery}
       columns={model.columns}
       rows={model.rows}
       csvName={`turnout-${range.to}`}
-      ariaLabel={`Turnout per Sunday, ${label.toLowerCase()}`}
+      ariaLabel={`Turnout per Sunday, ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
       urlKey="pulse"
       explainer={explainer}
     />

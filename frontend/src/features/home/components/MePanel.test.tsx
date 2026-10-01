@@ -254,6 +254,6 @@ describe('MePanel', () => {
       http.get('*/api/shooters/:id/rounds', () => HttpResponse.json([])),
     );
     renderWithProviders(<MePanel meId={3} onCleared={vi.fn()} widgets={[]} />);
-    expect(await screen.findByText("Couldn't load your panel")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load this")).toBeInTheDocument();
   });
 });

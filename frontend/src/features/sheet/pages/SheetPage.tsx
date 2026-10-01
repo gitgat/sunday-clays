@@ -21,27 +21,31 @@ import { YourSunday } from '../components/YourSunday';
 const NOTE_ID = 'sheet-bumps-off';
 
 /**
- * Where each block sits. A phone stacks them in this order (the column wrappers are `contents`
- * below 1024 px, so every block is an item of one flex column); from 1024 px the main column
- * (lead, feed, More) sits beside the rail (you, next, pulse, details), each in this order.
+ * Where the grid items sit from 1024 px. The DOM is in phone order (masthead, numbers, Your
+ * Sunday, then the main column, then the rail), so reading and focus order match what a phone
+ * shows (WCAG 1.3.2, 2.4.3); the desktop grid places each piece explicitly instead of reordering.
  */
-export const SHEET_ORDER = {
-  masthead: 'order-1 lg:order-none lg:col-span-3',
-  numbers: 'order-2 lg:order-none lg:col-span-3',
-  you: 'order-3',
-  lead: 'order-4',
-  feed: 'order-5',
-  more: 'order-6',
-  next: 'order-7',
-  pulse: 'order-8',
-  details: 'order-9',
+export const SHEET_PLACEMENT = {
+  masthead: 'lg:col-span-3 lg:col-start-1 lg:row-start-1',
+  numbers: 'lg:col-span-3 lg:col-start-1 lg:row-start-2',
+  you: 'lg:col-start-3 lg:row-start-3',
+  main: 'lg:col-span-2 lg:col-start-1 lg:row-span-2 lg:row-start-3',
+  rail: 'lg:col-start-3 lg:row-start-4',
 } as const;
 
-function Block({ name, children }: { name: keyof typeof SHEET_ORDER; children: ReactNode }) {
+function Block({
+  name,
+  className,
+  children,
+}: {
+  name: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
     <div
       data-sheet-block={name}
-      className={cx('flex min-w-0 flex-col gap-4 empty:hidden', SHEET_ORDER[name])}
+      className={cx('flex min-w-0 flex-col gap-4 empty:hidden', className)}
     >
       {children}
     </div>
@@ -63,14 +67,27 @@ function SheetBody({
   const bumps = useBumps(date, deviceId);
   const shared = { issue, bumps: bumps.data, deviceId, meId, noteId: NOTE_ID };
   return (
-    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-3 lg:items-start">
-      <Block name="masthead">
+    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-3 lg:grid-rows-[auto_auto_auto_1fr] lg:items-start">
+      <Block name="masthead" className={SHEET_PLACEMENT.masthead}>
         <Masthead issue={issue} />
       </Block>
-      <Block name="numbers">
+      <Block name="numbers" className={SHEET_PLACEMENT.numbers}>
         <Numbers issue={issue} />
       </Block>
-      <div className="contents lg:col-span-2 lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
+      <Block name="you" className={SHEET_PLACEMENT.you}>
+        <YourSunday
+          meId={meId}
+          skipped={skipped}
+          widgets={widgets}
+          onPicked={setMeId}
+          onCleared={() => setMeId(null)}
+          onSkipped={() => setSkipped(true)}
+        />
+      </Block>
+      <div
+        data-sheet-column="main"
+        className={cx('flex min-w-0 flex-col gap-4', SHEET_PLACEMENT.main)}
+      >
         <Block name="lead">
           <WidgetSlot slot="hero" widgets={widgets} meId={meId} issue={issue} />
         </Block>
@@ -84,17 +101,10 @@ function SheetBody({
           <MoreFromSunday {...shared} />
         </Block>
       </div>
-      <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
-        <Block name="you">
-          <YourSunday
-            meId={meId}
-            skipped={skipped}
-            widgets={widgets}
-            onPicked={setMeId}
-            onCleared={() => setMeId(null)}
-            onSkipped={() => setSkipped(true)}
-          />
-        </Block>
+      <div
+        data-sheet-column="rail"
+        className={cx('flex min-w-0 flex-col gap-4', SHEET_PLACEMENT.rail)}
+      >
         {latest && (
           <Block name="next">
             <WidgetSlot slot="main" widgets={widgets} meId={meId} issue={issue} />

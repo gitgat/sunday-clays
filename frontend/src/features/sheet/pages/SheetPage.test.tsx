@@ -11,7 +11,7 @@ import { insightFixture } from '../../insights/mocks';
 import { newerText } from '../components/Masthead';
 import { sheetExplainers } from '../explainers';
 import { onThisDayPost, postFixture, sheetFixture, trophyPost } from '../mocks';
-import { SHEET_ORDER, SheetPage } from './SheetPage';
+import { SHEET_PLACEMENT, SheetPage } from './SheetPage';
 
 // The rail's turnout chart loads lazily: warm it once so findBy*'s budget never covers a cold import.
 beforeAll(async () => {
@@ -328,14 +328,12 @@ describe('SheetPage', () => {
   });
 
   it(
-    'stacks the blocks in the Sheet order on a phone and splits main and rail on desktop',
+    'puts the blocks in the DOM in phone order, with the desktop columns placed explicitly',
     async () => {
       const { container } = renderAt();
       await turnoutChart();
       const blocks = [...container.querySelectorAll<HTMLElement>('[data-sheet-block]')];
-      const order = (el: HTMLElement) => Number(/(?:^| )order-(\d)/.exec(el.className)?.[1]);
-      const stacked = [...blocks].sort((a, b) => order(a) - order(b));
-      expect(stacked.map((b) => b.dataset['sheetBlock'])).toEqual([
+      expect(blocks.map((b) => b.dataset['sheetBlock'])).toEqual([
         'masthead',
         'numbers',
         'you',
@@ -346,38 +344,28 @@ describe('SheetPage', () => {
         'pulse',
         'details',
       ]);
-      for (const block of blocks) {
-        const name = block.dataset['sheetBlock'] as keyof typeof SHEET_ORDER;
-        expect(block.className).toContain(SHEET_ORDER[name]);
+      for (const [i, a] of blocks.entries()) {
+        const b = blocks[i + 1];
+        if (b === undefined) break;
+        expect(
+          Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING),
+          `${a.dataset['sheetBlock'] ?? ''} before ${b.dataset['sheetBlock'] ?? ''}`,
+        ).toBe(true);
       }
-      // Real DOM order: blocks that share a column sit in the DOM in their phone order, so the
-      // desktop columns read top to bottom the same way. The masthead and numbers lead both.
-      const follows = (a: HTMLElement, b: HTMLElement) =>
-        Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-      for (const [i, a] of stacked.entries()) {
-        for (const b of stacked.slice(i + 1)) {
-          if (a.parentElement === b.parentElement) {
-            expect(
-              follows(a, b),
-              `${a.dataset['sheetBlock']} before ${b.dataset['sheetBlock']}`,
-            ).toBe(true);
-          }
-        }
+      for (const name of ['masthead', 'numbers', 'you'] as const) {
+        const el = container.querySelector(`[data-sheet-block="${name}"]`);
+        expect(el?.className, name).toContain(SHEET_PLACEMENT[name]);
       }
-      const byName = (n: string): HTMLElement => {
-        const el = container.querySelector<HTMLElement>(`[data-sheet-block="${n}"]`);
-        if (el === null) throw new Error(`no ${n} block`);
-        return el;
-      };
-      for (const n of ['lead', 'feed', 'more', 'you', 'next', 'pulse', 'details']) {
-        expect(follows(byName('numbers'), byName(n)), `numbers before ${n}`).toBe(true);
+      for (const name of ['main', 'rail'] as const) {
+        const el = container.querySelector(`[data-sheet-column="${name}"]`);
+        expect(el?.className, name).toContain(SHEET_PLACEMENT[name]);
       }
-      expect(follows(byName('masthead'), byName('numbers'))).toBe(true);
-      const lead = container.querySelector('[data-sheet-block="lead"]')?.parentElement;
-      const rail = container.querySelector('[data-sheet-block="you"]')?.parentElement;
-      expect(lead?.className).toContain('lg:col-span-2');
-      expect(rail).not.toBe(lead);
-      expect(rail?.className).toContain('lg:flex');
+      const you = container.querySelector('[data-sheet-block="you"]') as HTMLElement;
+      const main = container.querySelector('[data-sheet-column="main"]') as HTMLElement;
+      const rail = container.querySelector('[data-sheet-column="rail"]') as HTMLElement;
+      expect(you.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(main.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(container.innerHTML).not.toMatch(/(?:^|[ "])order-\d|\bcontents\b/);
     },
     LAZY_TEST_TIMEOUT,
   );
@@ -513,6 +501,83 @@ describe('SheetPage', () => {
       renderAt();
       await turnoutChart();
       expect(screen.queryByRole('region', { name: 'Which one are you?' })).toBeNull();
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  const pastIssue = (headline = insightFixture({ key: 'hero' })) =>
+    http.get('*/api/sheet/:date', () =>
+      HttpResponse.json(
+        sheetFixture({
+          headline,
+          masthead: {
+            date: '2026-09-13',
+            issue: 309,
+            previous: '2026-09-06',
+            next: '2026-09-27',
+            latest: false,
+            newer: null,
+          },
+        }),
+      ),
+    );
+
+  it(
+    'fixes the club pulse to the 8 weeks to the issue Sunday whatever the header window says',
+    async () => {
+      const seen: string[] = [];
+      server.use(
+        pastIssue(),
+        http.get('*/api/events', ({ request }) => {
+          const q = new URL(request.url).searchParams;
+          seen.push(`${q.get('from') ?? ''}..${q.get('to') ?? ''}`);
+          return HttpResponse.json(seasonEvents);
+        }),
+      );
+      const { user } = renderAt('/sheet/2026-09-13?w=all');
+      await turnoutChart();
+      const pulse = screen.getByRole('region', { name: 'Club pulse' });
+      expect(
+        within(pulse).getByText('8 weeks to Sep 13, 2026 · not affected by the time filter'),
+      ).toBeInTheDocument();
+      expect(seen[0]).toBe('2026-07-20..2026-09-13');
+      // The table's trimmed-window note names the 8 weeks, not the (ignored) time window.
+      await user.click(
+        within(screen.getByRole('region', { name: 'Turnout per Sunday' })).getByRole('button', {
+          name: 'Table',
+        }),
+      );
+      expect(await screen.findByText(/Showing these 8 weeks\./)).toBeInTheDocument();
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it('dates the Top story only when the headline is about an earlier Sunday than the issue', async () => {
+    server.use(pastIssue(insightFixture({ key: 'hero', anchor_date: '2026-09-13' })));
+    const first = renderAt('/sheet/2026-09-13');
+    const top = await screen.findByRole('region', { name: 'Top story' });
+    expect(within(top).getByText('Not affected by the time filter')).toBeInTheDocument();
+    first.unmount();
+    server.use(pastIssue(insightFixture({ key: 'hero', anchor_date: '2026-09-06' })));
+    renderAt('/sheet/2026-09-13');
+    const older = await screen.findByRole('region', { name: 'Top story' });
+    expect(
+      within(older).getByText('Sep 6, 2026 · not affected by the time filter'),
+    ).toBeInTheDocument();
+  });
+
+  it(
+    'keeps the Club pulse card, with no widen buttons, when the 8 weeks hold no scored Sundays',
+    async () => {
+      server.use(http.get('*/api/events', () => HttpResponse.json([])));
+      renderAt('/sheet/2026-09-27?w=12m');
+      expect(await screen.findByText('No scored Sundays in these 8 weeks')).toBeInTheDocument();
+      const pulse = screen.getByRole('region', { name: 'Club pulse' });
+      expect(
+        within(pulse).getByText('8 weeks to Sep 27, 2026 · not affected by the time filter'),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /12M|all time/i })).toBeNull();
+      expect(screen.queryByText(/last 12 months/)).toBeNull();
     },
     LAZY_TEST_TIMEOUT,
   );

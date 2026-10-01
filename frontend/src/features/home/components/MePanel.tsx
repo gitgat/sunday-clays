@@ -118,7 +118,7 @@ function MeDetails({
         </div>
       );
     }
-    return <EmptyState title="Couldn't load your panel" description={detail.error.message} />;
+    return <EmptyState title="Couldn't load this" description={detail.error.message} />;
   }
 
   let result: ReactNode;
