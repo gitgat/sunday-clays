@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
+import { BumpsProvider } from '../../bumps/BumpsProvider';
 import { kudosFixture } from '../mocks';
 import { KudosStrip, kudosLabel, naturalName } from './KudosStrip';
 
@@ -77,5 +78,18 @@ describe('KudosStrip', () => {
     expect(naturalName('Cher')).toBe('Cher');
     expect(kudosLabel('pf.pb')).toBe('personal best');
     expect(kudosLabel('pf.someday')).toBe('kudos');
+  });
+
+  it('puts a fist bump on every row of the full list and on an opened chip', async () => {
+    const kudos = kudosFixture(12);
+    const { user } = renderWithProviders(
+      <BumpsProvider keys={kudos.map((chip) => chip.insight.key)}>
+        <KudosStrip kudos={kudos} meId={null} />
+      </BumpsProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'and 2 more' }));
+    const sheet = await screen.findByRole('dialog');
+    expect(within(sheet).getAllByRole('button', { name: /^Fist bump/ })).toHaveLength(12);
+    expect(sheet.querySelector('[data-insight-key="k-11"]')).not.toBeNull();
   });
 });
