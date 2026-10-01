@@ -24,6 +24,15 @@ const recap = insightFixture({
   subject_id: '2026-09-27',
   headline: [{ t: 'text', v: '23 shooters came out; the top score was 49.' }],
   headline_you: null,
+  // The real recap's chart is the Sunday's results (insights/kinds), not a profile.
+  chart: {
+    ...insightFixture().chart,
+    route: '/events/2026-09-27',
+    anchor: 'results',
+    params: {},
+    label: 'Results for Sep 27, 2026',
+    label_you: null,
+  },
 });
 const spotlight = insightFixture(); // Ike Hadley (3), with a "you" twin
 
@@ -60,8 +69,11 @@ describe('SheetLead', () => {
     expect(deck).toHaveClass('line-clamp-3');
     expect(screen.getByRole('link', { name: 'See the results' })).toHaveAttribute(
       'href',
-      expect.stringContaining('/shooters/3?'),
+      expect.stringContaining('/events/2026-09-27'),
     );
+    const toggle = screen.getByRole('button', { name: 'Show all' });
+    expect(toggle).toHaveAttribute('aria-controls', deck?.id);
+    expect(deck?.id).not.toBe('');
   });
 
   it('reads the viewer’s own spotlight in the second person', () => {

@@ -6,7 +6,7 @@ import { expectChartControls } from '../../../test/charts';
 import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
-import { meDetail, meRounds, seasonEvents } from '../../home/mocks';
+import { homeMeta, meDetail, meRounds, seasonEvents } from '../../home/mocks';
 import { insightFixture } from '../../insights/mocks';
 import { newerText } from '../components/Masthead';
 import { sheetExplainers } from '../explainers';
@@ -153,14 +153,95 @@ describe('SheetPage', () => {
         ),
       ),
     );
+    server.use(
+      http.get('*/api/meta', () => HttpResponse.json({ ...homeMeta, last_score_date: null })),
+    );
     renderWithProviders(<SheetPage />, { route: '/', path: '/' });
     expect(await screen.findByText('No Sunday Sheet yet')).toBeInTheDocument();
-    expect(screen.getByText('An admin can upload the scores workbook.')).toBeInTheDocument();
+    expect(await screen.findByText('An admin can upload the scores workbook.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'The Sunday Sheet' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'All Sundays' })).toHaveAttribute('href', '/events');
     expect(screen.queryByRole('link', { name: 'Latest issue' })).toBeNull();
     expect(screen.queryByText('No Sunday Sheet for this date')).toBeNull();
     expect(screen.getByRole('region', { name: 'Which one are you?' })).toBeInTheDocument();
     expect(await screen.findByRole('region', { name: 'Next Sunday' })).toBeInTheDocument();
+  });
+
+  it('does not say to upload the workbook when Sundays with partial results already exist', async () => {
+    server.use(
+      http.get('*/api/sheet/latest', () =>
+        HttpResponse.json(
+          { error: { code: 'sheet_not_found', message: 'No Sunday Sheet' } },
+          { status: 404 },
+        ),
+      ),
+    );
+    renderWithProviders(<SheetPage />, { route: '/', path: '/' });
+    expect(await screen.findByText('No Sunday has full results yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/upload the scores workbook/)).toBeNull();
+  });
+
+  it.each(['/sheet/2026-9-27', '/sheet/2026-13-01', '/sheet/not-a-date'])(
+    'shows the not-found state, not a retry message, for the malformed date %s',
+    async (route) => {
+      server.use(
+        http.get('*/api/sheet/:date', () =>
+          HttpResponse.json(
+            { error: { code: 'validation_error', message: 'bad date' } },
+            { status: 422 },
+          ),
+        ),
+      );
+      renderAt(route);
+      expect(await screen.findByText('No Sunday Sheet for this date')).toBeInTheDocument();
+      expect(screen.queryByText('Try again in a moment.')).toBeNull();
+      expect(screen.getByRole('link', { name: 'Latest issue' })).toHaveAttribute('href', '/');
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'The Sunday Sheet' }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it('keeps an h1 on the dated not-found and the error states', async () => {
+    server.use(
+      http.get('*/api/sheet/:date', () =>
+        HttpResponse.json({ error: { code: 'internal', message: 'Boom' } }, { status: 500 }),
+      ),
+    );
+    renderAt();
+    expect(await screen.findByText("Couldn't load the Sunday Sheet")).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'The Sunday Sheet' })).toBeInTheDocument();
+  });
+
+  it('moves focus to the new card after "Not me", a pick and a skip', async () => {
+    setMe(3);
+    const { user } = renderAt();
+    const panel = await screen.findByRole('region', { name: 'Your Sunday' });
+    await user.click(within(panel).getByRole('button', { name: 'Not me' }));
+    expect(screen.getByRole('heading', { name: 'Which one are you?' })).toHaveFocus();
+    await user.type(screen.getByLabelText('Your name'), 'Hadley');
+    await user.click(await screen.findByRole('button', { name: 'Hadley, Ike' }));
+    expect(await screen.findByRole('heading', { name: 'Your Sunday' })).toHaveFocus();
+    await user.click(
+      within(screen.getByRole('region', { name: 'Your Sunday' })).getByRole('button', {
+        name: 'Not me',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Not a shooter / skip' }));
+    expect(screen.queryByRole('heading', { name: 'Which one are you?' })).toBeNull();
+    const main = document.querySelector('[data-sheet-column="main"]') as HTMLElement;
+    expect(main.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement?.tagName).toMatch(/^H\d$/);
+  });
+
+  it('gives Your Sunday and the rail their own complementary landmarks', async () => {
+    renderAt();
+    await screen.findByRole('heading', { level: 1, name: 'The Sunday Sheet' });
+    const asides = screen.getAllByRole('complementary');
+    expect(asides.map((a) => a.getAttribute('aria-label'))).toEqual([
+      'Personal',
+      'More about this Sunday',
+    ]);
   });
 
   it('says so when the issue fails to load', async () => {

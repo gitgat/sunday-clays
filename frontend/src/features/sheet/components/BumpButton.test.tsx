@@ -190,6 +190,55 @@ describe('BumpButton', () => {
     );
   });
 
+  it('refetches the counts when a bump was tapped before they first loaded', async () => {
+    const A = 'k-a';
+    const B = 'k-b';
+    let gets = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get('*/api/sheet/:date/bumps', async () => {
+        gets += 1;
+        if (gets === 1) await held;
+        return HttpResponse.json({
+          [A]: { bumps: 6, bumped: true },
+          [B]: { bumps: 4, bumped: false },
+        });
+      }),
+      http.post('*/api/sheet/bumps', () => HttpResponse.json({ bumps: 6, bumped: true })),
+    );
+    function Two() {
+      const bumps = useBumps(DATE, DEVICE);
+      return (
+        <>
+          <p id="note">off</p>
+          {[A, B].map((k) => (
+            <section key={k} aria-label={k}>
+              <BumpButton
+                date={DATE}
+                postKey={k}
+                deviceId={DEVICE}
+                state={bumps.data?.[k]}
+                noteId="note"
+              />
+            </section>
+          ))}
+        </>
+      );
+    }
+    const { user } = renderWithProviders(<Two />, { queryClient: createTestQueryClient() });
+    await user.click(within(screen.getByRole('region', { name: A })).getByRole('button'));
+    release();
+    await waitFor(() => expect(gets).toBeGreaterThanOrEqual(2));
+    expect(
+      await within(screen.getByRole('region', { name: B })).findByRole('button', {
+        name: 'Fist bump, 4 bumps',
+      }),
+    ).toBeInTheDocument();
+  });
+
   it('shows the count but is off when this browser cannot keep a device id', () => {
     const queryClient = createTestQueryClient();
     queryClient.setQueryData(bumpsKey(DATE, null), { [KEY]: { bumps: 4, bumped: false } });
