@@ -7,6 +7,11 @@ const listeners = new Set<() => void>();
 /** A skip this browser could not store: still true for this page view, so every card agrees. */
 let skippedInMemory = false;
 
+/** Test-only: forget the in-memory skip so module state cannot leak between tests. */
+export function resetMeForTests(): void {
+  skippedInMemory = false;
+}
+
 function changed(): void {
   listeners.forEach((l) => {
     l();
@@ -54,7 +59,7 @@ export function clearMe(): void {
 /** True once this browser said "Skip, I’m not a shooter". */
 export function isMeSkipped(): boolean {
   try {
-    return localStorage.getItem(SKIP_KEY) === '1';
+    return localStorage.getItem(SKIP_KEY) === '1' || skippedInMemory;
   } catch {
     return skippedInMemory;
   }
