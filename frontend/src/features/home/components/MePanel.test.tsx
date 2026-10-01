@@ -63,6 +63,20 @@ describe('MePanel', () => {
     clearMe();
   });
 
+  it('takes another title and header controls (the Sheet’s "Your Sunday" and "Not me")', async () => {
+    renderWithProviders(
+      <MePanel
+        meId={3}
+        onCleared={vi.fn()}
+        widgets={[]}
+        title="Your Sunday"
+        actions={<button type="button">Not me</button>}
+      />,
+    );
+    const panel = await screen.findByRole('region', { name: 'Your Sunday' });
+    expect(within(panel).getByRole('button', { name: 'Not me' })).toBeInTheDocument();
+  });
+
   it('invites you to pick yourself when no me id is set', () => {
     renderWithProviders(<MePanel meId={null} onCleared={vi.fn()} widgets={[nextTrophy]} />);
     expect(screen.getByText(/tap “That’s me”/)).toBeInTheDocument();

@@ -155,14 +155,20 @@ export function MePanel({
   meId,
   onCleared,
   widgets,
+  title = 'Your panel',
+  actions,
 }: {
   meId: number | null;
   onCleared: () => void;
   widgets: HomeWidget[];
+  /** The Sunday Sheet calls it "Your Sunday" (Plan 14). */
+  title?: string;
+  /** Header controls ("Not me" on the Sheet). */
+  actions?: ReactNode;
 }) {
   const shootersLink = useRoundTypeLink('/shooters');
   return (
-    <Card title="Your panel">
+    <Card title={title} actions={actions}>
       {meId === null ? (
         // The link stands on its own line: inline in the sentence it could not be 44px tall (C10).
         <div className="flex flex-col gap-2">
