@@ -1,13 +1,12 @@
 import type { HomeWidget, HomeWidgetProps } from '../home/widgets';
-import { HomeInsights } from './components/FeedSections';
 import { SheetLead } from './components/SheetLead';
 
 /**
  * The Sunday Sheet's lead (Plan 14): the issue's headline with its recap as the deck, then the
- * spotlight. Without an issue (the Home page, until Task 9 retires it) it is the home feed.
+ * spotlight. Nothing outside an issue.
  */
 function InsightsLead({ meId, issue }: HomeWidgetProps) {
-  if (issue === undefined) return <HomeInsights meId={meId} />;
+  if (issue === undefined) return null;
   return (
     <SheetLead
       headline={issue.headline}

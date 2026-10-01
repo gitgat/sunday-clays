@@ -53,11 +53,10 @@ describe('home explainers', () => {
     for (const [key, words] of totals) expect(words, key).toBeLessThanOrEqual(95);
   });
 
-  it('tags the club numbers with the time window and leaves the latest Sunday untagged', () => {
+  it('tags the club numbers with the time window', () => {
     for (const key of ['pulse', 'pulseHeld', 'pulseTurnout', 'pulseHigh'] as const) {
       expect(homeExplainers[key].scope, key).toBe('windowed');
     }
-    expect(homeExplainers.latestMedian.scope).toBeUndefined();
   });
 
   it('leaves the Sheet’s fixed 8-week club numbers untagged: the header window does not apply', () => {

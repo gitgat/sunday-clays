@@ -46,9 +46,9 @@ describe('collectFeatures', () => {
 });
 
 describe('the discovered registry', () => {
-  it('includes the home feature as the index route and first nav item', () => {
+  it('includes the Sunday Sheet as the index route and first nav item', () => {
     expect(featureRoutes.some((route) => route.index === true)).toBe(true);
-    expect(navItems[0]).toMatchObject({ label: 'Home', path: '/', order: 10, mobileTab: true });
+    expect(navItems[0]).toMatchObject({ label: 'Sheet', path: '/', order: 10, mobileTab: true });
   });
 });
 
@@ -65,7 +65,7 @@ function urlOf(route: RouteObject): string {
  * chart scopes. Pages that only carry `?rt=` on their links (an event page, the shooter list, Trophies) honour neither.
  */
 const EXPECTED: Record<string, PageFilters> = {
-  '/': BOTH_FILTERS,
+  '/': ROUND_TYPE_ONLY,
   '/events': ROUND_TYPE_ONLY,
   '/events/:date': NO_FILTERS,
   '/sheet/:date': ROUND_TYPE_ONLY,

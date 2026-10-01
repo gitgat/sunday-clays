@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
 import { insightFixture } from '../mocks';
 import { MoreInsights } from './MoreInsights';
-import { RecapCard } from './RecapCard';
 
 describe('MoreInsights', () => {
   it('groups the rest by family behind a closed "More insights" disclosure', async () => {
@@ -84,32 +83,5 @@ describe('MoreInsights', () => {
   it('renders nothing when there is nothing more', () => {
     const { container } = renderWithProviders(<MoreInsights items={[]} total={0} />);
     expect(container).toBeEmptyDOMElement();
-  });
-});
-
-describe('RecapCard', () => {
-  it('links the results with the viewer window when the insight has no dates of its own', () => {
-    const base = insightFixture();
-    renderWithProviders(
-      <RecapCard
-        insight={insightFixture({ chart: { ...base.chart, type: 'explorer', spec: null } })}
-      />,
-      { route: '/?w=6m' },
-    );
-    expect(screen.getByRole('link', { name: 'See the results' })).toHaveAttribute(
-      'href',
-      '/explorer?w=6m',
-    );
-  });
-
-  it('clamps to three lines until "Show all" and links the results', async () => {
-    const { user } = renderWithProviders(<RecapCard insight={insightFixture()} />);
-    const text = screen.getByText(/New personal best for/).closest('p');
-    expect(text).toHaveClass('line-clamp-3');
-    await user.click(screen.getByRole('button', { name: 'Show all' }));
-    expect(text).not.toHaveClass('line-clamp-3');
-    expect(screen.getByRole('link', { name: 'See the results' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Show less' }));
-    expect(text).toHaveClass('line-clamp-3');
   });
 });

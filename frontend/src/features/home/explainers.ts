@@ -76,27 +76,6 @@ const explainers = {
       'It is one round, not an average. The round-type filter applies; the time filter does not.',
     ],
   },
-  latestShooters: {
-    what: 'How many people have at least one recorded score at the latest Sunday.',
-    computed: [
-      'Counts shooters with a recorded round, not everyone who came, so it can be lower than the head count.',
-      'The round-type filter does not apply.',
-    ],
-  },
-  latestMedian: {
-    what: 'The middle score at the latest Sunday: half the rounds were this or better, half this or worse.',
-    computed: [
-      'Every round that day counts, second rounds included. Sorted by score, the middle one is taken.',
-      'The round-type filter does not apply.',
-    ],
-  },
-  latestTop: {
-    what: 'The best single round at the latest Sunday, out of 50.',
-    computed: [
-      'The highest score among all rounds that day, second rounds included.',
-      'The round-type filter does not apply.',
-    ],
-  },
   meLast: {
     what: 'Your most recent Sunday: the date, your best score, where it placed and how your rating moved.',
     read: [
