@@ -1,6 +1,6 @@
 /**
- * The random id this browser sends with fist bumps (Plan 15), kept only in localStorage. It is
- * never tied to a name and goes nowhere but the bump requests.
+ * The random id this browser sends with fist bumps (Plan 15) and page views (Plan 16), kept only
+ * in localStorage. It is never tied to a name and goes nowhere but the bump and page-view requests.
  */
 const KEY = 'sc.device';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
