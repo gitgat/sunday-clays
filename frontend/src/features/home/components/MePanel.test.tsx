@@ -77,16 +77,6 @@ describe('MePanel', () => {
     expect(within(panel).getByRole('button', { name: 'Not me' })).toBeInTheDocument();
   });
 
-  it('invites you to pick yourself when no me id is set', () => {
-    renderWithProviders(<MePanel meId={null} onCleared={vi.fn()} widgets={[nextTrophy]} />);
-    expect(screen.getByText(/tap “That’s me”/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to Shooters' })).toHaveAttribute(
-      'href',
-      '/shooters',
-    );
-    expect(screen.queryByText(/next trophy/)).not.toBeInTheDocument();
-  });
-
   it('shows your last result, rating move, odometer and me-slot widgets', async () => {
     server.use(
       http.get('*/api/shooters/:id', () => HttpResponse.json(meDetail)),
@@ -154,7 +144,7 @@ describe('MePanel', () => {
       http.get('*/api/shooters/:id', () => HttpResponse.json(meDetail)),
       http.get('*/api/shooters/:id/rounds', () => HttpResponse.json(meRounds)),
     );
-    const { unmount } = renderWithProviders(<MePanel meId={3} onCleared={vi.fn()} widgets={[]} />, {
+    renderWithProviders(<MePanel meId={3} onCleared={vi.fn()} widgets={[]} />, {
       route: '/?rt=sporting',
     });
     expect(await screen.findByRole('link', { name: 'Hadley, Ike' })).toHaveAttribute(
@@ -164,14 +154,6 @@ describe('MePanel', () => {
     expect(await screen.findByRole('link', { name: 'Sep 27, 2026' })).toHaveAttribute(
       'href',
       '/events/2026-09-27?rt=sporting',
-    );
-    unmount();
-    renderWithProviders(<MePanel meId={null} onCleared={vi.fn()} widgets={[]} />, {
-      route: '/?rt=sporting',
-    });
-    expect(screen.getByRole('link', { name: 'Go to Shooters' })).toHaveAttribute(
-      'href',
-      '/shooters?rt=sporting',
     );
   });
 

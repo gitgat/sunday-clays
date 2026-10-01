@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
-import { expectExplainer } from '../../../test/charts';
+import { expectChartControls, expectExplainer } from '../../../test/charts';
 import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { renderWithProviders } from '../../../test/render';
 import type { EventSummary } from '../api';
@@ -200,16 +200,30 @@ describe('ClubPulse', () => {
     LAZY_TEST_TIMEOUT,
   );
 
-  it('says so when the 8 weeks have no scored Sundays', async () => {
-    server.use(metaHandler(), events(seasonEvents.slice(3)));
-    renderWithProviders(<ClubPulse range={RANGE} />);
-    expect(await screen.findByText('No scored Sundays in these 8 weeks')).toBeVisible();
-    const pulse = screen.getByRole('region', { name: 'Club pulse' });
-    expect(
-      within(pulse).getByText('8 weeks to Sep 27, 2026 · not affected by the time filter'),
-    ).toBeVisible();
-    expect(screen.queryByRole('region', { name: 'Turnout per Sunday' })).toBeNull();
-  });
+  it(
+    'says so when the 8 weeks have no scored Sundays',
+    async () => {
+      server.use(metaHandler(), events(seasonEvents.slice(3)));
+      renderWithProviders(<ClubPulse range={RANGE} />);
+      expect(await screen.findByText('No scored Sundays in these 8 weeks')).toBeVisible();
+      const pulse = screen.getByRole('region', { name: 'Club pulse' });
+      expect(
+        within(pulse).getByText('8 weeks to Sep 27, 2026 · not affected by the time filter'),
+      ).toBeVisible();
+      // Home kept the chart: its Table, CSV and Fullscreen still reach every Sunday on record.
+      const chartRegion = await chart();
+      expectChartControls(chartRegion);
+      expect(within(chartRegion).getByRole('button', { name: 'Fullscreen' })).toBeInTheDocument();
+      expect(
+        within(chartRegion).getByRole('button', { name: 'About this chart' }),
+      ).toBeInTheDocument();
+      expect(within(chartRegion).getByText('No scored Sundays in these 8 weeks.')).toBeVisible();
+      // The 8 weeks are fixed: nothing to widen.
+      expect(screen.queryByRole('button', { name: 'Show all time' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Show the last 12 months' })).toBeNull();
+    },
+    LAZY_TEST_TIMEOUT,
+  );
 
   it('shows a load failure', async () => {
     server.use(

@@ -2,7 +2,8 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
-import { renderWithProviders } from '../../../test/render';
+import { createTestQueryClient, renderWithProviders } from '../../../test/render';
+import { bumpsKey } from '../../sheet/api';
 import { bumpedPosts } from '../mocks';
 import { BumpsPanel } from './BumpsPanel';
 
@@ -54,6 +55,23 @@ describe('BumpsPanel', () => {
     );
     expect(screen.getByText('Trophy retired_trophy, 2026-09-13')).toBeInTheDocument();
     expect(wiped).toEqual(['k-pb-3']);
+  });
+
+  it('refreshes the Sheet’s bump counts when a wipe goes through', async () => {
+    server.use(
+      http.delete('*/api/admin/sheet/bumps/:postKey', ({ params }) =>
+        HttpResponse.json({ post_key: String(params['postKey']), wiped: 4 }),
+      ),
+    );
+    const queryClient = createTestQueryClient();
+    const sheetKey = bumpsKey('2026-09-27', '00000000-0000-4000-8000-00000000000a');
+    queryClient.setQueryData(sheetKey, { 'k-pb-3': { bumps: 4, bumped: true } });
+    const { user } = renderWithProviders(<BumpsPanel />, { queryClient });
+    const list = await screen.findByRole('list', { name: 'Bumped posts' });
+    const first = within(list).getAllByRole('listitem')[0] as HTMLElement;
+    await user.click(within(first).getByRole('button', { name: WIPE }));
+    await user.click(within(first).getByRole('button', { name: 'Yes, wipe 4 bumps' }));
+    await waitFor(() => expect(queryClient.getQueryState(sheetKey)?.isInvalidated).toBe(true));
   });
 
   it('shows a refused wipe next to the post', async () => {

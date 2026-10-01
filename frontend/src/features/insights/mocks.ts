@@ -77,7 +77,6 @@ export const handlers = [
     HttpResponse.json(feedFixture({ top: [insightFixture()] })),
   ),
   http.get('*/api/insights/sundays/:date', () => HttpResponse.json(feedFixture())),
-  http.get('*/api/insights/home', () => HttpResponse.json(feedFixture())),
   http.get('*/api/insights/club', () => HttpResponse.json(feedFixture())),
   http.get('*/api/insights/leaderboards', () => HttpResponse.json(feedFixture())),
   http.get('*/api/insights/records', () => HttpResponse.json(feedFixture())),

@@ -1,31 +1,26 @@
-import { NavLink } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import type { NavItem } from '../../app/registry';
 import { useRoundTypeLink } from '../../lib/roundTypes';
 import { cx } from '../ui/cx';
+import { isNavActive } from './nav';
 
-function NavListLink({
-  item: { path, label, icon: Icon },
-  onNavigate,
-}: {
-  item: NavItem;
-  onNavigate?: () => void;
-}) {
+function NavListLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
+  const { path, label, icon: Icon } = item;
   const to = useRoundTypeLink(path);
+  const active = isNavActive(item, useLocation().pathname);
   return (
-    <NavLink
+    <Link
       to={to}
-      end={path === '/'}
       onClick={onNavigate}
-      className={({ isActive }) =>
-        cx(
-          'flex min-h-11 items-center gap-3 rounded-button px-4 text-sm',
-          isActive ? 'bg-primary text-text' : 'text-text-muted hover:bg-surface hover:text-text',
-        )
-      }
+      aria-current={active ? 'page' : undefined}
+      className={cx(
+        'flex min-h-11 items-center gap-3 rounded-button px-4 text-sm',
+        active ? 'bg-primary text-text' : 'text-text-muted hover:bg-surface hover:text-text',
+      )}
     >
       <Icon aria-hidden="true" className="size-5" />
       {label}
-    </NavLink>
+    </Link>
   );
 }
 

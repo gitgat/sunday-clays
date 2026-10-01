@@ -1,6 +1,4 @@
-import { Link } from 'react-router';
 import { Card } from '../../../components/ui/Card';
-import { useRoundTypeLink } from '../../../lib/roundTypes';
 import { useNextPredictions, type NextPredictions } from '../api';
 import { explainers } from '../explainers';
 import {
@@ -13,16 +11,8 @@ import {
 import { AboutBlock } from '../../../components/ui/AboutBlock';
 
 function YourExpectation({ data, meId }: { data: NextPredictions; meId: number | null }) {
-  const shootersLink = useRoundTypeLink('/shooters');
   if (meId === null) {
-    return (
-      <div className="flex flex-col gap-2">
-        <p>Choose “That’s me” on your Shooters profile to see your own expected score here.</p>
-        <Link to={shootersLink} className="inline-flex min-h-11 items-center self-start underline">
-          Go to Shooters
-        </Link>
-      </div>
-    );
+    return <p>Pick your name in “Which one are you?” to see your own expected score here.</p>;
   }
   const mine = data.shooters.find((s) => s.shooter_id === meId);
   if (mine === undefined) {
