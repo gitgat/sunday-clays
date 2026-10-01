@@ -8,7 +8,7 @@ test('desktop: the round-type and time-window filters live in the content header
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'the content header only exists from 1024 px');
-  await page.goto('/');
+  await page.goto('/club');
   const bar = page.getByRole('group', { name: 'Page filters' });
   await expect(bar).toBeVisible();
   await expect(bar.getByRole('button', { name: 'Round type' })).toBeVisible();
@@ -47,7 +47,7 @@ test('phone: the filters live in the top bar and no content header renders', asy
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile', 'the top bar only exists below 1024 px');
-  await page.goto('/');
+  await page.goto('/club');
   const top = page.locator('header').first();
   await expect(top.getByRole('button', { name: 'Round type' })).toBeVisible();
   await expect(top.getByRole('combobox', { name: 'Time window' })).toBeVisible();
@@ -94,6 +94,45 @@ test('Leaderboards, Records and Race show both filters', async ({ page }, testIn
     await expect(shown.roundType).toBeVisible();
     await expect(shown.window).toBeVisible();
     await expect(page).toHaveURL(/[?&]w=6m(&|$)/);
+    await expectNoSideScroll(page);
+  }
+});
+
+test('The Sunday Sheet shows the round-type filter and no time window', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/?w=6m');
+  await expect(page.getByRole('heading', { level: 1, name: 'The Sunday Sheet' })).toBeVisible();
+  const shown = await shownFilters(page, testInfo);
+  await expect(shown.roundType).toBeVisible();
+  await expect(shown.window).toHaveCount(0);
+  await expect(page).toHaveURL(/[?&]w=6m(&|$)/);
+  await expectNoSideScroll(page);
+});
+
+test('the phone top bar keeps its brand, filter and time window on one row', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'the top bar only exists below 1024 px');
+  for (const width of [360, 390, 414]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/club');
+    const header = page.locator('header').first();
+    await expect(header).toBeVisible();
+    const select = header.getByRole('combobox', { name: 'Time window' });
+    await expect(select).toBeVisible();
+    // Short labels on screen, the full wording for assistive tech.
+    expect(
+      await select.evaluate((el: HTMLSelectElement) => el.selectedOptions[0]?.textContent),
+    ).toBe('8W');
+    await expect(select).toHaveAccessibleDescription('Last 8 weeks');
+    const tops = await header
+      .locator(':scope > *')
+      .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+    expect(tops.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(tops).size, `children start on different rows at ${width} px`).toBe(1);
+    const box = await header.boundingBox();
+    expect(box?.height ?? 0, `header height at ${width} px`).toBeLessThanOrEqual(64);
     await expectNoSideScroll(page);
   }
 });

@@ -55,13 +55,11 @@ const CHIP =
 export function KudosStrip({
   kudos,
   meId,
-  title = 'Kudos',
 }: {
   kudos: readonly InsightKudos[];
   meId: number | null;
-  /** "This week's kudos" on home; "Kudos" on a Sunday. */
-  title?: string;
 }) {
+  const title = 'Kudos';
   const [all, setAll] = useState(false);
   const [chosen, setChosen] = useState<InsightKudos | null>(null);
   const isDesktop = useIsDesktop();

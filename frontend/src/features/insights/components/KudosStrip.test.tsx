@@ -32,10 +32,8 @@ describe('KudosStrip', () => {
   });
 
   it('labels each chip with what it celebrates and opens that insight', async () => {
-    const { user } = renderWithProviders(
-      <KudosStrip kudos={kudosFixture(2)} meId={null} title="This week's kudos" />,
-    );
-    const strip = screen.getByRole('region', { name: "This week's kudos" });
+    const { user } = renderWithProviders(<KudosStrip kudos={kudosFixture(2)} meId={null} />);
+    const strip = screen.getByRole('region', { name: 'Kudos' });
     await user.click(within(strip).getByRole('button', { name: 'Pat Shooter1 · personal best' }));
     const sheet = screen.getByRole('dialog', { name: 'Pat Shooter1' });
     expect(within(sheet).getByText(/New personal best for/)).toBeInTheDocument();

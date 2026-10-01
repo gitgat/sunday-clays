@@ -4,8 +4,7 @@ import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { Stat } from '../../../components/ui/Stat';
-import { useTimeWindow, filterRowsByWindow, type WindowRange } from '../../../lib/timeWindow';
-import { windowTagText } from '../../../lib/windowText';
+import { filterRowsByWindow, type WindowRange } from '../../../lib/timeWindow';
 import { useWindowEvents } from '../api';
 import type { EventSummary } from '../api';
 import { homeExplainers } from '../explainers';
@@ -33,58 +32,28 @@ export function pulseStats(events: EventSummary[]) {
 }
 
 /**
- * The club's numbers and the turnout chart. On the Sunday Sheet `range` fixes the 8 weeks up to
- * the issue's Sunday (the header window does not apply there); elsewhere the header window does.
+ * The club's numbers and the turnout chart for the 8 weeks up to the Sunday Sheet's issue. The
+ * range is fixed: the header time window does not apply there.
  */
-export function ClubPulse({ range: fixed }: { range?: WindowRange } = {}) {
-  const { window, range: chosen, label: chosenLabel } = useTimeWindow();
-  const { events, isPending, error } = useWindowEvents(fixed);
-  const range = fixed ?? chosen;
-  const label = fixed === undefined ? chosenLabel : `8 weeks to ${formatDay(fixed.to)}`;
+export function ClubPulse({ range }: { range: WindowRange }) {
+  const { events, isPending, error } = useWindowEvents(range);
+  const label = `8 weeks to ${formatDay(range.to)}`;
   const pulseCard = (body: ReactNode) => <Card title="Club pulse">{body}</Card>;
 
   if (isPending) return pulseCard(<Skeleton className="h-40" />);
-  // A failed meta leaves the range null too; the latest-Sunday card beside this one shows that error.
-  if (range === null) return pulseCard(<EmptyState title="No scored Sundays yet" />);
   if (error !== null)
     return pulseCard(
       <EmptyState title="Couldn't load these Sundays" description={error.message} />,
     );
   const stats = pulseStats(filterRowsByWindow(events, 'event_date', range));
-  const tag =
-    fixed === undefined
-      ? windowTagText(window, range)
-      : `${label} · not affected by the time filter`;
-  const chart = (
-    <Suspense
-      fallback={
-        <Card>
-          <Skeleton label="Loading the turnout chart" className="h-64" />
-        </Card>
-      }
-    >
-      <TurnoutChart
-        events={events}
-        range={range}
-        label={label}
-        explainer={fixed === undefined ? homeExplainers.pulse : homeExplainers.pulseSheet}
-        windowName={fixed === undefined ? undefined : 'these 8 weeks'}
-      />
-    </Suspense>
-  );
-  // An empty window shows the chart card alone, so there is one message: its Table, CSV and
-  // Fullscreen still reach every Sunday, and it offers 12M and All instead of falling back to
-  // all-time numbers under this tag.
-  if (stats.scored === 0) {
-    // On the Sheet the header window and its widen buttons do not apply: say so in the 8 weeks' own words.
-    if (fixed !== undefined)
-      return (
-        <Card title="Club pulse" subtitle={tag}>
-          <EmptyState title="No scored Sundays in these 8 weeks" />
-        </Card>
-      );
-    return chart;
-  }
+  const tag = `${label} · not affected by the time filter`;
+  // The 8 weeks have no widen buttons: say so in their own words.
+  if (stats.scored === 0)
+    return (
+      <Card title="Club pulse" subtitle={tag}>
+        <EmptyState title="No scored Sundays in these 8 weeks" />
+      </Card>
+    );
   // The chart is a sibling card, not nested in the pulse card: nesting would cost its header
   // 32px on a phone and truncate the title beside the Table/CSV/Fullscreen buttons.
   return (
@@ -94,27 +63,35 @@ export function ClubPulse({ range: fixed }: { range?: WindowRange } = {}) {
           <Stat
             label="Sundays with full results"
             value={String(stats.held)}
-            explainer={
-              fixed === undefined ? homeExplainers.pulseHeld : homeExplainers.pulseHeldSheet
-            }
+            explainer={homeExplainers.pulseHeldSheet}
           />
           <Stat
             label="Avg turnout"
             value={formatScore(stats.avgTurnout)}
-            explainer={
-              fixed === undefined ? homeExplainers.pulseTurnout : homeExplainers.pulseTurnoutSheet
-            }
+            explainer={homeExplainers.pulseTurnoutSheet}
           />
           <Stat
             label="Highest score"
             value={formatScore(stats.seasonHigh)}
-            explainer={
-              fixed === undefined ? homeExplainers.pulseHigh : homeExplainers.pulseHighSheet
-            }
+            explainer={homeExplainers.pulseHighSheet}
           />
         </div>
       </Card>
-      {chart}
+      <Suspense
+        fallback={
+          <Card>
+            <Skeleton label="Loading the turnout chart" className="h-64" />
+          </Card>
+        }
+      >
+        <TurnoutChart
+          events={events}
+          range={range}
+          label={label}
+          explainer={homeExplainers.pulseSheet}
+          windowName="these 8 weeks"
+        />
+      </Suspense>
     </>
   );
 }

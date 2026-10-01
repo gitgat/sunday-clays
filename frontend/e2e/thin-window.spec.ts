@@ -40,9 +40,12 @@ test('Club Turnout vs weather names a thin window and widens it in one tap', asy
   }
 });
 
-test('Home at All time asks for the club pulse in one request, not one per year', async ({
+test('the Sheet asks for its club pulse in one request, for its own 8 weeks even at All time', async ({
   page,
 }) => {
+  const meta = (await (await page.request.get('/api/meta')).json()) as Meta;
+  const from = new Date(`${meta.last_score_date}T12:00:00Z`);
+  from.setUTCDate(from.getUTCDate() - 55);
   const eventRequests: string[] = [];
   page.on('request', (r) => {
     if (new URL(r.url()).pathname === '/api/events') eventRequests.push(r.url());
@@ -54,7 +57,9 @@ test('Home at All time asks for the club pulse in one request, not one per year'
   await whenSettled(page);
   const pulse = eventRequests.filter((url) => !new URL(url).searchParams.has('year'));
   expect(pulse).toHaveLength(1);
-  expect(new URL(pulse[0] ?? '').searchParams.has('from')).toBe(false);
+  const query = new URL(pulse[0] ?? '').searchParams;
+  expect(query.get('from')).toBe(from.toISOString().slice(0, 10));
+  expect(query.get('to')).toBe(meta.last_score_date);
   expect(eventRequests.filter((url) => new URL(url).searchParams.has('year'))).toEqual([]);
   await expectNoSideScroll(page);
 });

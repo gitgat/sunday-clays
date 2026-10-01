@@ -19,30 +19,6 @@ const explainers = {
     ],
     scope: 'windowed',
   },
-  pulseHeld: {
-    what: 'How many Sundays in the time window have full results.',
-    computed: [
-      'A Sunday has full results when scores were entered and at least half of the people who came have scores.',
-      'The round-type filter applies.',
-    ],
-    scope: 'windowed',
-  },
-  pulseTurnout: {
-    what: 'The typical crowd: the average number of people per scored Sunday in the time window.',
-    computed: [
-      'Adds up the head count of each scored Sunday (or the number with scores when there is no head count) and divides by the number of Sundays, to 0.1.',
-      'The round-type filter applies.',
-    ],
-    scope: 'windowed',
-  },
-  pulseHigh: {
-    what: 'The best single round anyone shot in the time window, out of 50.',
-    computed: [
-      'The highest score of any round on a scored Sunday in the window, second rounds included.',
-      'It is one round, not an average. The round-type filter applies.',
-    ],
-    scope: 'windowed',
-  },
   pulseSheet: {
     what: 'How many people came to each Sunday in the 8 weeks up to this issue’s Sunday.',
     read: [
@@ -74,27 +50,6 @@ const explainers = {
     computed: [
       'The highest score of any round on a scored Sunday in those 8 weeks, second rounds included.',
       'It is one round, not an average. The round-type filter applies; the time filter does not.',
-    ],
-  },
-  latestShooters: {
-    what: 'How many people have at least one recorded score at the latest Sunday.',
-    computed: [
-      'Counts shooters with a recorded round, not everyone who came, so it can be lower than the head count.',
-      'The round-type filter does not apply.',
-    ],
-  },
-  latestMedian: {
-    what: 'The middle score at the latest Sunday: half the rounds were this or better, half this or worse.',
-    computed: [
-      'Every round that day counts, second rounds included. Sorted by score, the middle one is taken.',
-      'The round-type filter does not apply.',
-    ],
-  },
-  latestTop: {
-    what: 'The best single round at the latest Sunday, out of 50.',
-    computed: [
-      'The highest score among all rounds that day, second rounds included.',
-      'The round-type filter does not apply.',
     ],
   },
   meLast: {

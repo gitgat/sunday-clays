@@ -68,6 +68,12 @@ test('choosing a time window writes it to the URL and in-app links keep it', asy
   await expect(home).toHaveAttribute('href', /[?&]w=6m/);
   await home.click();
   await expect(page).toHaveURL(/[?&]w=6m(&|$)/);
+  // The Sunday Sheet keeps `w` in its URL but shows no window control.
+  await expect(page.getByRole('heading', { level: 1, name: 'The Sunday Sheet' })).toBeVisible();
+  // `w` is carried by in-app links: Leaderboards honours the window and shows its control again.
+  const leaderboards = page.getByRole('link', { name: 'Leaderboards' }).filter({ visible: true });
+  await leaderboards.first().click();
+  await expect(page).toHaveURL(/\/leaderboards.*[?&]w=6m(&|$)/);
   const after = await windowControl(page);
   if (after.kind === 'select') await expect(after.select).toHaveValue('6m');
   else {
@@ -142,7 +148,7 @@ test('the page does not scroll sideways with the time window and an open explain
 test('the time window offers 8W and YTD, and a retired w=season link reads as 8W', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/club');
   const control = await windowControl(page);
   if (control.kind === 'select') {
     await expect(control.select.locator('option')).toHaveText([
@@ -170,7 +176,7 @@ test('the time window offers 8W and YTD, and a retired w=season link reads as 8W
   await chooseWindow(page, 'ytd', 'YTD');
   await expect(page).toHaveURL(/[?&]w=ytd(&|$)/);
 
-  await page.goto('/?w=season');
+  await page.goto('/club?w=season');
   const retired = await windowControl(page);
   if (retired.kind === 'select') await expect(retired.select).toHaveValue('8w');
   else {

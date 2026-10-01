@@ -3,16 +3,12 @@ import { useSearchParams } from 'react-router';
 import { isCustomWindow, useTimeWindow } from '../../../lib/timeWindow';
 import type { PageKey } from '../../../components/layout/pageTop';
 import { Card } from '../../../components/ui/Card';
-import { Skeleton } from '../../../components/ui/Skeleton';
-import { formatShortDate } from '../../../lib/format';
 import { getMe } from '../../../lib/me';
 import { formatDay } from '../../shooters/format';
-import { useHomeFeed, usePageFeed, useShooterFeed, useSundayFeed, type InsightFeed } from '../api';
-import { InsightCard } from './InsightCard';
-import { InsightList, isMine } from './InsightList';
+import { usePageFeed, useShooterFeed, useSundayFeed, type InsightFeed } from '../api';
+import { InsightList } from './InsightList';
 import { KudosStrip } from './KudosStrip';
 import { MoreInsights } from './MoreInsights';
-import { latestSubtitle, RecapCard } from './RecapCard';
 
 function isEmpty(feed: InsightFeed): boolean {
   return (
@@ -85,89 +81,6 @@ export function SundayInsights({ date }: { date: string }) {
         <MoreInsights items={f.more} total={f.n_more} meId={meId} />
       </div>
     </Card>
-  );
-}
-
-/**
- * Stands in for the home cards while the feed loads, at roughly their final height, so the page
- * below does not jump when they arrive. One status for the lot; the extra cards are hidden from
- * assistive tech.
- */
-function HomeInsightsPlaceholder() {
-  return (
-    <>
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <Card>
-          <Skeleton label="Loading insights" lines={4} className="min-h-40" />
-        </Card>
-        <Card>
-          <div aria-hidden="true">
-            <Skeleton label="Loading top story" lines={4} className="min-h-40" />
-          </div>
-        </Card>
-      </div>
-      <Card>
-        <div aria-hidden="true">
-          <Skeleton label="Loading more insights" lines={8} className="min-h-72" />
-        </div>
-      </Card>
-    </>
-  );
-}
-
-/**
- * Home: the pinned recap and the hero side by side on desktop, then "Shooter to know", the
- * latest Sunday's kudos across the page, one card per slot in a 2 × 2 grid, and the rest.
- */
-export function HomeInsights({ meId }: { meId: number | null }) {
-  const feed = useHomeFeed();
-  if (feed.isPending) return <HomeInsightsPlaceholder />;
-  // A failed fetch shows nothing: the other home cards already report an outage.
-  if (feed.data === undefined || isEmpty(feed.data)) return null;
-  const f = feed.data;
-  return (
-    <>
-      {(f.pinned != null || f.hero != null) && (
-        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-          {f.pinned != null && <RecapCard insight={f.pinned} />}
-          {f.hero != null && (
-            <Card title="Top story" subtitle={latestSubtitle(f.hero.anchor_date)}>
-              <ul aria-label="Top story" className="flex flex-col gap-3">
-                <InsightCard insight={f.hero} you={isMine(f.hero, meId)} />
-              </ul>
-            </Card>
-          )}
-        </div>
-      )}
-      {(f.spotlight != null || f.top.length > 0 || f.kudos.length > 0 || f.more.length > 0) && (
-        <Card
-          title="Insights"
-          subtitle={
-            f.as_of == null
-              ? 'Not affected by the time filter'
-              : `As of ${formatDay(f.as_of)} · not affected by the time filter`
-          }
-        >
-          <div className="flex min-w-0 flex-col gap-3">
-            {f.spotlight != null && (
-              <section aria-label="Shooter to know" className="flex flex-col gap-2">
-                <h3 className="text-sm font-medium text-text-muted">Shooter to know</h3>
-                <ul className="flex flex-col gap-3">
-                  <InsightCard insight={f.spotlight} you={isMine(f.spotlight, meId)} />
-                </ul>
-              </section>
-            )}
-            <KudosStrip
-              kudos={f.kudos}
-              meId={meId}
-              title={f.as_of == null ? 'Kudos' : `Kudos from ${formatShortDate(f.as_of)}`}
-            />
-            <InsightList items={f.top} meId={meId} label="Around the club" columns={2} />
-            <MoreInsights items={f.more} total={f.n_more} meId={meId} />
-          </div>
-        </Card>
-      )}
-    </>
   );
 }
 
