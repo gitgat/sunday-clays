@@ -166,7 +166,7 @@ test('the turnout chart lists and exports every Sunday on record, not just the t
   await page.goto('/');
   const chart = page.getByRole('region', { name: 'Turnout per Sunday' });
   const download = page.waitForEvent('download');
-  await chart.getByRole('button', { name: 'CSV' }).click({ timeout: 15_000 });
+  await chart.getByRole('button', { name: 'CSV' }).click(CHARTS);
   const file = await download;
   const text = (await readFile(await file.path(), 'utf8')).replace(/^\uFEFF/, '');
   expect(text.trimEnd().split('\r\n')).toHaveLength(scored + 1);
