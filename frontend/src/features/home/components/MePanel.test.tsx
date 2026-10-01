@@ -224,6 +224,7 @@ describe('MePanel', () => {
     );
     renderWithProviders(<MePanel meId={999} onCleared={onCleared} widgets={[]} />);
     expect(await screen.findByText(/couldn’t find your shooter profile/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Not me' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Choose again' }));
     expect(getMe()).toBeNull();
     expect(onCleared).toHaveBeenCalledTimes(1);
@@ -241,5 +242,24 @@ describe('MePanel', () => {
     );
     renderWithProviders(<MePanel meId={3} onCleared={vi.fn()} widgets={[]} />);
     expect(await screen.findByText("Couldn't load your panel")).toBeInTheDocument();
+  });
+
+  it('offers "Not me" once a shooter is chosen, which forgets the choice', async () => {
+    server.use(
+      http.get('*/api/shooters/:id', () => HttpResponse.json(meDetail)),
+      http.get('*/api/shooters/:id/rounds', () => HttpResponse.json(meRounds)),
+    );
+    setMe(3);
+    const onCleared = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<MePanel meId={3} onCleared={onCleared} widgets={[]} />);
+    await user.click(await screen.findByRole('button', { name: 'Not me' }));
+    expect(getMe()).toBeNull();
+    expect(onCleared).toHaveBeenCalledTimes(1);
+  });
+
+  it('has no "Not me" before anyone is chosen', () => {
+    renderWithProviders(<MePanel meId={null} onCleared={vi.fn()} widgets={[]} />);
+    expect(screen.queryByRole('button', { name: 'Not me' })).toBeNull();
   });
 });
