@@ -351,7 +351,12 @@ def otd_posts(items: Iterable[OnThisDayItem], day: date) -> list[Post]:
             family="on_this_day",
             score=OTD_SCORE,
             headline=tuple(otd_headline(item)),
-            named_shooter_ids=tuple(w.shooter_id for w in item.winners),
+            # Named only where the headline names them: beside a top score.
+            named_shooter_ids=(
+                tuple(w.shooter_id for w in item.winners)
+                if item.has_scores and item.top_score is not None
+                else ()
+            ),
             on_this_day=item,
         )
         for item in items
@@ -420,6 +425,8 @@ def assemble(
     latest = i == len(held) - 1
     lead = hero if hero is not None and names_ok(hero) else None
     spot = spotlight if spotlight is not None and names_ok(spotlight) else None
+    # The recap is the deck, not a post, so it skips `names_ok`: its template names shooters only
+    # in the positive "topped the board" clause and keeps every negative in name-free field clauses.
     recap = next((r for r in rows if r.kind == sel.PINNED_HOME and r.anchor_date == day), None)
     exclude = frozenset(r.key for r in (lead, spot) if r is not None)
     pool = insight_pool(rows, day, latest=latest, supersedes=supersedes, exclude=exclude)

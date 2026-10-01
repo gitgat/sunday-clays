@@ -9,8 +9,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from sunday_clays.analytics import sheet
+from sunday_clays.analytics.insights import registry
 from sunday_clays.analytics.insights.lints import lint_segments
 from sunday_clays.analytics.insights.store import InsightRow
+from sunday_clays.analytics.insights.templates import NameList, Shooter
 from sunday_clays.analytics.yir import OnThisDayItem, Winner
 
 DAY = date(2026, 9, 27)
@@ -174,6 +176,7 @@ def test_named_posts_are_positive_or_neutral_only() -> None:
             row("mixed-named", "ev.rain-day", polarity="mixed"),
             row("mixed-unnamed", "ev.rain-day", polarity="mixed", named_shooter_ids=()),
             row("field", "ev.how-it-played", polarity="field_negative", named_shooter_ids=()),
+            row("field-named", "ev.how-it-played", polarity="field_negative"),
         ]
     )
     assert issue.post_keys == {"pos", "neu", "mixed-unnamed", "field"}
@@ -187,6 +190,10 @@ def test_a_named_negative_pick_never_leads() -> None:
     issue = assemble([bad], hero=bad, spotlight=bad)
     assert issue.headline is None
     assert issue.spotlight is None
+    field = row("field-named", "ev.how-it-played", polarity="field_negative")
+    issue = assemble([field], hero=field, spotlight=field)
+    assert (issue.headline, issue.spotlight) == (None, None)
+    assert issue.post_keys == frozenset()
 
 
 def test_the_recap_is_the_deck_and_the_picks_lead_instead_of_posting() -> None:
@@ -196,6 +203,36 @@ def test_the_recap_is_the_deck_and_the_picks_lead_instead_of_posting() -> None:
     assert issue.recap == recap
     assert (issue.headline, issue.spotlight) == (hero, spot)
     assert issue.post_keys == {"other"}
+
+
+def test_the_deck_is_the_recap_anchored_on_the_issues_own_sunday() -> None:
+    older = row(
+        "old-recap",
+        "home.sunday-recap",
+        polarity="mixed",
+        named_shooter_ids=(),
+        anchor_date=date(2026, 9, 20),
+    )
+    mine = replace(older, key="recap", anchor_date=DAY)
+    assert assemble([older, mine]).recap == mine
+    assert assemble([older]).recap is None
+
+
+def test_the_recap_names_shooters_only_in_its_positive_clauses() -> None:
+    """The deck skips `names_ok` (it is Home's pinned line, polarity mixed), so the template must
+    keep every name inside a `named` clause that only celebrates the top score."""
+    kind = registry.get("home.sunday-recap")
+    assert len(kind.templates) == 32
+    for flags, (template,) in kind.templates.items():
+        for clause in template.third:
+            has_name = any(isinstance(p, Shooter | NameList) for p in clause.parts)
+            text = "".join(p for p in clause.parts if isinstance(p, str))
+            if has_name:
+                assert clause.role == "named", flags
+                assert "top" in text, flags
+                assert "board" in text, flags
+            else:
+                assert clause.role == "field", flags
 
 
 def test_superseded_rows_are_dropped() -> None:
@@ -299,6 +336,15 @@ def test_on_this_day_posts_name_the_top_score_and_keep_attendance_only_sundays()
     )
 
 
+def test_on_this_day_names_nobody_when_there_is_no_top_score() -> None:
+    winners = (Winner(1, "Ace, Amy", 48),)
+    (no_top,) = sheet.otd_posts([otd(1, winners=winners, top_score=None)], DAY)
+    assert no_top.named_shooter_ids == ()
+    assert "Amy" not in "".join(s["v"] for s in no_top.headline)
+    (with_top,) = sheet.otd_posts([otd(1, winners=winners)], DAY)
+    assert with_top.named_shooter_ids == (1,)
+
+
 def test_trophy_and_on_this_day_headlines_pass_the_insight_lints() -> None:
     issue = assemble(
         [],
@@ -400,6 +446,8 @@ def test_issue_numbers_and_neighbours() -> None:
     assert (first.number, first.previous, first.next, first.latest) == (1, None, HELD[1], False)
     last = assemble([])
     assert (last.number, last.previous, last.next, last.latest) == (3, HELD[1], None, True)
+    mid = assemble([], day=HELD[1])
+    assert (mid.number, mid.previous, mid.next, mid.latest) == (2, HELD[0], HELD[2], False)
 
 
 @pytest.mark.parametrize(

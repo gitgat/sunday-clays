@@ -42,10 +42,6 @@ from sunday_clays.domain.errors import NotFoundError
 
 router = APIRouter(tags=["sheet"])
 
-PostTypeOut = Literal[
-    "milestone", "improvement", "trophy", "conditions", "welcome", "on_this_day", "other"
-]
-
 _AWARDS_SQL = text(
     "SELECT a.shooter_id, p.display_name, a.code FROM achievements_awarded a"
     " JOIN shooter_profiles p ON p.shooter_id = a.shooter_id WHERE a.event_date = :d"
@@ -110,7 +106,7 @@ class SheetOnThisDayOut(BaseModel):
 
 class SheetPostOut(BaseModel):
     post_key: str
-    type: PostTypeOut
+    type: sheet.PostType
     family: str
     headline: list[InsightSegmentOut]
     named_shooter_ids: list[int]
@@ -255,7 +251,7 @@ def _numbers(session: Session, issue: sheet.Issue) -> SheetNumbersOut:
         shooters=int(event["n_shooters"]),
         median=opt_float(event["median"]),
         top_score=opt_int(event["top_score"]),
-        trophies=sum(len(p.trophy.holders) for p in issue.posts if p.trophy is not None),
+        trophies=len(session.execute(_AWARDS_SQL, {"d": issue.day}).all()),
     )
 
 

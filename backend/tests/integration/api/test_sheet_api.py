@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics import sheet
+from sunday_clays.analytics.yir import OnThisDayItem
 from sunday_clays.api.routes import sheet as sheet_routes
 
 LATEST = date(2026, 9, 27)
@@ -118,10 +119,17 @@ def test_named_shooter_posts_are_positive_or_neutral(
 ) -> None:
     for day in _held(fx_session)[-8:]:
         body = fx_viewer_client.get(f"/api/sheet/{day.isoformat()}").json()
-        leads = [body[k] for k in ("headline", "spotlight") if body[k] is not None]
-        for item in [*leads, *(p["insight"] for p in _all_posts(body) if p["insight"])]:
-            if item["headline"] and any(s["t"] == "shooter" for s in item["headline"]):
-                assert item["polarity"] in {"positive", "neutral"}, (day, item["key"])
+        # A lead carries no id list, so its names are the shooter segments of its headline.
+        for key in ("headline", "spotlight"):
+            lead = body[key]
+            if lead is not None and any(seg["t"] == "shooter" for seg in lead["headline"]):
+                assert lead["polarity"] in {"positive", "neutral"}, (day, lead["key"])
+        for post in _all_posts(body):
+            if post["named_shooter_ids"] and post["insight"] is not None:
+                assert post["insight"]["polarity"] in {"positive", "neutral"}, (
+                    day,
+                    post["post_key"],
+                )
 
 
 def test_more_is_grouped_by_family(fx_viewer_client: TestClient) -> None:
@@ -231,8 +239,6 @@ def test_the_latest_issue_carries_on_this_day_whenever_it_has_a_look_back(
     fx_viewer_client: TestClient,
 ) -> None:
     body = fx_viewer_client.get("/api/sheet/latest").json()
-    if any(p["type"] == "on_this_day" for p in _all_posts(body)):
-        assert any(p["type"] == "on_this_day" for p in body["posts"])
     present = {p["type"] for p in _all_posts(body) if p["type"] in sheet.FEED_TYPES}
     assert {p["type"] for p in body["posts"]} == present
 
@@ -252,3 +258,42 @@ def test_the_body_never_carries_bump_counts_and_is_etagged(
     etag = first.headers["etag"]
     again = fx_viewer_client.get("/api/sheet/latest", headers={"If-None-Match": etag})
     assert again.status_code == 304
+
+
+def test_an_on_this_day_post_links_to_that_sundays_results() -> None:
+    item = OnThisDayItem(
+        years_ago=2,
+        event_date=date(2024, 9, 29),
+        has_scores=True,
+        head_count=None,
+        n_shooters=31,
+        top_score=48,
+        median=40.0,
+        winners=(),
+    )
+    (post,) = sheet.otd_posts([item], LATEST)
+    assert sheet_routes.see_why(post).model_dump() == {
+        "kind": "link",
+        "label": "That Sunday's results",
+        "chart": None,
+        "href": "/events/2024-09-29",
+    }
+
+
+def test_the_trophies_number_counts_every_award_that_day(
+    fx_viewer_client: TestClient, fx_session: Session
+) -> None:
+    """Including an award whose trophy has left the catalog (it has no post)."""
+    before = fx_viewer_client.get("/api/sheet/latest").json()["numbers"]["trophies"]
+    shooter = fx_session.scalar(
+        text("SELECT min(shooter_id) FROM rounds WHERE event_date = :d"), {"d": LATEST}
+    )
+    fx_session.execute(
+        text(
+            "INSERT INTO achievements_awarded (shooter_id, code, event_date, round_id, details) "
+            "VALUES (:s, 'retired_code', :d, NULL, CAST('{}' AS jsonb))"
+        ),
+        {"s": shooter, "d": LATEST},
+    )
+    issue = sheet_routes.build_issue(fx_session, LATEST)
+    assert sheet_routes._numbers(fx_session, issue).trophies == before + 1
