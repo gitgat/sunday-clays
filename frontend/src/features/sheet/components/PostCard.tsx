@@ -10,6 +10,8 @@ import { Segments } from '../../insights/segments';
 import type { BumpState, SheetPost, SheetPostType } from '../api';
 import { sheetExplainers } from '../explainers';
 import { BumpButton } from './BumpButton';
+import { SeeWhy } from './SeeWhy';
+import { SharePostButton } from './SharePostButton';
 
 export const TYPE_LABELS: Record<SheetPostType, string> = {
   milestone: 'Milestone',
@@ -96,7 +98,7 @@ export interface PostCardProps {
 
 /**
  * One post: its type, a "New" tag, its headline (names link to profiles), trophy art and everyone
- * who earned a trophy, the bump button, any extra charts and "How we worked it
+ * who earned a trophy, the bump button, "See why →", any extra charts, Share and "How we worked it
  * out" (an insight's own explainer, or the "On this day" one). The viewer's own single-shooter
  * insight reads in the second person.
  */
@@ -144,7 +146,9 @@ export function PostCard({ post, date, deviceId, bumps, meId, noteId }: PostCard
           state={bumps}
           noteId={noteId}
         />
+        <SeeWhy post={post} />
         {insight !== null && <AlsoLinks insight={insight} you={you} />}
+        <SharePostButton post={post} date={date} />
         {explained && (
           <ExplainerToggle
             label="How we worked it out"
