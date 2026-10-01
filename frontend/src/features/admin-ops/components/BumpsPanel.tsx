@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { formatDay } from '../../home/format';
@@ -7,15 +7,30 @@ import { useBumpedPosts, useWipeBumps, type BumpedPost } from '../api';
 
 function BumpedRow({ post }: { post: BumpedPost }) {
   const [confirming, setConfirming] = useState(false);
+  const row = useRef<HTMLLIElement>(null);
+  const moved = useRef(false);
+  // Keyboard users follow the swap: confirming lands on "Keep them" (the safe choice), and
+  // cancelling returns to "Wipe bumps". Skipped on first render so the list never grabs focus.
+  useEffect(() => {
+    if (!moved.current) return;
+    row.current?.querySelector<HTMLButtonElement>('[data-focus-target]')?.focus();
+  }, [confirming]);
+  const toggle = (next: boolean) => {
+    moved.current = true;
+    setConfirming(next);
+  };
   const wipe = useWipeBumps();
   const plural = post.bumps === 1 ? 'bump' : 'bumps';
   return (
-    <li className="flex flex-col gap-2 border-t border-outline-variant pt-3 first:border-t-0 first:pt-0">
+    <li
+      ref={row}
+      className="flex flex-col gap-2 border-t border-outline-variant pt-3 first:border-t-0 first:pt-0"
+    >
       <p className="break-words">{post.label}</p>
       <p className="text-sm text-text-muted">
         {`${String(post.bumps)} ${plural}`}
         {post.issue_date !== null && ` · ${formatDay(post.issue_date)}`}
-        {!post.current && ' · no longer on a Sheet'}
+        {!post.current && post.issue_date !== null && ' · no longer on a Sheet'}
       </p>
       <p className="break-all font-mono text-xs text-text-muted">{post.post_key}</p>
       {confirming ? (
@@ -27,12 +42,18 @@ function BumpedRow({ post }: { post: BumpedPost }) {
           >
             {`Yes, wipe ${String(post.bumps)} ${plural}`}
           </Button>
-          <Button variant="ghost" onClick={() => setConfirming(false)}>
+          <Button variant="ghost" data-focus-target onClick={() => toggle(false)}>
             Keep them
           </Button>
         </div>
       ) : (
-        <Button variant="tonal" className="self-start" onClick={() => setConfirming(true)}>
+        <Button
+          variant="tonal"
+          className="self-start"
+          aria-label={`Wipe bumps on ${post.label}`}
+          data-focus-target
+          onClick={() => toggle(true)}
+        >
           Wipe bumps
         </Button>
       )}

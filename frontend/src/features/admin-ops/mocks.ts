@@ -82,6 +82,14 @@ export const bumpedPosts: BumpedPost[] = [
     issue_date: '2026-09-13',
     current: false,
   },
+  {
+    post_key: 'otd:2026-08-02:1',
+    bumps: 2,
+    last_at: '2026-08-03T10:00:00Z',
+    label: 'No longer on a Sheet',
+    issue_date: null,
+    current: false,
+  },
 ];
 
 // Default handlers: branch-free, exercised by routes.test.tsx.
@@ -93,7 +101,4 @@ export const handlers = [
     HttpResponse.json({ rule_id: 4, job_id: 82 }),
   ),
   http.get('*/api/admin/sheet/bumps', () => HttpResponse.json(bumpedPosts)),
-  http.delete('*/api/admin/sheet/bumps/:postKey', ({ params }) =>
-    HttpResponse.json({ post_key: String(params['postKey']), wiped: 4 }),
-  ),
 ];
