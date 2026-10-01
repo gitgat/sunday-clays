@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 import type { Page } from '@playwright/test';
 
+import { VIEWER_STATE } from './authState';
 import { expect, test } from './fixtures';
 import {
   expectNoSideScroll,
@@ -23,11 +24,26 @@ interface Chart {
 interface Post {
   post_key: string;
   type: string;
-  see_why: { kind: 'chart' | 'link'; label: string; chart?: Chart | null; href?: string | null };
+  see_why: {
+    kind: 'chart' | 'link';
+    label: string;
+    chart?: Chart | null;
+    href?: string | null;
+  };
 }
 interface Issue {
-  masthead: { date: string; issue: number; previous: string | null; next: string | null };
-  numbers: { shooters: number; median: number | null; top_score: number | null; trophies: number };
+  masthead: {
+    date: string;
+    issue: number;
+    previous: string | null;
+    next: string | null;
+  };
+  numbers: {
+    shooters: number;
+    median: number | null;
+    top_score: number | null;
+    trophies: number;
+  };
   posts: Post[];
   more: { posts: Post[] }[];
 }
@@ -66,8 +82,11 @@ test('/ is the latest issue: masthead, the four numbers, and nothing jumps once 
     page.getByText(`${longDate(issue.masthead.date)} · Issue ${String(issue.masthead.issue)}`),
   ).toBeVisible();
   const numbers = page.getByRole('region', { name: 'This Sunday in numbers' });
-  await expect(numbers.getByText(String(issue.numbers.shooters), { exact: true })).toBeVisible();
-  await expect(numbers.getByText(String(issue.numbers.trophies), { exact: true })).toBeVisible();
+  // Each number is read from its own labelled stat, so two equal numbers never clash.
+  const stat = (label: string) =>
+    numbers.getByText(label, { exact: true }).locator('xpath=../following-sibling::span[1]');
+  await expect(stat('Shooters')).toHaveText(String(issue.numbers.shooters));
+  await expect(stat('Trophies')).toHaveText(String(issue.numbers.trophies));
   await whenSettled(page);
   expect(await shift(), 'layout shift after load').toBeLessThan(0.05);
   await expectNoSideScroll(page);
@@ -81,6 +100,7 @@ test('nothing jumps for a returning shooter either', async ({ page }) => {
     '/api/shooters?q=Hadley',
   );
   const hadley = shooters.find((s) => s.display_name === 'Hadley, Ike');
+  expect(hadley, 'the fx world has Hadley, Ike').toBeDefined();
   await page.addInitScript((id) => localStorage.setItem('sc.me', String(id)), hadley?.shooter_id);
   const shift = await trackLayoutShift(page);
   await page.goto('/');
@@ -107,8 +127,8 @@ test('a phone stacks the blocks in Sheet order', async ({ page }, testInfo) => {
     ['masthead', block('masthead')],
     ['numbers', block('numbers')],
     ['Your Sunday', block('you')],
-    ['headline', `${block('lead')} >> text=Top story`],
-    ['spotlight', `${block('lead')} >> text=Spotlight`],
+    ['headline', `${block('lead')} >> text="Top story"`],
+    ['spotlight', `${block('lead')} >> text="Spotlight"`],
     ['feed', block('feed')],
     ['more', block('more')],
     ['next Sunday', block('next')],
@@ -199,6 +219,7 @@ test('tap targets are 44 px and nothing scrolls sideways, with a "me" set too', 
     '/api/shooters?q=Hadley',
   );
   const hadley = shooters.find((s) => s.display_name === 'Hadley, Ike');
+  expect(hadley, 'the fx world has Hadley, Ike').toBeDefined();
   await page.addInitScript((id) => localStorage.setItem('sc.me', String(id)), hadley?.shooter_id);
   await page.goto('/');
   await expect(
@@ -256,28 +277,64 @@ test('previous and next issue links walk the issues', async ({ page }) => {
 
 test('a bump counts at once, survives a reload and can be taken back', async ({
   page,
+  playwright,
+  baseURL,
 }, testInfo) => {
   const issue = await getJson<Issue>(page, '/api/sheet/latest');
   // The two projects share one stack: each bumps its own post, so the counts never collide.
   const post = issue.posts[testInfo.project.name === 'mobile' ? 1 : 0];
   if (post === undefined) throw new Error('the latest issue has at least two posts');
-  await page.goto('/');
+  const bumpsLoaded = () =>
+    page.waitForResponse(
+      (r) => /\/api\/sheet\/[^/]+\/bumps/.test(r.url()) && r.request().method() === 'GET' && r.ok(),
+    );
+  const sent = (method: 'POST' | 'DELETE') =>
+    page.waitForResponse(
+      (r) => r.url().endsWith('/api/sheet/bumps') && r.request().method() === method && r.ok(),
+    );
   const button = page
     .locator(`[data-post-key="${post.post_key}"]`)
     .getByRole('button', { name: /^Fist bump/ });
-  await expect(button).toHaveAttribute('aria-pressed', 'false');
-  const before = Number(/(\d+)/.exec((await button.getAttribute('aria-label')) ?? '')?.[1]);
-  await button.click();
-  await expect(button).toHaveAttribute('aria-pressed', 'true');
-  await expect(button).toHaveAccessibleName(new RegExp(`^Fist bump, ${String(before + 1)} bump`));
-  await page.reload();
-  await expect(button).toHaveAttribute('aria-pressed', 'true');
-  await expect(button).toHaveAccessibleName(new RegExp(`^Fist bump, ${String(before + 1)} bump`));
-  await button.click();
-  await expect(button).toHaveAttribute('aria-pressed', 'false');
-  await expect(button).toHaveAccessibleName(new RegExp(`^Fist bump, ${String(before)} bump`));
-  await page.reload();
-  await expect(button).toHaveAccessibleName(new RegExp(`^Fist bump, ${String(before)} bump`));
+  const named = (count: number) => new RegExp(`^Fist bump, ${String(count)} bump`);
+  let device: string | null = null;
+  try {
+    // The server's counts arrive after the page paints: wait for them before reading any.
+    let loaded = bumpsLoaded();
+    await page.goto('/');
+    await loaded;
+    device = await page.evaluate(() => localStorage.getItem('sc.device'));
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+    const before = Number(/(\d+)/.exec((await button.getAttribute('aria-label')) ?? '')?.[1]);
+    await Promise.all([sent('POST'), button.click()]);
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await expect(button).toHaveAccessibleName(named(before + 1));
+    loaded = bumpsLoaded();
+    await page.reload();
+    await loaded;
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await expect(button).toHaveAccessibleName(named(before + 1));
+    await Promise.all([sent('DELETE'), button.click()]);
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+    await expect(button).toHaveAccessibleName(named(before));
+    loaded = bumpsLoaded();
+    await page.reload();
+    await loaded;
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+    await expect(button).toHaveAccessibleName(named(before));
+  } finally {
+    // A failed attempt must not leave a bump on the shared stack.
+    if (device !== null) {
+      // A fresh context: at a test timeout the page's own is already closed.
+      const cleanup = await playwright.request.newContext({
+        baseURL,
+        storageState: VIEWER_STATE,
+      });
+      await cleanup.delete('/api/sheet/bumps', {
+        data: { post_key: post.post_key, device_id: device },
+      });
+      await cleanup.dispose();
+    }
+  }
 });
 
 test('"See why" opens a post’s chart and rings the evidence', async ({ page }) => {
@@ -286,6 +343,7 @@ test('"See why" opens a post’s chart and rings the evidence', async ({ page })
     const chart = p.see_why.chart;
     return (
       chart != null &&
+      chart.anchor != null &&
       chart.type === 'page' &&
       (chart.route ?? '').startsWith('/shooters/') &&
       Object.values(chart.highlight).some((items) => (items ?? []).length > 0)
@@ -299,6 +357,7 @@ test('"See why" opens a post’s chart and rings the evidence', async ({ page })
     .getByRole('link', { name: /^See why/ })
     .click();
   await expect(page).toHaveURL(new RegExp(`#chart-${chart.anchor ?? ''}$`));
+  await expect(page).toHaveURL(new RegExp(`${chart.anchor ?? ''}\\.from=${chart.window.from}`));
   const target = page.locator(`#chart-${chart.anchor ?? ''}`);
   await expect(target).toBeVisible();
   const chip = target.locator('[data-marked]');
@@ -311,8 +370,14 @@ test('"See why" opens a post’s chart and rings the evidence', async ({ page })
 test('Share on a post downloads its image on desktop', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'a phone hands the image to the share sheet');
   await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
-    Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true });
+    Object.defineProperty(navigator, 'share', {
+      value: undefined,
+      configurable: true,
+    });
+    Object.defineProperty(navigator, 'canShare', {
+      value: undefined,
+      configurable: true,
+    });
   });
   const issue = await getJson<Issue>(page, '/api/sheet/latest');
   const post = issue.posts[0];
