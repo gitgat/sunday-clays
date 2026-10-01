@@ -1,12 +1,22 @@
 import { createContext, useContext, useId, useState, type ReactNode } from 'react';
 import { getDeviceId } from '../../lib/device';
-import { BUMPS_OFF, bumpsKey, sortedKeys, useBumps, type BumpCounts, type BumpsKey } from './api';
+import {
+  BUMPS_OFF,
+  BUMPS_UNAVAILABLE,
+  bumpsKey,
+  sortedKeys,
+  useBumps,
+  type BumpCounts,
+  type BumpsKey,
+} from './api';
 import { BumpButton } from './BumpButton';
 
 interface BumpsContextValue {
   queryKey: BumpsKey;
   deviceId: string | null;
   counts: BumpCounts | undefined;
+  /** The counts GET failed and nothing earlier is on screen. */
+  unavailable: boolean;
   noteId: string;
   /** Says a bump failed, once for the whole section (the polite live region). */
   announce: (message: string) => void;
@@ -38,6 +48,7 @@ export function BumpsProvider({
     queryKey: bumpsKey(sorted, deviceId),
     deviceId,
     counts: bumps.data,
+    unavailable: bumps.isError && bumps.data === undefined,
     noteId,
     announce,
   };
@@ -54,13 +65,18 @@ export function BumpsProvider({
   );
 }
 
-/** Why the buttons are off, once per section: nothing when this browser keeps a device id. */
+/**
+ * A muted note, once per section: why the buttons are off (this browser keeps no device id), or
+ * that the counts could not be loaded. Nothing otherwise. Never a status or an alert.
+ */
 export function BumpsOffNote() {
   const bumps = useContext(BumpsContext);
-  if (bumps === null || bumps.deviceId !== null) return null;
+  if (bumps === null) return null;
+  const text = bumps.deviceId === null ? BUMPS_OFF : bumps.unavailable ? BUMPS_UNAVAILABLE : null;
+  if (text === null) return null;
   return (
     <p id={bumps.noteId} className="text-sm text-text-muted">
-      {BUMPS_OFF}
+      {text}
     </p>
   );
 }
