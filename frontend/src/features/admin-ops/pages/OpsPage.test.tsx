@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import { doneJob } from '../../admin/mocks';
-import { auditEntries, dataIssues } from '../mocks';
+import { auditEntries, bumpedPosts, dataIssues } from '../mocks';
 import { OpsPage } from './OpsPage';
 
 describe('OpsPage', () => {
-  it('shows data issues, the recompute panel and the audit log', async () => {
+  it('shows data issues, the recompute panel, fist bumps and the audit log', async () => {
     server.use(
       http.get('*/api/admin/data-issues', () => HttpResponse.json(dataIssues)),
       http.get('*/api/admin/audit', () => HttpResponse.json(auditEntries)),
@@ -18,6 +18,8 @@ describe('OpsPage', () => {
     expect(await screen.findByText('station_score_mismatch (1) · warning')).toBeInTheDocument();
     expect(await screen.findByRole('table', { name: 'Audit log' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Recompute analytics' })).toBeInTheDocument();
+    const bumps = screen.getByRole('region', { name: 'Fist bumps' });
+    expect(await within(bumps).findByRole('list', { name: 'Bumped posts' })).toBeInTheDocument();
   });
 
   it('recomputing refreshes the audit log with the new entry', async () => {
@@ -45,6 +47,42 @@ describe('OpsPage', () => {
     expect(within(log).getAllByRole('row')).toHaveLength(3);
     await user.click(screen.getByRole('button', { name: 'Recompute analytics' }));
     expect(await within(log).findByText('ops.recompute')).toBeInTheDocument();
+  });
+
+  it('wiping bumps refreshes the audit log with the new entry', async () => {
+    const entries = [...auditEntries];
+    const posts = [...bumpedPosts];
+    server.use(
+      http.get('*/api/admin/data-issues', () => HttpResponse.json(dataIssues)),
+      http.get('*/api/admin/audit', () => HttpResponse.json(entries)),
+      http.get('*/api/admin/sheet/bumps', () => HttpResponse.json(posts)),
+      http.delete('*/api/admin/sheet/bumps/:postKey', ({ params }) => {
+        const key = String(params['postKey']);
+        posts.splice(
+          posts.findIndex((p) => p.post_key === key),
+          1,
+        );
+        entries.push({
+          id: 9,
+          at: '2026-09-28T18:07:00Z',
+          ip: null,
+          role: 'admin',
+          action: 'sheet.wipe_bumps',
+          details: { post_key: key, wiped: 4 },
+        });
+        return HttpResponse.json({ post_key: key, wiped: 4 });
+      }),
+    );
+    const { user } = renderWithProviders(<OpsPage />, { route: '/admin/ops' });
+    const log = await screen.findByRole('table', { name: 'Audit log' });
+    const bumps = screen.getByRole('region', { name: 'Fist bumps' });
+    await user.click(
+      await within(bumps).findByRole('button', {
+        name: 'Wipe bumps on New personal best for Ike Hadley: 46.',
+      }),
+    );
+    await user.click(within(bumps).getByRole('button', { name: 'Yes, wipe 4 bumps' }));
+    expect(await within(log).findByText('sheet.wipe_bumps')).toBeInTheDocument();
   });
 
   it('a viewer session sees the admins-only message', async () => {

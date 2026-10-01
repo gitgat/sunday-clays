@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { AuditEntry, DataIssue } from './api';
+import type { AuditEntry, BumpedPost, DataIssue } from './api';
 
 export const dataIssues: DataIssue[] = [
   {
@@ -65,6 +65,33 @@ export const auditEntries: AuditEntry[] = [
   },
 ];
 
+export const bumpedPosts: BumpedPost[] = [
+  {
+    post_key: 'k-pb-3',
+    bumps: 4,
+    last_at: '2026-09-28T09:15:00Z',
+    label: 'New personal best for Ike Hadley: 46.',
+    issue_date: '2026-09-27',
+    current: true,
+  },
+  {
+    post_key: 'trophy:retired_trophy:2026-09-13',
+    bumps: 1,
+    last_at: '2026-09-14T20:00:00Z',
+    label: 'Trophy retired_trophy, 2026-09-13',
+    issue_date: '2026-09-13',
+    current: false,
+  },
+  {
+    post_key: 'otd:2026-08-02:1',
+    bumps: 2,
+    last_at: '2026-08-03T10:00:00Z',
+    label: 'No longer on a Sheet',
+    issue_date: null,
+    current: false,
+  },
+];
+
 // Default handlers: branch-free, exercised by routes.test.tsx.
 export const handlers = [
   http.get('*/api/admin/data-issues', () => HttpResponse.json(dataIssues)),
@@ -73,4 +100,5 @@ export const handlers = [
   http.post('*/api/admin/shooters/:id/aliases', () =>
     HttpResponse.json({ rule_id: 4, job_id: 82 }),
   ),
+  http.get('*/api/admin/sheet/bumps', () => HttpResponse.json(bumpedPosts)),
 ];

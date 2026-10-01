@@ -5,6 +5,7 @@ import type { JsonOf } from '../admin/api';
 
 export type DataIssue = JsonOf<paths['/api/admin/data-issues']['get']>[number];
 export type AuditEntry = JsonOf<paths['/api/admin/audit']['get']>[number];
+export type BumpedPost = JsonOf<paths['/api/admin/sheet/bumps']['get']>[number];
 
 export function useDataIssues() {
   return useQuery({
@@ -53,5 +54,30 @@ export function useRecompute() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/api/admin/audit'] }),
     mutationFn: (body: { recalibrate: boolean }) =>
       unwrap(api.POST('/api/admin/recompute', { body })),
+  });
+}
+
+/** Sunday Sheet posts with fist bumps, most recently bumped first (Plan 14). */
+export function useBumpedPosts() {
+  return useQuery({
+    queryKey: ['/api/admin/sheet/bumps'],
+    queryFn: () => unwrap(api.GET('/api/admin/sheet/bumps')),
+  });
+}
+
+/** Wipes every bump on one post; the wipe is audited, so the audit log refreshes too. */
+export function useWipeBumps() {
+  const qc = useQueryClient();
+  return useMutation({
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['/api/admin/sheet/bumps'] });
+      await qc.invalidateQueries({ queryKey: ['/api/admin/audit'] });
+    },
+    mutationFn: (postKey: string) =>
+      unwrap(
+        api.DELETE('/api/admin/sheet/bumps/{post_key}', {
+          params: { path: { post_key: postKey } },
+        }),
+      ),
   });
 }
