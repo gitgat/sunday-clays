@@ -1,4 +1,4 @@
-"""Bump rate limit (Plan 15 Task 1): 120 actions per client IP per 10 minutes."""
+"""Bump rate limit (Plan 15 Task 1): 600 actions per client IP per 10 minutes."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -20,13 +20,13 @@ def _actions(session: Session, ip: str, n: int, *, age: timedelta = timedelta(0)
     session.execute(insert(ATTEMPTS), [{"ip": ip, "at": at}] * n)
 
 
-def test_120_actions_are_allowed_and_the_next_is_limited(session: Session) -> None:
+def test_600_actions_are_allowed_and_the_next_is_limited(session: Session) -> None:
     ip = "203.0.113.7"
     for _ in range(BUMP_LIMIT):
         assert bumps_limited(session, ip) is False
         record_bump_action(session, ip)
-    assert BUMP_LIMIT == 120
-    assert bumps_limited(session, ip) is True  # the 121st is refused
+    assert BUMP_LIMIT == 600
+    assert bumps_limited(session, ip) is True  # the 601st is refused
 
 
 def test_window_edges_are_10_minutes(session: Session) -> None:
@@ -36,7 +36,7 @@ def test_window_edges_are_10_minutes(session: Session) -> None:
     assert bumps_limited(session, "198.51.100.1") is True
 
 
-def test_limited_from_the_120th_action_in_the_window(session: Session) -> None:
+def test_limited_from_the_600th_action_in_the_window(session: Session) -> None:
     _actions(session, "203.0.113.7", BUMP_LIMIT - 1)
     assert bumps_limited(session, "203.0.113.7") is False
     _actions(session, "203.0.113.7", 1)

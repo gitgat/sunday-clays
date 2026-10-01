@@ -3,6 +3,8 @@
 Counts change without a data_version bump, so they are never part of an insight feed (which is
 ETagged by data_version), and this path is never ETagged or stored (api/etag.py, "/bumps").
 A bump on an insight that later disappears is kept but never listed.
+A bump belongs to the insight's identity (its key), not its current wording: evergreen insights
+keep their bumps when their numbers change. GET refuses a key over 200 characters with 400.
 """
 
 from __future__ import annotations

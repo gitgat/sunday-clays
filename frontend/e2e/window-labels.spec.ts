@@ -92,6 +92,8 @@ test('window tags carry their dates, and Custom shows its dates and how presets 
   await page.goto(`/club?w=${custom}`);
   // The selected control shows the dates, not just "Custom": phones have no hover.
   const select = page.getByRole('combobox', { name: 'Time window' });
+  // Wait for whichever control this viewport renders before branching on it.
+  await expect(select.or(page.getByRole('group', { name: 'Time window' })).first()).toBeVisible();
   if (await select.isVisible()) {
     await expect(select.locator('option:checked')).toHaveText(/\w{3} \d{1,2} – \w{3} \d{1,2}/);
     await select.selectOption('edit');
@@ -115,6 +117,8 @@ test('a Custom range across two years fits the phone top bar', async ({ page }) 
   const from = daysBack(last, 400);
   await page.goto(`/club?w=${from}..${last}`);
   const select = page.getByRole('combobox', { name: 'Time window' });
+  // Wait for whichever control this viewport renders before branching on it.
+  await expect(select.or(page.getByRole('group', { name: 'Time window' })).first()).toBeVisible();
   if (await select.isVisible()) {
     await expect(select.locator('option:checked')).toHaveText(/^\w{3} '\d\d – \w{3} '\d\d$/);
     const fits = await select.evaluate((el) => el.getBoundingClientRect().right <= innerWidth);

@@ -112,7 +112,7 @@ def test_at_most_100_keys_per_ask_and_duplicates_count_once(
     assert spaced == {key: {"bumps": 0, "bumped": False}}
 
 
-def test_the_120th_action_in_10_minutes_is_the_last(
+def test_the_600th_action_in_10_minutes_is_the_last(
     fx_viewer_client: TestClient, fx_session: Session
 ) -> None:
     key = _keys(fx_viewer_client)[0]

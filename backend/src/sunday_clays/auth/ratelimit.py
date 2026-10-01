@@ -53,7 +53,9 @@ def record_attempt(session: Session, ip: str, success: bool) -> None:
 
 
 # --- Plan 15: fist bumps -------------------------------------------------------------------------
-BUMP_LIMIT: Final = 120
+# Per IP, not per device: club Wi-Fi and carrier NAT put 20-30 phones behind one IPv4 address, and
+# the shoot is when bumps get used. Bumps are idempotent per device, so this only guards volume.
+BUMP_LIMIT: Final = 600
 BUMP_WINDOW: Final = timedelta(minutes=10)
 
 

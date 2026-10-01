@@ -39,6 +39,35 @@ describe('BumpsProvider', () => {
     expect(asked[0]?.get('device_id')).toBe(localStorage.getItem('sc.device'));
   });
 
+  it('says once that counts are not available when the counts GET fails', async () => {
+    server.use(
+      http.get('*/api/bumps', () =>
+        HttpResponse.json({ error: { code: 'internal', message: 'x' } }, { status: 500 }),
+      ),
+    );
+    renderWithProviders(
+      <BumpsProvider keys={['a', 'b']}>
+        <InsightBump insightKey="a" />
+        <InsightBump insightKey="b" />
+      </BumpsProvider>,
+    );
+    const note = await screen.findByText('Bump counts aren’t available right now');
+    expect(screen.getAllByText('Bump counts aren’t available right now')).toHaveLength(1);
+    expect(note.closest('[role="status"],[role="alert"]')).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^Fist bump/ })).toHaveLength(2);
+  });
+
+  it('shows no unavailable note when the counts arrive', async () => {
+    asking();
+    renderWithProviders(
+      <BumpsProvider keys={['a']}>
+        <InsightBump insightKey="a" />
+      </BumpsProvider>,
+    );
+    await screen.findByRole('button', { name: 'Fist bump, 3 bumps' });
+    expect(screen.queryByText(/aren’t available/)).toBeNull();
+  });
+
   it('renders no button outside a provider', () => {
     renderWithProviders(<InsightBump insightKey="a" />);
     expect(screen.queryByRole('button')).toBeNull();

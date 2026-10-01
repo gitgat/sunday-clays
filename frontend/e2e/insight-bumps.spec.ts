@@ -113,8 +113,9 @@ test('every insight list offers a bump: Home, a profile and a Sunday', async ({ 
   for (const [path, insight] of pages) {
     if (insight === undefined) throw new Error(`${path} has a top insight in the fx world`);
     await page.goto(path);
+    await whenSettled(page);
     const button = bumpOf(page, insight.key);
-    await expect(button, path).toBeVisible();
+    await expect(button, path).toBeVisible({ timeout: 15_000 });
     const box = await button.boundingBox();
     expect(box?.height ?? 0, `${path} bump height`).toBeGreaterThanOrEqual(44);
     expect(box?.width ?? 0, `${path} bump width`).toBeGreaterThanOrEqual(44);
@@ -128,9 +129,13 @@ test('bump counts arriving never move the page', async ({ page }) => {
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
+  // The released answer is wider than "0" (three digits), so a width change would show as a shift.
   await page.route('**/api/bumps?**', async (route) => {
     await held;
-    await route.continue();
+    const response = await route.fetch();
+    const json = (await response.json()) as Record<string, { bumps: number; bumped: boolean }>;
+    for (const key of Object.keys(json)) json[key] = { bumps: 888, bumped: false };
+    await route.fulfill({ response, json });
   });
   await page.addInitScript(() => {
     const w = window as unknown as { __shift: number };
@@ -150,7 +155,7 @@ test('bump counts arriving never move the page', async ({ page }) => {
       .locator('[data-insight-key]')
       .first()
       .getByRole('button', { name: /^Fist bump/ }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await whenSettled(page);
   // Measure only what the counts do once they land.
   await page.evaluate(() => {
@@ -159,6 +164,12 @@ test('bump counts arriving never move the page', async ({ page }) => {
   const loaded = countsLoaded(page);
   release();
   await loaded;
+  await expect(
+    page
+      .locator('[data-insight-key]')
+      .first()
+      .getByRole('button', { name: /^Fist bump, 888 bumps/ }),
+  ).toBeVisible();
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );

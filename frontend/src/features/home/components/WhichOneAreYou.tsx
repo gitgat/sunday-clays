@@ -25,7 +25,7 @@ export function WhichOneAreYou({
   const search = useShooters(query, false, { enabled: asked });
   // Stale rows kept from the previous query are not this query's answer: show nothing until it lands.
   const current = asked && !search.isPlaceholderData;
-  const found = current ? (search.data ?? []) : [];
+  const found = current ? (search.data ?? []).filter((s) => s.status !== 'deceased') : [];
   const matches = found.slice(0, SHOWN);
   return (
     <Card title="Which one are you?" subtitle="Pick your name once; this browser remembers it.">
