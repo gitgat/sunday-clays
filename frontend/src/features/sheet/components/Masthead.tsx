@@ -62,8 +62,8 @@ export function Masthead({ issue }: { issue: SheetIssue }) {
         <Link to={allIssues} className={LINK}>
           All issues
         </Link>
-        <ShareSheetButton issue={issue} />
       </nav>
+      <ShareSheetButton issue={issue} />
       {newer !== null && <NewerSunday newer={newer} />}
     </section>
   );

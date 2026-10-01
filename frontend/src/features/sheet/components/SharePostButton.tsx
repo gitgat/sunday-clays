@@ -11,7 +11,16 @@ import { PostShareCard } from './PostShareCard';
  * Shares one post as a branded image (lib/share: the Web Share API, else a download). The card is
  * rendered off screen only while the image is made.
  */
-export function SharePostButton({ post, date }: { post: SheetPost; date: string }) {
+export function SharePostButton({
+  post,
+  date,
+  describedBy,
+}: {
+  post: SheetPost;
+  date: string;
+  /** The id of the post's headline, which describes what the image is of. */
+  describedBy?: string;
+}) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [rendering, setRendering] = useState(false);
   const [status, setStatus] = useState<'idle' | 'busy' | 'failed'>('idle');
@@ -36,6 +45,7 @@ export function SharePostButton({ post, date }: { post: SheetPost; date: string 
       <button
         type="button"
         aria-label="Share image"
+        aria-describedby={describedBy}
         onClick={() => void share()}
         disabled={status === 'busy'}
         className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-button px-3 text-sm text-text-muted hover:text-text disabled:opacity-60"

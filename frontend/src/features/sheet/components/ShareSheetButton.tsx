@@ -23,7 +23,10 @@ export function sheetShareText(issue: SheetIssue): string {
  */
 export function ShareSheetButton({ issue }: { issue: SheetIssue }) {
   const [status, setStatus] = useState<keyof typeof MESSAGES>('idle');
+  const [busy, setBusy] = useState(false);
   async function share() {
+    if (busy) return;
+    setBusy(true);
     const url = new URL(`/sheet/${issue.masthead.date}`, window.location.origin).toString();
     try {
       const outcome = await shareLink({
@@ -34,6 +37,8 @@ export function ShareSheetButton({ issue }: { issue: SheetIssue }) {
       setStatus(outcome === 'copied' ? 'copied' : 'idle');
     } catch {
       setStatus('failed');
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -41,7 +46,8 @@ export function ShareSheetButton({ issue }: { issue: SheetIssue }) {
       <button
         type="button"
         onClick={() => void share()}
-        className="inline-flex min-h-11 items-center gap-2 rounded-button px-2 underline underline-offset-2"
+        disabled={busy}
+        className="inline-flex min-h-11 items-center gap-2 rounded-button px-2 underline underline-offset-2 disabled:opacity-60"
       >
         <Link2 aria-hidden="true" className="size-4" />
         Share this Sheet

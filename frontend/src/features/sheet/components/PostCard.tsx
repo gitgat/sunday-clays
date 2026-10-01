@@ -105,6 +105,7 @@ export interface PostCardProps {
 export function PostCard({ post, date, deviceId, bumps, meId, noteId }: PostCardProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  const headlineId = useId();
   const insight = post.insight ?? null;
   const you = insight !== null && isMine(insight, meId);
   const headline = you && insight.headline_you !== null ? insight.headline_you : post.headline;
@@ -128,7 +129,7 @@ export function PostCard({ post, date, deviceId, bumps, meId, noteId }: PostCard
             size={48}
           />
         )}
-        <p className="min-w-0 break-words text-base">
+        <p id={headlineId} className="min-w-0 break-words text-base">
           {insight?.is_new === true && (
             <span className="mr-2 rounded-button bg-primary px-2 py-0.5 align-middle text-xs font-bold">
               New
@@ -146,9 +147,9 @@ export function PostCard({ post, date, deviceId, bumps, meId, noteId }: PostCard
           state={bumps}
           noteId={noteId}
         />
-        <SeeWhy post={post} />
+        <SeeWhy post={post} you={you} />
         {insight !== null && <AlsoLinks insight={insight} you={you} />}
-        <SharePostButton post={post} date={date} />
+        <SharePostButton post={post} date={date} describedBy={headlineId} />
         {explained && (
           <ExplainerToggle
             label="How we worked it out"

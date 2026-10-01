@@ -237,4 +237,16 @@ describe('shareLink', () => {
     vi.spyOn(navigator, 'share').mockRejectedValue(new TypeError('bad'));
     await expect(shareLink(data)).rejects.toThrow('bad');
   });
+
+  it('copies when the browser has no Web Share API at all', async () => {
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    await expect(shareLink(data)).resolves.toBe('copied');
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects, for the caller to handle, when there is no clipboard either', async () => {
+    vi.stubGlobal('navigator', {});
+    await expect(shareLink(data)).rejects.toThrow(TypeError);
+    vi.unstubAllGlobals();
+  });
 });

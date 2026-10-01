@@ -38,6 +38,22 @@ describe('SharePostButton', () => {
     const { user } = renderWithProviders(<SharePostButton post={trophyPost} date="2026-09-27" />);
     await user.click(screen.getByRole('button', { name: 'Share image' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not create the image.');
+    await waitFor(() => expect(document.body.textContent).not.toContain('The Sunday Sheet ·'));
+    expect(screen.getByRole('button', { name: 'Share image' })).toBeEnabled();
+  });
+});
+
+describe('SharePostButton description', () => {
+  it('keeps its name and is described by the post headline', () => {
+    renderWithProviders(
+      <>
+        <p id="h">New personal best</p>
+        <SharePostButton post={postFixture()} date="2026-09-27" describedBy="h" />
+      </>,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Share image', description: 'New personal best' }),
+    ).toBeInTheDocument();
   });
 });
 
