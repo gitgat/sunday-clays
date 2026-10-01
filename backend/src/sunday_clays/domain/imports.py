@@ -388,6 +388,18 @@ def _name_hints(
     )
 
 
+def _rows(n: int) -> str:
+    return "1 row" if n == 1 else f"{n} rows"
+
+
+def _is_are(n: int) -> str:
+    return "is" if n == 1 else "are"
+
+
+def _it_they(n: int) -> str:
+    return "it" if n == 1 else "they"
+
+
 def _special_date_findings(session: Session, rows: Sequence[StagedScore]) -> list[Finding]:
     """Scores-workbook rows on a live special Sunday: flagged, never merged (Decision 13)."""
     specials = active_special_sources(session)
@@ -396,8 +408,8 @@ def _special_date_findings(session: Session, rows: Sequence[StagedScore]) -> lis
         Finding(
             "special_event_date",
             Severity.WARNING,
-            f"{day.isoformat()} is the special shoot {specials[day].label!r}: its {n} rows here"
-            " are left out while that import is live",
+            f"{day.isoformat()} is the special shoot '{specials[day].label}': its {_rows(n)} here"
+            f" {_is_are(n)} left out while that import is live",
             sheet=SCORES_SHEET,
             event_date=day,
         )
@@ -449,8 +461,8 @@ def _preview_special(
         Finding(
             "regular_scores_on_special_date",
             Severity.WARNING,
-            f"The live scores workbook has {regular} rows on this date; they are left out while"
-            " this special shoot is live",
+            f"The live scores workbook has {_rows(regular)} on this date; {_it_they(regular)}"
+            f" {_is_are(regular)} left out while this special shoot is live",
             event_date=parsed.event_date,
         )
     ]

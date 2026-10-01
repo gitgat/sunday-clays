@@ -116,7 +116,11 @@ export function DiffSummary({ diff }: { diff: ImportPreview['diff'] }) {
         <ScoresDiffView diff={diff} />
       ) : 'events_replaced' in diff ? (
         <StationsDiffView diff={diff} />
-      ) : null}
+      ) : (
+        <p className="text-sm text-text-muted">
+          {`${diff.label} · ${diff.n_shooters} ${diff.n_shooters === 1 ? 'shooter' : 'shooters'} · ${diff.target_total} targets`}
+        </p>
+      )}
     </Card>
   );
 }

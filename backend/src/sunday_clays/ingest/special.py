@@ -18,7 +18,7 @@ from datetime import date
 
 from openpyxl.worksheet.worksheet import Worksheet
 
-from sunday_clays.ingest.names import clean_display_name
+from sunday_clays.ingest.names import clean_display_name, name_key
 from sunday_clays.ingest.types import (
     Finding,
     ParseError,
@@ -66,11 +66,29 @@ def parse_special(lw: LoadedWorkbook) -> SpecialParse:
         raise ParseError(MISSING_DATE)
     layout, total_column = _layout(sheet)
     findings: list[Finding] = []
-    rows = [
-        row
-        for number in range(FIRST_ENTRY_ROW, sheet.max_row + 1)
-        if (row := _row(sheet, number, layout, total_column, event_date, findings)) is not None
-    ]
+    rows: list[SpecialRow] = []
+    first_row_of: dict[str, int] = {}
+    for number in range(FIRST_ENTRY_ROW, sheet.max_row + 1):
+        row = _row(sheet, number, layout, total_column, event_date, findings)
+        if row is None:
+            continue
+        key = name_key(row.raw_name)
+        if key in first_row_of:  # one round per shooter: the first row stands (Ruling P17-R2)
+            findings.append(
+                Finding(
+                    "name_repeated_in_sheet",
+                    Severity.ERROR,
+                    f"This name is already on row {first_row_of[key]}; a special shoot has one"
+                    " round per shooter, so this repeat is left out",
+                    sheet=SPECIAL_SHEET,
+                    row=number,
+                    event_date=event_date,
+                    name=clean_display_name(row.raw_name),
+                )
+            )
+            continue
+        first_row_of[key] = number
+        rows.append(row)
     if not rows:
         if findings:
             first = findings[0]
@@ -100,7 +118,7 @@ def _layout(sheet: Worksheet) -> tuple[tuple[StationLayoutEntry, ...], int | Non
             return _checked(entries), column
         label = parse_label(header)
         if label is None:
-            raise ParseError(f"Row 3 has {header!r} where a station number belongs")
+            raise ParseError(f'Row 3 has "{_shown(header)}" where a station number belongs')
         if any(entry.label == label for entry in entries):
             raise ParseError(f"Station {label} appears twice in row 3")
         target = coerce_int(sheet.cell(row=TARGET_ROW, column=column).value)

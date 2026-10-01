@@ -351,3 +351,15 @@ def test_a_special_workbook_uploads_as_its_own_kind(
     commit = admin_client.post(f"/api/admin/imports/{preview['import_id']}/commit")
     assert commit.status_code == 200, commit.text
     assert _status(session, preview["import_id"]) == "committed"
+
+
+def test_committing_a_special_import_is_audited(
+    admin_client: TestClient, special_workbook: Callable[..., bytes], session: Session
+) -> None:
+    preview = _upload(admin_client, special_workbook(), "three-clay.xlsx")
+    commit = admin_client.post(f"/api/admin/imports/{preview['import_id']}/commit")
+    assert commit.status_code == 200, commit.text
+
+    assert _last_audit(session) == ("imports.commit", "admin", "testclient")
+    kind = session.scalar(select(IMPORTS.c.kind).where(IMPORTS.c.id == preview["import_id"]))
+    assert kind == "special"

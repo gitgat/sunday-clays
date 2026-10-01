@@ -107,7 +107,7 @@ def test_an_alias_rule_makes_a_name_known_in_the_preview(
     special_workbook: Callable[..., bytes],
     seed_live_round: Callable[..., int],
 ) -> None:
-    seed_live_round(session, "Ace, Amy", BEFORE, 40)  # creates Amy and her alias
+    seed_live_round(session, "Ace, Amy", BEFORE, 40)  # creates Amy and the alias
     amy_id = lookup_shooter(session, "ace amy")
     assert amy_id is not None
     create_rule(
@@ -161,7 +161,7 @@ def test_regular_rows_on_the_special_date_are_flagged_in_both_previews(
         (
             "warning",
             SPECIAL,
-            "The live scores workbook has 1 rows on this date; they are left out while this "
+            "The live scores workbook has 1 row on this date; it is left out while this "
             "special shoot is live",
         ),
     ]
@@ -178,11 +178,66 @@ def test_regular_rows_on_the_special_date_are_flagged_in_both_previews(
             "warning",
             SPECIAL,
             "ALL SCORE DETAIL",
-            "2026-09-20 is the special shoot 'Three Clay Shoot': its 1 rows here are left out "
+            "2026-09-20 is the special shoot 'Three Clay Shoot': its 1 row here is left out "
             "while that import is live",
         ),
     ]
     assert all(f.event_date != BEFORE for f in flagged)
+
+
+def test_several_regular_rows_on_the_special_date_use_the_plural(
+    session: Session,
+    special_workbook: Callable[..., bytes],
+    scores_workbook: Callable[..., bytes],
+) -> None:
+    weekly = stage_import(
+        session,
+        scores_workbook([("Hadley, Ike", 40, SPECIAL), ("Devlin, Sid", 35, SPECIAL)]),
+        "scores.xlsx",
+    )
+    commit_import(session, weekly.import_id)
+
+    special_id, diff = _stage(session, special_workbook())
+    assert diff.regular_rows_on_date == 2
+    (flagged,) = [
+        f
+        for f in get_import_preview(session, special_id).findings
+        if f.code == "regular_scores_on_special_date"
+    ]
+    assert flagged.message == (
+        "The live scores workbook has 2 rows on this date; they are left out while this "
+        "special shoot is live"
+    )
+    commit_import(session, special_id)
+    again = stage_import(
+        session,
+        scores_workbook([("Hadley, Ike", 41, SPECIAL), ("Devlin, Sid", 36, SPECIAL)]),
+        "scores-again.xlsx",
+    )
+    (note,) = [f for f in again.findings if f.code == "special_event_date"]
+    assert note.message == (
+        "2026-09-20 is the special shoot 'Three Clay Shoot': its 2 rows here are left out "
+        "while that import is live"
+    )
+
+
+def test_a_repeated_name_is_left_out_of_the_staged_rows_and_the_count(
+    session: Session, special_workbook: Callable[..., bytes]
+) -> None:
+    entries = [("Hadley, Ike", HITS), ("Kim, Pat", HITS), ("Hadley, Ike", (1,) * 10)]
+    preview = stage_import(session, special_workbook(entries), "dupe.xlsx")
+    assert isinstance(preview.diff, SpecialDiff)
+
+    assert preview.diff.n_shooters == 2
+    staged = session.scalars(
+        select(ImportScoreRow.score)
+        .where(ImportScoreRow.import_id == preview.import_id)
+        .order_by(ImportScoreRow.row_number)
+    ).all()
+    assert list(staged) == [50, 50]
+    assert [(f.code, f.severity.value) for f in preview.findings] == [
+        ("name_repeated_in_sheet", "error")
+    ]
 
 
 def test_a_duplicate_upload_returns_the_stored_special_preview(

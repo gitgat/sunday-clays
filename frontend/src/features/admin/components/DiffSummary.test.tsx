@@ -48,7 +48,7 @@ describe('DiffSummary', () => {
     expect(screen.queryByRole('list', { name: 'Removed events' })).not.toBeInTheDocument();
   });
 
-  it('shows an empty Changes card for a special-shoot preview until its view lands (Plan 17 T7)', () => {
+  it('shows one neutral line for a special-shoot preview until its full view lands (Plan 17 T7)', () => {
     const special = {
       event_date: '2026-09-20',
       label: 'Three Clay Shoot',
@@ -62,6 +62,9 @@ describe('DiffSummary', () => {
     };
     renderWithProviders(<DiffSummary diff={special} />);
     const card = screen.getByRole('region', { name: 'Changes' });
+    expect(
+      within(card).getByText('Three Clay Shoot · 5 shooters · 60 targets'),
+    ).toBeInTheDocument();
     expect(within(card).queryByText('Weeks replaced')).not.toBeInTheDocument();
     expect(within(card).queryByText('Rows added')).not.toBeInTheDocument();
   });

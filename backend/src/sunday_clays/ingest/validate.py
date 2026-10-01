@@ -172,23 +172,8 @@ def _group_finding(code: str, severity: Severity, message: str, group: list[Scor
 
 
 def validate_special(p: SpecialParse) -> tuple[Finding, ...]:
-    """A special sheet's date and repeated names, as the station checks report them."""
+    """A special sheet's date (repeated names are dropped by the parser)."""
     findings: list[Finding] = []
     if p.event_date.weekday() != _SUNDAY:
         findings.append(_non_sunday(p.event_date, sheet=SPECIAL_SHEET))
-    repeats = Counter(name_key(row.raw_name) for row in p.rows)
-    for row in p.rows:
-        count = repeats.pop(name_key(row.raw_name), 0)
-        if count >= 2:
-            findings.append(
-                Finding(
-                    "name_repeated_in_sheet",
-                    Severity.WARNING,
-                    f"This name is on {count} rows of the sheet",
-                    sheet=SPECIAL_SHEET,
-                    row=row.row_number,
-                    event_date=p.event_date,
-                    name=clean_display_name(row.raw_name),
-                )
-            )
     return tuple(findings)

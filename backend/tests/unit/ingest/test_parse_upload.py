@@ -130,7 +130,7 @@ def test_attendance_date_formulas_evaluated_through_parse_upload(
         ),
         (
             workbook_bytes({"Name List (2)": [["Name"], ["Hadley, Ike"]]}),
-            "This doesn't look like a Sunday Clays scores, station or special event workbook",
+            "This doesn't look like a Sunday Clays scores, station or special shoot workbook",
         ),
         (
             workbook_bytes({"ALL SCORE DETAIL": [["Name"]]}),

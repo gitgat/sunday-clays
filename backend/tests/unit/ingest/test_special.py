@@ -141,7 +141,7 @@ def test_hits_without_a_name_are_reported_and_blank_rows_are_skipped() -> None:
         (special_sheet(stations=(), targets=()), NO_STATIONS),
         (
             special_sheet([HADLEY], stations=("Stn", 2), targets=(6, 6)),
-            "Row 3 has 'Stn' where a station number belongs",
+            'Row 3 has "Stn" where a station number belongs',
         ),
         (
             special_sheet([HADLEY], stations=(1, 1), targets=(6, 6)),
@@ -206,13 +206,40 @@ def test_parse_upload_dispatches_and_validates_a_special_workbook() -> None:
 
     assert isinstance(parsed, SpecialParse)
     assert [(f.code, f.severity, f.row) for f in parsed.findings] == [
+        ("name_repeated_in_sheet", Severity.ERROR, 6),
         ("non_sunday_date", Severity.WARNING, None),
-        ("name_repeated_in_sheet", Severity.WARNING, 5),
     ]
-    assert parsed.findings[0].message == "2026-09-21 is a Monday, not a Sunday"
-    assert parsed.findings[0].sheet == SHEET
-    assert parsed.findings[1].message == "This name is on 2 rows of the sheet"
-    assert len(parsed.rows) == 2  # kept: warnings never drop a row
+    assert parsed.findings[1].message == "2026-09-21 is a Monday, not a Sunday"
+    assert parsed.findings[1].sheet == SHEET
+    assert len(parsed.rows) == 1  # the repeat is left out
+
+
+def test_a_repeated_name_keeps_the_first_row_and_reports_the_repeat() -> None:
+    repeat = ["hadley,  IKE", *HADLEY[1:]]
+    parsed = parse(special_sheet([HADLEY, DEVLIN, repeat]))
+
+    assert [(r.row_number, r.raw_name) for r in parsed.rows] == [
+        (5, "Hadley, Ike"),
+        (6, "Devlin, Sid"),
+    ]
+    (finding,) = parsed.findings
+    assert (finding.code, finding.severity, finding.row, finding.name) == (
+        "name_repeated_in_sheet",
+        Severity.ERROR,
+        7,
+        "hadley, IKE",
+    )
+    assert finding.message == (
+        "This name is already on row 5; a special shoot has one round per shooter, "
+        "so this repeat is left out"
+    )
+    assert (finding.sheet, finding.event_date) == (SHEET, SPECIAL_SUNDAY)
+
+
+def test_a_bad_station_header_is_quoted_without_a_python_repr() -> None:
+    with pytest.raises(ParseError) as excinfo:
+        parse(special_sheet([HADLEY], stations=("Stn", 2), targets=(6, 6)))
+    assert str(excinfo.value) == 'Row 3 has "Stn" where a station number belongs'
 
 
 def test_a_sunday_special_sheet_validates_clean() -> None:

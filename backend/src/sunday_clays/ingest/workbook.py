@@ -20,7 +20,7 @@ SPECIAL_SHEET = "Special Event"  # Plan 17: a special-event workbook's one sheet
 UNREADABLE_MESSAGE = "This file could not be read as an Excel workbook"
 TOO_LARGE_MESSAGE = "File is too large to process"
 UNKNOWN_KIND_MESSAGE = (
-    "This doesn't look like a Sunday Clays scores, station or special event workbook"
+    "This doesn't look like a Sunday Clays scores, station or special shoot workbook"
 )
 # Archive limits (inclusive). The two openpyxl loads peak at ~29x the
 # uncompressed size (measured: a 3.8 MB upload with 20.8 MB of sheet XML and
