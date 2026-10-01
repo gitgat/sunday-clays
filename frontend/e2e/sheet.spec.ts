@@ -299,12 +299,15 @@ test('a bump counts at once, survives a reload and can be taken back', async ({
   let device: string | null = null;
   try {
     // The server's counts arrive after the page paints: wait for them before reading any.
+    type Counts = Record<string, { bumps: number; bumped: boolean }>;
     let loaded = bumpsLoaded();
     await page.goto('/');
-    await loaded;
+    const first = (await (await loaded).json()) as Counts;
     device = await page.evaluate(() => localStorage.getItem('sc.device'));
     await expect(button).toHaveAttribute('aria-pressed', 'false');
-    const before = Number(/(\d+)/.exec((await button.getAttribute('aria-label')) ?? '')?.[1]);
+    const before = first[post.post_key]?.bumps ?? Number.NaN;
+    // Polls until React has rendered the server's count, not the loading placeholder.
+    await expect(button).toHaveAccessibleName(named(before));
     await Promise.all([sent('POST'), button.click()]);
     await expect(button).toHaveAttribute('aria-pressed', 'true');
     await expect(button).toHaveAccessibleName(named(before + 1));
@@ -318,7 +321,8 @@ test('a bump counts at once, survives a reload and can be taken back', async ({
     await expect(button).toHaveAccessibleName(named(before));
     loaded = bumpsLoaded();
     await page.reload();
-    await loaded;
+    const last = (await (await loaded).json()) as Counts;
+    expect(last[post.post_key]).toEqual({ bumps: before, bumped: false });
     await expect(button).toHaveAttribute('aria-pressed', 'false');
     await expect(button).toHaveAccessibleName(named(before));
   } finally {
@@ -329,9 +333,9 @@ test('a bump counts at once, survives a reload and can be taken back', async ({
         baseURL,
         storageState: VIEWER_STATE,
       });
-      await cleanup.delete('/api/sheet/bumps', {
-        data: { post_key: post.post_key, device_id: device },
-      });
+      await cleanup
+        .delete('/api/sheet/bumps', { data: { post_key: post.post_key, device_id: device } })
+        .catch(() => undefined);
       await cleanup.dispose();
     }
   }
