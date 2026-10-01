@@ -8,6 +8,8 @@ import { formatShortDate } from '../../../lib/format';
 import { getMe } from '../../../lib/me';
 import { formatDay } from '../../shooters/format';
 import { useHomeFeed, usePageFeed, useShooterFeed, useSundayFeed, type InsightFeed } from '../api';
+import { BumpsOffNote, BumpsProvider } from '../../bumps/BumpsProvider';
+import { feedKeys } from '../feedKeys';
 import { InsightCard } from './InsightCard';
 import { InsightList, isMine } from './InsightList';
 import { KudosStrip } from './KudosStrip';
@@ -47,22 +49,24 @@ export function ProfileInsights({ shooterId }: { shooterId: number }) {
           : `As of ${formatDay(f.as_of)} · not affected by the time filter`
       }
     >
-      <div className="flex min-w-0 flex-col gap-3">
-        <InsightList
-          items={first}
-          you={you}
-          label="Top insights"
-          columns={3}
-          wideFirst={f.pinned != null}
-        />
-        <MoreInsights
-          items={f.more}
-          total={f.n_more}
-          you={you}
-          onShowAll={() => setAll(true)}
-          loadingAll={all && feed.isPlaceholderData}
-        />
-      </div>
+      <BumpsProvider keys={feedKeys(f)}>
+        <div className="flex min-w-0 flex-col gap-3">
+          <InsightList
+            items={first}
+            you={you}
+            label="Top insights"
+            columns={3}
+            wideFirst={f.pinned != null}
+          />
+          <MoreInsights
+            items={f.more}
+            total={f.n_more}
+            you={you}
+            onShowAll={() => setAll(true)}
+            loadingAll={all && feed.isPlaceholderData}
+          />
+        </div>
+      </BumpsProvider>
     </Card>
   );
 }
@@ -79,11 +83,13 @@ export function SundayInsights({ date }: { date: string }) {
   const first = f.conditions == null ? f.top : [f.conditions, ...f.top];
   return (
     <Card title="Insights" subtitle={`${formatDay(date)} · not affected by the time filter`}>
-      <div className="flex min-w-0 flex-col gap-3">
-        <InsightList items={first} meId={meId} label="Top insights" columns={4} />
-        <KudosStrip kudos={f.kudos} meId={meId} />
-        <MoreInsights items={f.more} total={f.n_more} meId={meId} />
-      </div>
+      <BumpsProvider keys={feedKeys(f)}>
+        <div className="flex min-w-0 flex-col gap-3">
+          <InsightList items={first} meId={meId} label="Top insights" columns={4} />
+          <KudosStrip kudos={f.kudos} meId={meId} />
+          <MoreInsights items={f.more} total={f.n_more} meId={meId} />
+        </div>
+      </BumpsProvider>
     </Card>
   );
 }
@@ -125,13 +131,19 @@ export function HomeInsights({ meId }: { meId: number | null }) {
   // A failed fetch shows nothing: the other home cards already report an outage.
   if (feed.data === undefined || isEmpty(feed.data)) return null;
   const f = feed.data;
+  const hasInsights =
+    f.spotlight != null || f.top.length > 0 || f.kudos.length > 0 || f.more.length > 0;
+  // "Bumps need this browser to remember you" goes inside a card, once: the Insights card, else the
+  // Top story card, else the recap's card. Never a bare line between widgets.
+  const noteHome = hasInsights ? 'insights' : f.hero != null ? 'hero' : 'recap';
   return (
-    <>
+    <BumpsProvider keys={feedKeys(f)} note={false}>
       {(f.pinned != null || f.hero != null) && (
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-          {f.pinned != null && <RecapCard insight={f.pinned} />}
+          {f.pinned != null && <RecapCard insight={f.pinned} withNote={noteHome === 'recap'} />}
           {f.hero != null && (
             <Card title="Top story" subtitle={latestSubtitle(f.hero.anchor_date)}>
+              {noteHome === 'hero' && <BumpsOffNote />}
               <ul aria-label="Top story" className="flex flex-col gap-3">
                 <InsightCard insight={f.hero} you={isMine(f.hero, meId)} />
               </ul>
@@ -139,7 +151,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
           )}
         </div>
       )}
-      {(f.spotlight != null || f.top.length > 0 || f.kudos.length > 0 || f.more.length > 0) && (
+      {hasInsights && (
         <Card
           title="Insights"
           subtitle={
@@ -149,6 +161,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
           }
         >
           <div className="flex min-w-0 flex-col gap-3">
+            {noteHome === 'insights' && <BumpsOffNote />}
             {f.spotlight != null && (
               <section aria-label="Shooter to know" className="flex flex-col gap-2">
                 <h3 className="text-sm font-medium text-text-muted">Shooter to know</h3>
@@ -167,7 +180,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
           </div>
         </Card>
       )}
-    </>
+    </BumpsProvider>
   );
 }
 
@@ -194,10 +207,12 @@ export function PageInsights({ page }: { page: PageKey }) {
           : `As of ${formatDay(f.as_of)} · not affected by the time filter`
       }
     >
-      <div className="flex min-w-0 flex-col gap-3">
-        <InsightList items={f.top} meId={getMe()} label="Top insights" columns={3} />
-        <MoreInsights items={f.more} total={f.n_more} meId={getMe()} />
-      </div>
+      <BumpsProvider keys={feedKeys(f)}>
+        <div className="flex min-w-0 flex-col gap-3">
+          <InsightList items={f.top} meId={getMe()} label="Top insights" columns={3} />
+          <MoreInsights items={f.more} total={f.n_more} meId={getMe()} />
+        </div>
+      </BumpsProvider>
     </Card>
   );
 }

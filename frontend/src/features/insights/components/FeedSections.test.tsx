@@ -1,9 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearMe, setMe } from '../../../lib/me';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
+import { feedKeys } from '../feedKeys';
 import { feedFixture, insightFixture, kudosFixture } from '../mocks';
 import { HomeInsights, PageInsights, ProfileInsights, SundayInsights } from './FeedSections';
 
@@ -359,5 +360,223 @@ describe('PageInsights', () => {
     await waitFor(() => expect(served).toBe(true));
     await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(screen.queryByRole('region', { name: 'Insights' })).toBeNull();
+  });
+});
+
+/** Records every GET /api/bumps and answers `counts` (zeros for any other asked key). */
+function bumpCounts(counts: Record<string, { bumps: number; bumped: boolean }> = {}) {
+  const asked: URLSearchParams[] = [];
+  server.use(
+    http.get('*/api/bumps', ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      asked.push(params);
+      const keys = (params.get('keys') ?? '').split(',').filter(Boolean);
+      return HttpResponse.json(
+        Object.fromEntries(keys.map((k) => [k, counts[k] ?? { bumps: 0, bumped: false }])),
+      );
+    }),
+  );
+  return asked;
+}
+
+const homeBumpFeed = feedFixture({
+  pinned: insightFixture({ key: 'recap', kind: 'home.sunday-recap', family: 'recap' }),
+  hero: insightFixture({ key: 'hero' }),
+  spotlight: insightFixture({ key: 'spot' }),
+  top: [insightFixture({ key: 't1' }), insightFixture({ key: 't2' })],
+  kudos: kudosFixture(2),
+  more: [insightFixture({ key: 'm1', family: 'streak' })],
+  n_more: 1,
+});
+
+describe('fist bumps on every feed', () => {
+  it('Home asks for every insight’s bumps in one request and puts a button on each row', async () => {
+    server.use(http.get('*/api/insights/home', () => HttpResponse.json(homeBumpFeed)));
+    const asked = bumpCounts({ hero: { bumps: 4, bumped: false } });
+    const { container } = renderWithProviders(<HomeInsights meId={null} />);
+    const topStory = await screen.findByRole('list', { name: 'Top story' });
+    expect(
+      await within(topStory).findByRole('button', { name: 'Fist bump, 4 bumps' }),
+    ).toBeInTheDocument();
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.get('keys')).toBe([...new Set(feedKeys(homeBumpFeed))].sort().join(','));
+    for (const key of ['recap', 'spot', 't1', 't2', 'm1']) {
+      const row = container.querySelector(`[data-insight-key="${key}"]`);
+      expect(row, key).not.toBeNull();
+      const bump = within(row as HTMLElement).getByRole('button', { name: /^Fist bump/ });
+      expect(bump).toHaveAccessibleDescription(/\S/);
+    }
+  });
+
+  it.each([
+    ['a profile', () => <ProfileInsights shooterId={3} />, '*/api/insights/shooters/:id'],
+    ['a Sunday', () => <SundayInsights date="2026-09-27" />, '*/api/insights/sundays/:date'],
+    ['the club page', () => <PageInsights page="club" />, '*/api/insights/club'],
+  ])('%s puts a fist bump on its insights', async (_name, ui, route) => {
+    server.use(http.get(route, () => HttpResponse.json(feedFixture({ top: [insightFixture()] }))));
+    const asked = bumpCounts({ 'k-pb-3': { bumps: 2, bumped: true } });
+    renderWithProviders(ui());
+    const button = await screen.findByRole('button', { name: 'Fist bump, 2 bumps' });
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(asked).toHaveLength(1);
+  });
+
+  it('one insight shown twice shares one count', async () => {
+    const shared = insightFixture();
+    server.use(
+      http.get('*/api/insights/sundays/:date', () =>
+        HttpResponse.json(
+          feedFixture({
+            top: [shared],
+            kudos: [{ shooter_id: 3, display_name: 'Hadley, Ike', insight: shared }],
+          }),
+        ),
+      ),
+      http.post('*/api/bumps', () => HttpResponse.json({ bumps: 1, bumped: true })),
+    );
+    bumpCounts();
+    const { user } = renderWithProviders(<SundayInsights date="2026-09-27" />);
+    const top = await screen.findByRole('list', { name: 'Top insights' });
+    await within(top).findByRole('button', { name: 'Fist bump, 0 bumps' });
+    await user.click(screen.getByRole('button', { name: /Ike Hadley · / }));
+    const sheet = await screen.findByRole('dialog');
+    await user.click(within(sheet).getByRole('button', { name: 'Fist bump, 0 bumps' }));
+    // The open Sheet makes the page behind it inert, so the list is queried with hidden: true.
+    expect(
+      await within(top).findByRole('button', { name: 'Fist bump, 1 bump', hidden: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps the counts on screen while Show all loads more', async () => {
+    let releaseSecond: () => void = () => undefined;
+    const secondHeld = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    let gets = 0;
+    server.use(
+      http.get('*/api/insights/shooters/:id', ({ request }) => {
+        const all = new URL(request.url).searchParams.has('all');
+        const more = [insightFixture({ key: 'm1', family: 'streak' })];
+        if (all) more.push(insightFixture({ key: 'm2', family: 'streak' }));
+        return HttpResponse.json(feedFixture({ top: [insightFixture()], more, n_more: 2 }));
+      }),
+      http.get('*/api/bumps', async ({ request }) => {
+        gets += 1;
+        if (gets === 2) await secondHeld;
+        const keys = (new URL(request.url).searchParams.get('keys') ?? '').split(',');
+        return HttpResponse.json(
+          Object.fromEntries(
+            keys.map((k) => [k, { bumps: k === 'k-pb-3' ? 5 : 0, bumped: false }]),
+          ),
+        );
+      }),
+    );
+    const { user } = renderWithProviders(<ProfileInsights shooterId={3} />);
+    const top = await screen.findByRole('list', { name: 'Top insights' });
+    await within(top).findByRole('button', { name: 'Fist bump, 5 bumps' });
+    await user.click(screen.getByRole('button', { name: 'Show all 2' }));
+    await waitFor(() => expect(gets).toBe(2));
+    // The second ask is held: the card on screen keeps its 5, not a flash to 0.
+    expect(within(top).getByRole('button', { name: 'Fist bump, 5 bumps' })).toBeInTheDocument();
+    releaseSecond();
+  });
+
+  it('a tap while Show all loads keeps the other cards’ counts', async () => {
+    let releaseSecond: () => void = () => undefined;
+    const secondHeld = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    let releasePost: () => void = () => undefined;
+    const postHeld = new Promise<void>((resolve) => {
+      releasePost = resolve;
+    });
+    let gets = 0;
+    const counts: Record<string, { bumps: number; bumped: boolean }> = {
+      'k-pb-3': { bumps: 5, bumped: false },
+      t2: { bumps: 2, bumped: false },
+    };
+    server.use(
+      http.get('*/api/insights/shooters/:id', ({ request }) => {
+        const all = new URL(request.url).searchParams.has('all');
+        const more = [insightFixture({ key: 'm1', family: 'streak' })];
+        if (all) more.push(insightFixture({ key: 'm2', family: 'streak' }));
+        return HttpResponse.json(
+          feedFixture({ top: [insightFixture(), insightFixture({ key: 't2' })], more, n_more: 2 }),
+        );
+      }),
+      http.get('*/api/bumps', async ({ request }) => {
+        gets += 1;
+        if (gets === 2) await secondHeld;
+        const keys = (new URL(request.url).searchParams.get('keys') ?? '').split(',');
+        return HttpResponse.json(
+          Object.fromEntries(keys.map((k) => [k, counts[k] ?? { bumps: 0, bumped: false }])),
+        );
+      }),
+      http.post('*/api/bumps', async () => {
+        await postHeld;
+        counts.t2 = { bumps: 3, bumped: true };
+        return HttpResponse.json(counts.t2);
+      }),
+    );
+    const { user, container } = renderWithProviders(<ProfileInsights shooterId={3} />);
+    const top = await screen.findByRole('list', { name: 'Top insights' });
+    await within(top).findByRole('button', { name: 'Fist bump, 5 bumps' });
+    const t2 = () => container.querySelector('[data-insight-key="t2"]') as HTMLElement;
+    await within(t2()).findByRole('button', { name: 'Fist bump, 2 bumps' });
+    await user.click(screen.getByRole('button', { name: 'Show all 2' }));
+    await waitFor(() => expect(gets).toBe(2));
+    // The new counts are still held. Tap a card already on screen.
+    await user.click(within(t2()).getByRole('button', { name: 'Fist bump, 2 bumps' }));
+    expect(await within(t2()).findByRole('button', { name: 'Fist bump, 3 bumps' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // The other card keeps its 5: the tap is seeded from the counts on screen, not an empty map.
+    // The POST is still held here, so nothing has refetched to paper over a bad seed.
+    expect(within(top).getByRole('button', { name: 'Fist bump, 5 bumps' })).toBeInTheDocument();
+    releasePost();
+    releaseSecond();
+    await waitFor(() =>
+      expect(within(t2()).getByRole('button', { name: 'Fist bump, 3 bumps' })).toBeInTheDocument(),
+    );
+    expect(within(top).getByRole('button', { name: 'Fist bump, 5 bumps' })).toBeInTheDocument();
+  });
+
+  it('turns bumps off, says why once, and still shows counts when storage is blocked', async () => {
+    server.use(http.get('*/api/insights/home', () => HttpResponse.json(homeBumpFeed)));
+    const asked = bumpCounts({ hero: { bumps: 4, bumped: false } });
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    renderWithProviders(<HomeInsights meId={null} />);
+    const button = await screen.findByRole('button', { name: 'Fist bump, 4 bumps' });
+    expect(button).toBeDisabled();
+    const notes = screen.getAllByText('Bumps need this browser to remember you');
+    expect(notes).toHaveLength(1);
+    // The note sits inside the Insights card, not as a bare line between widgets.
+    expect(
+      within(screen.getByRole('region', { name: 'Insights' })).getByText(
+        notes[0]?.textContent ?? '',
+      ),
+    ).toBe(notes[0]);
+    expect(button).toHaveAccessibleDescription(/remember you .+/);
+    expect(asked[0]?.has('device_id')).toBe(false);
+  });
+
+  it.each([
+    ['the Insights card', homeBumpFeed, 'Insights'],
+    ['the Top story card', { hero: insightFixture({ key: 'hero' }) }, 'Top story'],
+    ['the recap card', { pinned: insightFixture({ key: 'recap' }) }, 'Last Sunday'],
+  ])('says why bumps are off once, inside %s', async (_name, feedBits, card) => {
+    server.use(http.get('*/api/insights/home', () => HttpResponse.json(feedFixture(feedBits))));
+    bumpCounts();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    renderWithProviders(<HomeInsights meId={null} />);
+    await screen.findAllByRole('button', { name: /^Fist bump/ });
+    const notes = screen.getAllByText('Bumps need this browser to remember you');
+    expect(notes).toHaveLength(1);
+    expect(screen.getByRole('region', { name: card })).toContainElement(notes[0] ?? null);
   });
 });
