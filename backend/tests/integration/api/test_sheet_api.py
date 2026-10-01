@@ -280,20 +280,27 @@ def test_an_on_this_day_post_links_to_that_sundays_results() -> None:
     }
 
 
-def test_the_trophies_number_counts_every_award_that_day(
+def test_the_trophies_number_counts_registered_awards_only(
     fx_viewer_client: TestClient, fx_session: Session
 ) -> None:
-    """Including an award whose trophy has left the catalog (it has no post)."""
+    """The same set the event page lists: a retired code does not count, a registered one does."""
     before = fx_viewer_client.get("/api/sheet/latest").json()["numbers"]["trophies"]
     shooter = fx_session.scalar(
         text("SELECT min(shooter_id) FROM rounds WHERE event_date = :d"), {"d": LATEST}
     )
-    fx_session.execute(
-        text(
-            "INSERT INTO achievements_awarded (shooter_id, code, event_date, round_id, details) "
-            "VALUES (:s, 'retired_code', :d, NULL, CAST('{}' AS jsonb))"
-        ),
-        {"s": shooter, "d": LATEST},
+    insert = text(
+        "INSERT INTO achievements_awarded (shooter_id, code, event_date, round_id, details) "
+        "VALUES (:s, :c, :d, NULL, CAST('{}' AS jsonb))"
     )
+    fx_session.execute(insert, {"s": shooter, "c": "retired_code", "d": LATEST})
     issue = sheet_routes.build_issue(fx_session, LATEST)
+    assert sheet_routes._numbers(fx_session, issue).trophies == before
+    other = fx_session.scalar(
+        text("SELECT max(shooter_id) FROM rounds WHERE event_date = :d AND shooter_id <> :s"),
+        {"d": LATEST, "s": shooter},
+    )
+    code = next(iter(sheet_routes.trophy_catalog()))  # any registered trophy
+    fx_session.execute(insert, {"s": other, "c": code, "d": LATEST})
     assert sheet_routes._numbers(fx_session, issue).trophies == before + 1
+    event = fx_viewer_client.get(f"/api/events/{LATEST.isoformat()}/achievements").json()
+    assert sheet_routes._numbers(fx_session, issue).trophies == len(event["awards"])

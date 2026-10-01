@@ -247,11 +247,14 @@ def newer_sunday(session: Session, issue: sheet.Issue) -> NewerSundayOut | None:
 def _numbers(session: Session, issue: sheet.Issue) -> SheetNumbersOut:
     events = frames.load_events(session)
     event = rows(events.loc[events["event_date"] == issue.day])[0]
+    catalog = trophy_catalog()  # the event page's set: retired codes are not trophies
     return SheetNumbersOut(
         shooters=int(event["n_shooters"]),
         median=opt_float(event["median"]),
         top_score=opt_int(event["top_score"]),
-        trophies=len(session.execute(_AWARDS_SQL, {"d": issue.day}).all()),
+        trophies=sum(
+            1 for _, _, code in session.execute(_AWARDS_SQL, {"d": issue.day}) if code in catalog
+        ),
     )
 
 
