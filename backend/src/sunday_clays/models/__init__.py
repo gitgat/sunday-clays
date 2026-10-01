@@ -19,6 +19,12 @@ from sunday_clays.models.live import (
     StationLayout,
 )
 from sunday_clays.models.ops import AppState, Job
+from sunday_clays.models.page_views import (
+    PageKindRollup,
+    PageView,
+    PageViewAttempt,
+    PageViewRollup,
+)
 from sunday_clays.models.staging import (
     Import,
     ImportAttendanceRow,
@@ -51,6 +57,10 @@ __all__ = [
     "InsightPick",
     "Job",
     "LoginAttempt",
+    "PageKindRollup",
+    "PageView",
+    "PageViewAttempt",
+    "PageViewRollup",
     "RatingHistory",
     "Round",
     "RoundMetric",
