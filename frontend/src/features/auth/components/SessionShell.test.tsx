@@ -1,6 +1,7 @@
-import { screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resetMeForTests } from '../../../lib/me';
 import { server } from '../../../test/msw/server';
 import { renderRoutes } from '../../../test/render';
 import { stubViewport } from '../../../test/viewport';
@@ -119,5 +120,62 @@ describe('SessionShell', () => {
       { route: '/', role: null },
     );
     expect(screen.getByText('Signed in as viewer')).toBeInTheDocument();
+  });
+});
+
+const PAGE_ROUTES = [
+  {
+    path: '/',
+    element: (
+      <RequireRole>
+        <SessionShell />
+      </RequireRole>
+    ),
+    children: [
+      { index: true, element: <p>home page</p> },
+      { path: 'shooters/:id', element: <p>profile page</p> },
+    ],
+  },
+];
+
+describe('SessionShell page views', () => {
+  function capture(): unknown[] {
+    const sent: unknown[] = [];
+    server.use(
+      http.post('*/api/pageviews', async ({ request }) => {
+        sent.push(await request.json());
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    return sent;
+  }
+
+  afterEach(() => {
+    resetMeForTests();
+    localStorage.clear();
+  });
+
+  it('sends one beacon per page for a viewer and none for a query-only change', async () => {
+    stubViewport('desktop');
+    const sent = capture();
+    const kinds = () => sent.map((b) => (b as { page_kind: string }).page_kind);
+    const { router } = renderRoutes(PAGE_ROUTES, { route: '/', role: 'viewer' });
+    await waitFor(() => expect(sent).toHaveLength(1));
+    await act(() => router.navigate('/shooters/3'));
+    await waitFor(() => expect(sent).toHaveLength(2));
+    await act(() => router.navigate('/shooters/3?w=12m'));
+    // Then a real page change: its beacon is pushed after any stray one for the query change
+    // (the handler pushes in order), so waiting for it proves no beacon was sent for `?w=12m`.
+    await act(() => router.navigate('/'));
+    await waitFor(() => expect(sent.length).toBeGreaterThanOrEqual(3));
+    expect(kinds()).toEqual(['home', 'profile', 'home']);
+  });
+
+  it('sends nothing for an admin session', async () => {
+    stubViewport('desktop');
+    const sent = capture();
+    renderRoutes(PAGE_ROUTES, { route: '/', role: 'admin' });
+    await screen.findByText('home page');
+    expect(sent).toEqual([]);
   });
 });
