@@ -491,6 +491,21 @@ describe('SheetPage', () => {
   );
 
   it(
+    'drops the empty Your Sunday block when skipped, so the rail starts level with the main column',
+    async () => {
+      localStorage.setItem('sc.me.skip', '1');
+      const { container } = renderAt();
+      await turnoutChart();
+      expect(container.querySelector('[data-sheet-block="you"]')).toBeNull();
+      const rail = container.querySelector('[data-sheet-column="rail"]');
+      expect(rail?.className).toContain('lg:row-start-3');
+      expect(rail?.className).toContain('lg:row-span-2');
+      expect(rail?.className).not.toContain('lg:row-start-4');
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it(
     'hides the question after "skip", also on the next visit',
     async () => {
       const first = renderAt();

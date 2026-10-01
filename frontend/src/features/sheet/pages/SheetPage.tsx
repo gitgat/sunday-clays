@@ -31,6 +31,8 @@ export const SHEET_PLACEMENT = {
   you: 'lg:col-start-3 lg:row-start-3',
   main: 'lg:col-span-2 lg:col-start-1 lg:row-span-2 lg:row-start-3',
   rail: 'lg:col-start-3 lg:row-start-4',
+  /** With no Your Sunday above it, the rail takes the whole right column. */
+  railAlone: 'lg:col-start-3 lg:row-span-2 lg:row-start-3',
 } as const;
 
 function Block({
@@ -64,6 +66,7 @@ function SheetBody({
   const [meId, setMeId] = useState<number | null>(getMe);
   const [skipped, setSkipped] = useState(isMeSkipped);
   const { date, latest } = issue.masthead;
+  const showYou = meId !== null || !skipped;
   const bumps = useBumps(date, deviceId);
   const shared = { issue, bumps: bumps.data, deviceId, meId, noteId: NOTE_ID };
   return (
@@ -74,16 +77,18 @@ function SheetBody({
       <Block name="numbers" className={SHEET_PLACEMENT.numbers}>
         <Numbers issue={issue} />
       </Block>
-      <Block name="you" className={SHEET_PLACEMENT.you}>
-        <YourSunday
-          meId={meId}
-          skipped={skipped}
-          widgets={widgets}
-          onPicked={setMeId}
-          onCleared={() => setMeId(null)}
-          onSkipped={() => setSkipped(true)}
-        />
-      </Block>
+      {showYou && (
+        <Block name="you" className={SHEET_PLACEMENT.you}>
+          <YourSunday
+            meId={meId}
+            skipped={skipped}
+            widgets={widgets}
+            onPicked={setMeId}
+            onCleared={() => setMeId(null)}
+            onSkipped={() => setSkipped(true)}
+          />
+        </Block>
+      )}
       <div
         data-sheet-column="main"
         className={cx('flex min-w-0 flex-col gap-4', SHEET_PLACEMENT.main)}
@@ -103,7 +108,10 @@ function SheetBody({
       </div>
       <div
         data-sheet-column="rail"
-        className={cx('flex min-w-0 flex-col gap-4', SHEET_PLACEMENT.rail)}
+        className={cx(
+          'flex min-w-0 flex-col gap-4',
+          showYou ? SHEET_PLACEMENT.rail : SHEET_PLACEMENT.railAlone,
+        )}
       >
         {latest && (
           <Block name="next">
