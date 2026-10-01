@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Callable
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics.insights.store import existing_keys
@@ -24,11 +24,12 @@ from sunday_clays.domain.errors import DomainError, NotFoundError
 router = APIRouter(tags=["bumps"])
 
 MAX_KEYS = 100
+MAX_KEY_LEN = 200
 
 
 class BumpIn(BaseModel):
-    key: str = Field(min_length=1, max_length=200)
-    device_id: str = Field(min_length=1)
+    key: str
+    device_id: str
 
 
 class BumpStateOut(BaseModel):
@@ -50,6 +51,8 @@ def parse_device_id(value: str) -> uuid.UUID:
 def parse_keys(raw: str) -> list[str]:
     """`k1,k2,…` as distinct non-empty keys in order; more than MAX_KEYS is a 400."""
     keys = list(dict.fromkeys(k for k in (part.strip() for part in raw.split(",")) if k))
+    if any(len(k) > MAX_KEY_LEN for k in keys):
+        raise DomainError("bad_key", f"A key is at most {MAX_KEY_LEN} characters")
     if len(keys) > MAX_KEYS:
         raise DomainError("too_many_keys", f"Ask for at most {MAX_KEYS} keys at a time")
     return keys
@@ -77,6 +80,8 @@ def _bump_action(
         raise TooManyRequestsError("rate_limited", "Too many bumps from here. Try again soon.")
     record_bump_action(session, ip)
     session.commit()  # get_session rolls back on any error; a refused action still counts
+    if not body.key or len(body.key) > MAX_KEY_LEN:
+        raise DomainError("bad_key", f"key must be 1 to {MAX_KEY_LEN} characters")
     device = parse_device_id(body.device_id)
     if not existing_keys(session, [body.key]):
         raise NotFoundError("insight_not_found", "That insight is not on the site now")

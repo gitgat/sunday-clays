@@ -152,3 +152,42 @@ def test_counts_are_never_cached_and_never_in_a_feed(fx_viewer_client: TestClien
     after = fx_viewer_client.get("/api/insights/home")
     assert after.json() == before.json()
     assert after.headers["etag"] == before.headers["etag"]
+
+
+def test_a_bad_device_id_is_refused_before_an_unknown_key(fx_viewer_client: TestClient) -> None:
+    for response in (
+        _post(fx_viewer_client, GONE, "nope"),
+        _delete(fx_viewer_client, GONE, "nope"),
+    ):
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "bad_device_id"
+
+
+def test_an_empty_or_over_long_key_is_400_bad_key_and_counts_toward_the_limit(
+    fx_viewer_client: TestClient, fx_session: Session
+) -> None:
+    before = len(fx_session.execute(select(ATTEMPTS.c.id)).all())
+    for key in ("", "k" * 201):
+        for response in (_post(fx_viewer_client, key, A), _delete(fx_viewer_client, key, A)):
+            assert response.status_code == 400, len(key)
+            assert response.json()["error"]["code"] == "bad_key"
+    assert len(fx_session.execute(select(ATTEMPTS.c.id)).all()) == before + 4
+    assert _post(fx_viewer_client, "k" * 200, A).status_code == 404  # 200 is the longest allowed
+
+
+def test_asking_for_a_key_over_200_chars_is_400_bad_key(fx_viewer_client: TestClient) -> None:
+    response = _counts(fx_viewer_client, ["k" * 201])
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "bad_key"
+    assert _counts(fx_viewer_client, ["k" * 200]).status_code == 200
+
+
+def test_cross_site_writes_are_403_csrf(fx_viewer_client: TestClient) -> None:
+    key = _keys(fx_viewer_client)[0]
+    cross = {**IP, "Sec-Fetch-Site": "cross-site"}
+    for response in (
+        _post(fx_viewer_client, key, A, cross),
+        _delete(fx_viewer_client, key, A, cross),
+    ):
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "csrf"
