@@ -68,8 +68,8 @@ test('phone: a custom time window from the top bar select, kept while navigating
   ).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
-  // In-app navigation keeps it: Home is a tab, Club sits in More.
-  await page.getByRole('navigation', { name: 'Tabs' }).getByRole('link', { name: 'Home' }).click();
+  // In-app navigation keeps it: the Sheet is a tab, Club sits in More.
+  await page.getByRole('navigation', { name: 'Tabs' }).getByRole('link', { name: 'Sheet' }).click();
   await expect(page).toHaveURL(new RegExp(`w=${start}\\.\\.${end}`));
   await page
     .getByRole('navigation', { name: 'Tabs' })
