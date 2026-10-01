@@ -49,9 +49,18 @@ describe('sendPageView', () => {
   });
 
   it('swallows a rejected fetch (offline, blocked)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
-    sendPageView(VIEW);
-    await Promise.resolve(); // an unhandled rejection would fail the run
+    // A plain function, not vi.fn/mockRejectedValue: those mark the rejection as handled.
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      sendPageView(VIEW);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+      vi.unstubAllGlobals();
+    }
   });
 
   it('swallows a fetch that throws synchronously', () => {
@@ -99,11 +108,24 @@ describe('usePageViewBeacon', () => {
     expect(kinds).toEqual(['profile', 'home']);
   });
 
-  it('sends nothing for an admin session or without a session', () => {
+  it.each(['admin', null] as const)('sends nothing for the role %s', (role) => {
     const fetchSpy = spyFetch();
-    renderHook(() => usePageViewBeacon('admin'), { wrapper: at('/') });
-    renderHook(() => usePageViewBeacon(null), { wrapper: at('/') });
+    renderHook(() => usePageViewBeacon(role), { wrapper: at('/') });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, () => void]>([
+    ['none', () => undefined],
+    ['skipped', () => skipMe()],
+    ['picked', () => setMe(3)],
+  ])('reports me_state %s', async (state, arrange) => {
+    localStorage.setItem('sc.device', DEVICE);
+    arrange();
+    const fetchSpy = spyFetch();
+    renderHook(() => usePageViewBeacon('viewer'), { wrapper: at('/') });
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)) as { me_state: string };
+    expect(body.me_state).toBe(state);
   });
 
   it('sends nothing when the browser cannot keep a device id', () => {

@@ -174,8 +174,11 @@ describe('SessionShell page views', () => {
   it('sends nothing for an admin session', async () => {
     stubViewport('desktop');
     const sent = capture();
-    renderRoutes(PAGE_ROUTES, { route: '/', role: 'admin' });
+    const { router } = renderRoutes(PAGE_ROUTES, { route: '/', role: 'admin' });
     await screen.findByText('home page');
+    await act(() => router.navigate('/shooters/3'));
+    await screen.findByText('profile page');
+    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(sent).toEqual([]);
   });
 });
