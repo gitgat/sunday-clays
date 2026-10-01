@@ -8,7 +8,7 @@ import { auditEntries, dataIssues } from '../mocks';
 import { OpsPage } from './OpsPage';
 
 describe('OpsPage', () => {
-  it('shows data issues, the recompute panel and the audit log', async () => {
+  it('shows data issues, the recompute panel, fist bumps and the audit log', async () => {
     server.use(
       http.get('*/api/admin/data-issues', () => HttpResponse.json(dataIssues)),
       http.get('*/api/admin/audit', () => HttpResponse.json(auditEntries)),
@@ -18,6 +18,8 @@ describe('OpsPage', () => {
     expect(await screen.findByText('station_score_mismatch (1) · warning')).toBeInTheDocument();
     expect(await screen.findByRole('table', { name: 'Audit log' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Recompute analytics' })).toBeInTheDocument();
+    const bumps = screen.getByRole('region', { name: 'Fist bumps' });
+    expect(await within(bumps).findByRole('list', { name: 'Bumped posts' })).toBeInTheDocument();
   });
 
   it('recomputing refreshes the audit log with the new entry', async () => {
