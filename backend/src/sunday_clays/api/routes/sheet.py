@@ -1,18 +1,20 @@
-"""GET /api/sheet/* (Plan 14): the Sunday Sheet, one issue per held Sunday.
+"""/api/sheet/* (Plan 14): the Sunday Sheet, one issue per held Sunday, and its fist bumps.
 
-The body is cached by data_version (the memo here and the ETag middleware). Bump counts are never
-part of it: they change without a data_version bump, so the client reads them from
-GET /api/sheet/{date}/bumps (Task 3).
+The issue body is cached by data_version (the memo here and the ETag middleware). Bump counts are
+never part of it: they change without a data_version bump, so the client reads them from
+GET /api/sheet/{date}/bumps, which is never ETagged or stored (api/etag.py).
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import uuid
+from collections.abc import Callable, Collection
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Path
-from pydantic import BaseModel
+from fastapi import APIRouter, Path, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
 
@@ -37,8 +39,11 @@ from sunday_clays.api.routes.insights import (
     insight_out,
     supersedes_of,
 )
+from sunday_clays.auth.deps import TooManyRequestsError, client_ip
+from sunday_clays.auth.ratelimit import bumps_limited, record_bump_action
 from sunday_clays.db import SessionDep
-from sunday_clays.domain.errors import NotFoundError
+from sunday_clays.domain.bumps import add_bump, bump_state, bump_states, remove_bump
+from sunday_clays.domain.errors import DomainError, NotFoundError
 
 router = APIRouter(tags=["sheet"])
 
@@ -290,26 +295,53 @@ def sheet_body(session: Session, day: date) -> SheetOut:
     )
 
 
-def post_issue_date(session: Session, post_key: str) -> date | None:
-    """The held Sunday whose issue a key would be on: a trophy or "On this day" key names it; an
-    insight key's anchor (an evergreen row: the latest issue). None for an unknown key."""
+def post_issue_dates(session: Session, post_keys: Collection[str]) -> dict[str, date | None]:
+    """The held Sunday whose issue each key would be on: a trophy or "On this day" key names it; an
+    insight key's anchor (an evergreen row: the latest issue). None for an unknown key.
+
+    Two queries however many keys there are: the held dates and one lookup of the insight keys."""
+    keys = set(post_keys)
     held = held_dates(session)
     if not held:
-        return None
-    day = sheet.synthetic_key_date(post_key)
-    if day is None:
+        return dict.fromkeys(keys)
+    synthetic = {key: sheet.synthetic_key_date(key) for key in keys}
+    plain_keys = sorted(key for key, day in synthetic.items() if day is None)
+    anchors: dict[str, date | None] = {}
+    if plain_keys:
         t = insights_table()
-        found = session.execute(select(t.c.anchor_date).where(t.c.key == post_key)).first()
-        if found is None:
-            return None
-        day = held[-1] if found.anchor_date is None else found.anchor_date
-    return day if day in held else None
+        anchors = {
+            str(key): anchor
+            for key, anchor in session.execute(
+                select(t.c.key, t.c.anchor_date).where(t.c.key.in_(plain_keys))
+            )
+        }
+    out: dict[str, date | None] = {}
+    for key in keys:
+        day = synthetic[key]
+        if day is None:
+            if key not in anchors:
+                out[key] = None
+                continue
+            day = held[-1] if anchors[key] is None else anchors[key]
+        out[key] = day if day in held else None
+    return out
+
+
+def post_issue_date(session: Session, post_key: str) -> date | None:
+    return post_issue_dates(session, [post_key])[post_key]
+
+
+def resolves_all(session: Session, post_keys: Collection[str]) -> dict[str, bool]:
+    """Per key: is it a post on its issue as the data stands now (feed or "More")? One issue build
+    (memoised by data_version) per distinct date, however many keys."""
+    days = post_issue_dates(session, post_keys)
+    issues = {day: build_issue(session, day).post_keys for day in {d for d in days.values() if d}}
+    return {key: day is not None and key in issues[day] for key, day in days.items()}
 
 
 def resolves(session: Session, post_key: str) -> bool:
     """True when the key is a post on its issue as the data stands now (feed or "More")."""
-    day = post_issue_date(session, post_key)
-    return day is not None and post_key in build_issue(session, day).post_keys
+    return resolves_all(session, [post_key])[post_key]
 
 
 def held_or_404(session: Session, day: date) -> None:
@@ -329,3 +361,69 @@ def latest_sheet(session: SessionDep) -> SheetOut:
 def sheet_for_date(day: Annotated[date, Path(alias="date")], session: SessionDep) -> SheetOut:
     held_or_404(session, day)
     return sheet_body(session, day)
+
+
+# --- Fist bumps (Plan 14 Task 3) ------------------------------------------------------------------
+class BumpIn(BaseModel):
+    post_key: str = Field(min_length=1, max_length=200)
+    device_id: str = Field(min_length=1, max_length=64)
+
+
+class BumpStateOut(BaseModel):
+    bumps: int
+    bumped: bool
+
+
+def parse_device_id(value: str) -> uuid.UUID:
+    """A canonical UUID (8-4-4-4-12 hex, any case), else a 400."""
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError:
+        parsed = None
+    if parsed is None or str(parsed) != value.lower():
+        raise DomainError("bad_device_id", "device_id must be a UUID")
+    return parsed
+
+
+@router.get("/api/sheet/{date}/bumps")
+def sheet_bumps(
+    day: Annotated[date, Path(alias="date")],
+    session: SessionDep,
+    device_id: Annotated[str | None, Query(max_length=64)] = None,
+) -> dict[str, BumpStateOut]:
+    """Counts for every post on the issue (zeros included); a stale key is never listed."""
+    held_or_404(session, day)
+    device = None if device_id is None else parse_device_id(device_id)
+    states = bump_states(session, build_issue(session, day).post_keys, device)
+    return {key: BumpStateOut(bumps=s.bumps, bumped=s.bumped) for key, s in states.items()}
+
+
+def _bump_action(
+    request: Request,
+    session: Session,
+    body: BumpIn,
+    act: Callable[[Session, str, uuid.UUID], None],
+) -> BumpStateOut:
+    ip = client_ip(request)
+    if bumps_limited(session, ip):
+        raise TooManyRequestsError("rate_limited", "Too many bumps from here. Try again soon.")
+    record_bump_action(session, ip)
+    session.commit()  # get_session rolls back on any error; a refused action still counts
+    device = parse_device_id(body.device_id)
+    if not resolves(session, body.post_key):
+        raise NotFoundError("post_not_found", "That post is not on a Sunday Sheet")
+    act(session, body.post_key, device)
+    state = bump_state(session, body.post_key, device)
+    return BumpStateOut(bumps=state.bumps, bumped=state.bumped)
+
+
+@router.post("/api/sheet/bumps")
+def bump_post(body: BumpIn, request: Request, session: SessionDep) -> BumpStateOut:
+    """Idempotent: bumping twice from one device counts once."""
+    return _bump_action(request, session, body, add_bump)
+
+
+@router.delete("/api/sheet/bumps")
+def unbump_post(body: BumpIn, request: Request, session: SessionDep) -> BumpStateOut:
+    """Idempotent: taking back a bump that is not there changes nothing."""
+    return _bump_action(request, session, body, remove_bump)
