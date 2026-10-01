@@ -68,7 +68,7 @@ const EXPECTED: Record<string, PageFilters> = {
   '/': BOTH_FILTERS,
   '/events': ROUND_TYPE_ONLY,
   '/events/:date': NO_FILTERS,
-  '/sheet/:date': NO_FILTERS,
+  '/sheet/:date': ROUND_TYPE_ONLY,
   '/shooters': NO_FILTERS,
   '/shooters/:id': BOTH_FILTERS,
   '/leaderboards': BOTH_FILTERS,

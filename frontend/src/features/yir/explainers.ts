@@ -72,11 +72,4 @@ export const explainers = {
       'Each point is the scores of every round in that month added up and divided by the number of rounds, for the shooter and for the club.',
     ],
   },
-  onThisDay: {
-    what: 'The Sundays closest to today’s date one, two and three years ago, and who won them.',
-    computed: [
-      'For each of the last three years we take today’s date that many years back (29 February becomes 28 February) and pick the Sunday within three days of it, the earlier one if two are equally close.',
-      'Winners: everyone whose best round of that Sunday was first, so a tie lists every winner. A Sunday with no scores shows only its head count.',
-    ],
-  },
 } as const satisfies Record<string, Explainer>;

@@ -20,10 +20,12 @@ export interface WindowEvents {
 
 /**
  * The Sundays inside the time window in ONE request (`GET /api/events?from&to`), however many
- * calendar years it spans: "All" used to cost a request per year.
+ * calendar years it spans: "All" used to cost a request per year. `fixed` replaces the header
+ * window with set dates (the Sunday Sheet's 8 weeks up to its Sunday).
  */
-export function useWindowEvents(): WindowEvents {
-  const { range } = useTimeWindow();
+export function useWindowEvents(fixed?: WindowRange): WindowEvents {
+  const { range: chosen } = useTimeWindow();
+  const range = fixed ?? chosen;
   const meta = useMeta();
   const [roundTypes] = useRoundTypes();
   const query = useQuery({
@@ -53,7 +55,7 @@ export function useWindowEvents(): WindowEvents {
     range,
     events,
     sundays: events.filter((e) => e.has_scores).length,
-    isPending: meta.isPending || (range !== null && query.isPending),
-    error: query.error ?? meta.error,
+    isPending: (fixed === undefined && meta.isPending) || (range !== null && query.isPending),
+    error: query.error ?? (fixed === undefined ? meta.error : null),
   };
 }

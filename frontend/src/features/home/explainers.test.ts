@@ -59,4 +59,15 @@ describe('home explainers', () => {
     }
     expect(homeExplainers.latestMedian.scope).toBeUndefined();
   });
+
+  it('leaves the Sheet’s fixed 8-week club numbers untagged: the header window does not apply', () => {
+    for (const key of [
+      'pulseSheet',
+      'pulseHeldSheet',
+      'pulseTurnoutSheet',
+      'pulseHighSheet',
+    ] as const) {
+      expect(homeExplainers[key].scope, key).toBeUndefined();
+    }
+  });
 });

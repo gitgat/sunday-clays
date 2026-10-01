@@ -72,6 +72,8 @@ export interface ChartFrameProps {
   window?: WindowRange | null | undefined;
   /** The date column (YYYY-MM-DD) `window` trims the Table by; default: the first `date` column. */
   windowKey?: string | undefined;
+  /** What the trimmed-table note calls the window; default "the time window" (the Sheet: "these 8 weeks"). */
+  windowName?: string | undefined;
   /** Wording for an empty window: "No rounds in the last 8 weeks. Last shot Aug 2, 2026." */
   emptyWindow?: { none: string; last: string } | undefined;
   /** Static full data for fullscreen and the CSV, when it is already loaded. */
@@ -116,6 +118,7 @@ export function ChartFrame({
   hlLabels,
   window: initialWindow,
   windowKey,
+  windowName = 'the time window',
   emptyWindow = NO_ROWS_WORDS,
   full,
   fullQuery,
@@ -262,7 +265,7 @@ export function ChartFrame({
         />
         {!inFullscreen && trimmedNote && (
           <p className="mt-2 min-w-0 text-xs text-text-muted">
-            Showing the time window. Open fullscreen or download CSV for every Sunday.
+            Showing {windowName}. Open fullscreen or download CSV for every Sunday.
           </p>
         )}
       </>
