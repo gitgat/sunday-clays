@@ -1,9 +1,9 @@
 """Import staging, previews and the active imports (C5)."""
 
 import hashlib
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date
 
 from sqlalchemy import func, insert, select
@@ -27,6 +27,7 @@ from sunday_clays.domain.schemas import (
     ImportPreview,
     ImportSummary,
     ScoresDiff,
+    SpecialDiff,
     StationsDiff,
     finding_out,
 )
@@ -38,12 +39,18 @@ from sunday_clays.ingest.types import (
     FileKind,
     Finding,
     ScoresParse,
+    Severity,
+    SpecialParse,
+    StationHitsRow,
+    StationSheet,
     StationsParse,
 )
+from sunday_clays.ingest.workbook import SCORES_SHEET, SPECIAL_SHEET
 from sunday_clays.models import (
     Import,
     ImportAttendanceRow,
     ImportScoreRow,
+    ImportSpecialEvent,
     ImportStationHit,
     ImportStationLayout,
     ImportStationSheet,
@@ -86,6 +93,37 @@ def active_station_sources(session: Session) -> dict[date, int]:
     sources: dict[date, int] = {}
     for event_date, sheet_id in rows:
         sources.setdefault(event_date, sheet_id)
+    return dict(sorted(sources.items()))
+
+
+@dataclass(frozen=True)
+class SpecialSource:
+    """The live special import of one Sunday (Plan 17)."""
+
+    import_id: int
+    sheet_id: int  # its one import_station_sheets row
+    label: str
+    target_total: int
+
+
+def active_special_sources(session: Session) -> dict[date, SpecialSource]:
+    """event_date -> the newest committed special import with that date (Decision 14)."""
+    rows = session.execute(
+        select(
+            ImportSpecialEvent.event_date,
+            ImportSpecialEvent.import_id,
+            ImportStationSheet.id,
+            ImportSpecialEvent.label,
+            ImportSpecialEvent.target_total,
+        )
+        .join(Import, Import.id == ImportSpecialEvent.import_id)
+        .join(ImportStationSheet, ImportStationSheet.import_id == ImportSpecialEvent.import_id)
+        .where(Import.kind == FileKind.SPECIAL.value, Import.status == "committed")
+        .order_by(Import.committed_at.desc(), Import.id.desc())
+    ).all()
+    sources: dict[date, SpecialSource] = {}
+    for event_date, import_id, sheet_id, label, target_total in rows:
+        sources.setdefault(event_date, SpecialSource(import_id, sheet_id, label, target_total))
     return dict(sorted(sources.items()))
 
 
@@ -227,6 +265,44 @@ def _stage_stations(session: Session, import_id: int, parsed: StationsParse) -> 
 
 
 # --- preview -------------------------------------------------------------------------------
+
+
+def _stage_special(session: Session, import_id: int, parsed: SpecialParse) -> None:
+    """The Sunday in import_special_events, one score row per shooter (the recomputed total),
+    and the stations as one station sheet named after the special sheet."""
+    session.add(
+        ImportSpecialEvent(
+            import_id=import_id,
+            event_date=parsed.event_date,
+            label=parsed.label,
+            target_total=parsed.target_total,
+        )
+    )
+    session.execute(
+        insert(ImportScoreRow).execution_options(render_nulls=True),
+        [
+            {
+                "import_id": import_id,
+                "row_number": r.row_number,
+                "raw_name": r.raw_name,
+                "name_key": identity_key(name_key(r.raw_name), parsed.event_date),
+                "score": r.total,
+                "event_date": parsed.event_date,
+                "status": None,
+                "gauge_class": None,
+            }
+            for r in parsed.rows
+        ],
+    )
+    sheet = StationSheet(
+        SPECIAL_SHEET,
+        parsed.event_date,
+        parsed.layout,
+        tuple(StationHitsRow(r.row_number, r.raw_name, r.hits) for r in parsed.rows),
+    )
+    _stage_stations(session, import_id, StationsParse((sheet,), ()))
+
+
 def _station_findings(
     entries: list[StationEntry], rounds: list[LinkRound], tabs: TabIndex
 ) -> list[Finding]:
@@ -260,15 +336,42 @@ def _preview_scores(session: Session, import_id: int) -> tuple[ScoresDiff, list[
     aliases: dict[str, int] = dict(
         session.execute(select(ShooterAlias.name_key, ShooterAlias.shooter_id)).all()
     )
-    staged_names = representative_names(new_rows)
-    new_keys = sorted(staged_names.keys() - aliases.keys())
+    new_keys = sorted({r.name_key for r in new_rows} - aliases.keys())
+    new_names, duplicates = _name_hints(session, new_rows, new_keys, aliases)
+    diff = ScoresDiff(
+        events_added=changes.events_added,
+        events_removed=changes.events_removed,
+        rows_added=changes.rows_added,
+        rows_removed=changes.rows_removed,
+        rows_changed=changes.rows_changed,
+        new_names=new_names,
+        possible_duplicates=duplicates,
+        attendance_changed=attendance,
+    )
+    return diff, [
+        *_scores_station_findings(session, new_rows, aliases),
+        *_special_date_findings(session, new_rows),
+    ]
+
+
+def _name_hints(
+    session: Session,
+    rows: Sequence[StagedScore],
+    new_keys: Sequence[str],
+    aliases: Mapping[str, int],
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Display names of `new_keys` and their possible duplicates among every known name.
+
+    Known names' dates are their live rounds' dates; a staged key's dates are its staged dates.
+    """
+    staged_names = representative_names(rows)
     key_dates: dict[str, set[date]] = defaultdict(set)
     for key, event_date in session.execute(select(Round.name_key, Round.event_date).distinct()):
         key_dates[key].add(event_date)
     for key in aliases:
         key_dates.setdefault(key, set())
     staged_dates: dict[str, set[date]] = defaultdict(set)
-    for row in new_rows:
+    for row in rows:
         staged_dates[row.name_key].add(row.event_date)
     key_dates.update(staged_dates)
     display: dict[str, str] = dict(
@@ -279,17 +382,78 @@ def _preview_scores(session: Session, import_id: int) -> tuple[ScoresDiff, list[
         ).all()
     )
     display.update({k: clean_display_name(raw) for k, raw in staged_names.items()})
-    diff = ScoresDiff(
-        events_added=changes.events_added,
-        events_removed=changes.events_removed,
-        rows_added=changes.rows_added,
-        rows_removed=changes.rows_removed,
-        rows_changed=changes.rows_changed,
-        new_names=sorted(display[k] for k in new_keys),
-        possible_duplicates=possible_duplicate_pairs(new_keys, key_dates, display),
-        attendance_changed=attendance,
+    return (
+        sorted(display[k] for k in new_keys),
+        possible_duplicate_pairs(new_keys, key_dates, display),
     )
-    return diff, _scores_station_findings(session, new_rows, aliases)
+
+
+def _special_date_findings(session: Session, rows: Sequence[StagedScore]) -> list[Finding]:
+    """Scores-workbook rows on a live special Sunday: flagged, never merged (Decision 13)."""
+    specials = active_special_sources(session)
+    counts = Counter(r.event_date for r in rows if r.event_date in specials)
+    return [
+        Finding(
+            "special_event_date",
+            Severity.WARNING,
+            f"{day.isoformat()} is the special shoot {specials[day].label!r}: its {n} rows here"
+            " are left out while that import is live",
+            sheet=SCORES_SHEET,
+            event_date=day,
+        )
+        for day, n in sorted(counts.items())
+    ]
+
+
+def _regular_rows_on(session: Session, event_date: date) -> int:
+    """Rows the live scores import has on `event_date` (0 with no live scores import)."""
+    active = active_scores_import(session)
+    if active is None:
+        return 0
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(ImportScoreRow)
+            .where(ImportScoreRow.import_id == active, ImportScoreRow.event_date == event_date)
+        )
+        or 0
+    )
+
+
+def _preview_special(
+    session: Session, import_id: int, parsed: SpecialParse
+) -> tuple[SpecialDiff, list[Finding]]:
+    rows = load_staged_scores(session, import_id)
+    resolve = identity_resolver(session)  # alias_name rules first, then aliases, then merges
+    aliases: dict[str, int] = dict(
+        session.execute(select(ShooterAlias.name_key, ShooterAlias.shooter_id)).all()
+    )
+    new_keys = sorted({r.name_key for r in rows if resolve(r.name_key) is None})
+    new_names, duplicates = _name_hints(session, rows, new_keys, aliases)
+    live = active_special_sources(session).get(parsed.event_date)
+    regular = _regular_rows_on(session, parsed.event_date)
+    diff = SpecialDiff(
+        event_date=parsed.event_date,
+        label=parsed.label,
+        target_total=parsed.target_total,
+        stations=[entry.label for entry in parsed.layout],
+        n_shooters=len({r.name_key for r in rows}),
+        replaces_import=None if live is None else live.import_id,
+        regular_rows_on_date=regular,
+        new_names=new_names,
+        possible_duplicates=duplicates,
+    )
+    if regular == 0:
+        return diff, []
+    return diff, [
+        Finding(
+            "regular_scores_on_special_date",
+            Severity.WARNING,
+            f"The live scores workbook has {regular} rows on this date; they are left out while"
+            " this special shoot is live",
+            event_date=parsed.event_date,
+        )
+    ]
 
 
 def _scores_station_findings(
@@ -388,7 +552,7 @@ def _preview_stations(
     return diff, _station_findings(entries, rounds, tabs)
 
 
-def _placed_findings(parsed: ScoresParse | StationsParse) -> list[Finding]:
+def _placed_findings(parsed: ScoresParse | StationsParse | SpecialParse) -> list[Finding]:
     """Scores-level non_sunday_date findings have no sheet or row: say where the date occurs."""
     if not isinstance(parsed, ScoresParse):
         return list(parsed.findings)
@@ -426,11 +590,15 @@ def stage_import(session: Session, data: bytes, filename: str) -> ImportPreview:
     imp = Import(kind=parsed.kind.value, filename=filename, sha256=sha256, file_bytes=data)
     session.add(imp)
     session.flush()
-    diff: ScoresDiff | StationsDiff
+    diff: ScoresDiff | StationsDiff | SpecialDiff
     if isinstance(parsed, ScoresParse):
         _stage_scores(session, imp.id, parsed)
         diff, station_findings = _preview_scores(session, imp.id)
         requires_confirmation = bool(diff.events_removed) or diff.rows_removed > 0
+    elif isinstance(parsed, SpecialParse):
+        _stage_special(session, imp.id, parsed)
+        diff, station_findings = _preview_special(session, imp.id, parsed)
+        requires_confirmation = False
     else:
         staged = _stage_stations(session, imp.id, parsed)
         diff, station_findings = _preview_stations(session, staged, parsed)
@@ -458,11 +626,13 @@ def get_import_preview(session: Session, import_id: int) -> ImportPreview:
     imp = _get_import(session, import_id)
     kind = FileKind(imp.kind)
     stored = imp.summary["diff"]
-    diff = (
-        ScoresDiff.model_validate(stored)
-        if kind is FileKind.SCORES
-        else StationsDiff.model_validate(stored)
-    )
+    diff: ScoresDiff | StationsDiff | SpecialDiff
+    if kind is FileKind.SCORES:
+        diff = ScoresDiff.model_validate(stored)
+    elif kind is FileKind.SPECIAL:
+        diff = SpecialDiff.model_validate(stored)
+    else:
+        diff = StationsDiff.model_validate(stored)
     return ImportPreview(
         import_id=imp.id,
         kind=kind,

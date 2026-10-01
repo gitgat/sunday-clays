@@ -112,7 +112,11 @@ function StationsDiffView({ diff }: { diff: StationsDiff }) {
 export function DiffSummary({ diff }: { diff: ImportPreview['diff'] }) {
   return (
     <Card title="Changes">
-      {'rows_added' in diff ? <ScoresDiffView diff={diff} /> : <StationsDiffView diff={diff} />}
+      {'rows_added' in diff ? (
+        <ScoresDiffView diff={diff} />
+      ) : 'events_replaced' in diff ? (
+        <StationsDiffView diff={diff} />
+      ) : null}
     </Card>
   );
 }

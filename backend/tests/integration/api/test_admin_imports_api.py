@@ -1,5 +1,6 @@
 import io
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -333,3 +334,20 @@ def test_unknown_job_is_404(admin_client: TestClient) -> None:
     response = admin_client.get("/api/admin/jobs/987654")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "job_not_found"
+
+
+def test_a_special_workbook_uploads_as_its_own_kind(
+    admin_client: TestClient, special_workbook: Callable[..., bytes], session: Session
+) -> None:
+    preview = _upload(admin_client, special_workbook(), "three-clay.xlsx")
+
+    assert preview["kind"] == "special"
+    assert preview["diff"]["label"] == "Three Clay Shoot"
+    assert preview["diff"]["target_total"] == 60
+    assert preview["diff"]["n_shooters"] == 5
+    assert preview["requires_removal_confirmation"] is False
+    listed = admin_client.get("/api/admin/imports").json()
+    assert listed[0]["kind"] == "special"
+    commit = admin_client.post(f"/api/admin/imports/{preview['import_id']}/commit")
+    assert commit.status_code == 200, commit.text
+    assert _status(session, preview["import_id"]) == "committed"
