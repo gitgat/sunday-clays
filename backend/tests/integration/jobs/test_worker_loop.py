@@ -36,7 +36,15 @@ def test_handlers(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 @pytest.fixture
-def worker_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def schedule_calls() -> list[dict[str, Any]]:
+    """The keyword arguments run_worker passed to each (stubbed) schedule_due call."""
+    return []
+
+
+@pytest.fixture
+def worker_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, schedule_calls: list[dict[str, Any]]
+) -> Path:
     heartbeat = tmp_path / "heartbeat"
     monkeypatch.setattr(worker, "HEARTBEAT_PATH", heartbeat)
     monkeypatch.setattr(
@@ -44,10 +52,15 @@ def worker_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "get_settings",
         lambda: SimpleNamespace(weather_enabled=False, timezone="America/Los_Angeles"),
     )
+
     # Plan 16: the real scheduler queues page_view_rollup from 03:00 local every day, which would
     # make these loop tests depend on the time of day. They test the loop; test_job_scheduler.py
     # tests the schedule.
-    monkeypatch.setattr(worker, "schedule_due", lambda *_args, **_kwargs: [])
+    def record_schedule_due(*_args: Any, **kwargs: Any) -> list[int]:
+        schedule_calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(worker, "schedule_due", record_schedule_due)
     return heartbeat
 
 
@@ -166,6 +179,23 @@ def test_run_worker_keeps_polling_after_a_failed_poll(
     monkeypatch.setattr(worker, "process_one", flaky)
     worker.run_worker(stop, poll_seconds=0.01)
     assert len(polls) == 2
+
+
+def test_run_worker_passes_the_timezone_and_weather_flag_to_the_scheduler(
+    committed_engine: Engine,
+    worker_settings: Path,
+    schedule_calls: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = threading.Event()
+
+    def once(session: Session, *, weather_enabled: bool) -> bool:
+        stop.set()
+        return False
+
+    monkeypatch.setattr(worker, "process_one", once)
+    worker.run_worker(stop, poll_seconds=0.01)
+    assert schedule_calls == [{"weather_enabled": False, "timezone": "America/Los_Angeles"}]
 
 
 def test_run_worker_keeps_the_heartbeat_fresh_during_a_long_job(

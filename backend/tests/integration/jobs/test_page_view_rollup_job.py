@@ -43,7 +43,7 @@ def test_the_job_runs_the_rollup_for_today_in_the_club_timezone(
     }
 
 
-def test_the_job_folds_a_view_older_than_96_days(
+def test_the_job_folds_a_view_120_days_old(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(

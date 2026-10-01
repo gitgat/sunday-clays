@@ -83,6 +83,8 @@ def test_two_identical_beacons_at_once_count_once(committed_engine: Engine) -> N
         assert record_page_view(first, A, "home", "none", NOW) is True  # holds the lock
 
         def racer() -> bool:
+            # A lock that is never released must fail the test, not hang it.
+            second.execute(text("SET LOCAL lock_timeout = '5s'"))
             counted = record_page_view(second, A, "home", "none", NOW + timedelta(seconds=1))
             second.commit()
             return counted

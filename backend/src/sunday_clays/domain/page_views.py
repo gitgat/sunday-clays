@@ -170,6 +170,9 @@ def rollup_page_views(session: Session, today: date, tz: str) -> RollupReport:
             .on_conflict_do_nothing(index_elements=["period", "start_day"])
         )
     raw = select(bucket_of("day", tz).label("day"), PageView.page_kind).where(old).subquery()
+    # ON CONFLICT DO NOTHING assumes no raw row ever lands in an already-rolled bucket. That holds
+    # because ``at`` is server-stamped and the cutoff only moves forward. Changing TIMEZONE
+    # westward would break it (local midnight moves later, so a rolled day could gain rows).
     per_kind = select(raw.c.day, raw.c.page_kind, func.count()).group_by(raw.c.day, raw.c.page_kind)
     session.execute(
         pg_insert(PageKindRollup)
