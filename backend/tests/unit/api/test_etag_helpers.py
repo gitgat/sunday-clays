@@ -14,6 +14,9 @@ from sunday_clays.api import etag
         ("GET", "/api/auth/me", False),
         ("GET", "/api/admin/imports", False),
         ("GET", "/api/predictions/next", False),
+        ("GET", "/api/sheet/latest", True),
+        ("GET", "/api/sheet/2026-09-27", True),
+        ("GET", "/api/sheet/2026-09-27/bumps", False),
         ("GET", "/index.html", False),
     ],
 )
@@ -28,7 +31,11 @@ def test_etag_eligibility(method: str, path: str, eligible: bool) -> None:
         ("/api/health", "private, no-cache"),
         ("/api/auth/me", "no-store"),
         ("/api/admin/jobs/1", "no-store"),
+        ("/api/sheet/2026-09-27", "private, no-cache"),
+        ("/api/sheet/2026-09-27/bumps", "no-store"),
+        ("/api/sheet/bumps", "no-store"),
         ("/assets/app.js", None),
+        ("/assets/bumps", None),
     ],
 )
 def test_cache_control_by_path(path: str, value: str | None) -> None:
