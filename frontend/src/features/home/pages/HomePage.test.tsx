@@ -2,10 +2,11 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { clearMe, setMe } from '../../../lib/me';
+import { clearMe, getMe, isMeSkipped, setMe, skipMe } from '../../../lib/me';
 import { expectChartControls } from '../../../test/charts';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
+import { shooterList } from '../../shooters/mocks';
 import { homeMeta, latestEvent, meDetail, meRounds, seasonEvents } from '../mocks';
 import type { HomeWidget } from '../widgets';
 import { HomePage } from './HomePage';
@@ -43,6 +44,7 @@ const widgets: HomeWidget[] = [
 describe('HomePage', () => {
   beforeEach(() => {
     clearMe();
+    localStorage.removeItem('sc.me.skip');
     server.use(
       http.get('*/api/meta', () => HttpResponse.json(homeMeta)),
       http.get('*/api/events/:date', () => HttpResponse.json(latestEvent)),
@@ -56,6 +58,12 @@ describe('HomePage', () => {
             ),
       ),
       http.get('*/api/shooters/:id/rounds', () => HttpResponse.json(meRounds)),
+      http.get('*/api/shooters', ({ request }) => {
+        const q = (new URL(request.url).searchParams.get('q') ?? '').toLowerCase();
+        return HttpResponse.json(
+          shooterList.filter((s) => s.display_name.toLowerCase().includes(q)),
+        );
+      }),
     );
   });
 
@@ -67,7 +75,7 @@ describe('HomePage', () => {
     expect(screen.getAllByRole('button', { name: 'Table' })).toHaveLength(1);
   });
 
-  it('shows the latest event, the club pulse, main widgets and the me prompt', async () => {
+  it('shows the latest event, the club pulse, main widgets and asks which one you are', async () => {
     renderWithProviders(<HomePage widgets={widgets} />);
     expect(screen.getByRole('heading', { level: 1, name: 'Sunday Clays' })).toBeInTheDocument();
     expect(
@@ -75,7 +83,58 @@ describe('HomePage', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('next sunday for null')).toBeInTheDocument();
     const panel = screen.getByRole('complementary', { name: 'Personal' });
+    expect(within(panel).getByRole('heading', { name: 'Which one are you?' })).toBeInTheDocument();
+    expect(within(panel).queryByText(/tap “That’s me”/)).toBeNull();
+    await chartLoaded();
+  });
+
+  it('a pick fills the panel, passes the id on and moves focus to the panel', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<HomePage widgets={widgets} />);
+    const panel = screen.getByRole('complementary', { name: 'Personal' });
+    await user.type(within(panel).getByLabelText('Your name'), 'Hadley');
+    await user.click(await within(panel).findByRole('button', { name: 'Hadley, Ike' }));
+    expect(await within(panel).findByText('37 · 16th')).toBeInTheDocument();
+    expect(within(panel).getByRole('heading', { name: 'Your panel' })).toHaveFocus();
+    expect(screen.getByText('next sunday for 3')).toBeInTheDocument();
+    expect(getMe()).toBe(3);
+    await chartLoaded();
+  });
+
+  it('"Not me" forgets the choice and asks again, with focus on the question', async () => {
+    setMe(3);
+    const user = userEvent.setup();
+    renderWithProviders(<HomePage widgets={widgets} />);
+    const panel = screen.getByRole('complementary', { name: 'Personal' });
+    await user.click(await within(panel).findByRole('button', { name: 'Not me' }));
+    expect(within(panel).getByRole('heading', { name: 'Which one are you?' })).toHaveFocus();
+    expect(getMe()).toBeNull();
+    expect(screen.getByText('next sunday for null')).toBeInTheDocument();
+    await chartLoaded();
+  });
+
+  it('a skip puts back the usual prompt and is remembered on this browser', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderWithProviders(<HomePage widgets={widgets} />);
+    const panel = screen.getByRole('complementary', { name: 'Personal' });
+    await user.click(within(panel).getByRole('button', { name: 'Not a shooter / skip' }));
+    expect(within(panel).getByRole('heading', { name: 'Your panel' })).toHaveFocus();
     expect(within(panel).getByText(/tap “That’s me”/)).toBeInTheDocument();
+    expect(isMeSkipped()).toBe(true);
+    await chartLoaded();
+    unmount();
+    renderWithProviders(<HomePage widgets={widgets} />);
+    const again = screen.getByRole('complementary', { name: 'Personal' });
+    expect(within(again).queryByRole('heading', { name: 'Which one are you?' })).toBeNull();
+    expect(within(again).getByText(/tap “That’s me”/)).toBeInTheDocument();
+    await chartLoaded();
+  });
+
+  it('a skipped browser still shows a chosen shooter', async () => {
+    skipMe();
+    setMe(3);
+    renderWithProviders(<HomePage widgets={widgets} />);
+    expect(await screen.findByText('37 · 16th')).toBeInTheDocument();
     await chartLoaded();
   });
 
@@ -107,12 +166,14 @@ describe('HomePage', () => {
     ).toBeInTheDocument();
   });
 
-  it('stale me id falls back to the prompt after choosing again', async () => {
+  it('stale me id asks which one you are after choosing again', async () => {
     setMe(999);
     const user = userEvent.setup();
     renderWithProviders(<HomePage widgets={widgets} />);
     await user.click(await screen.findByRole('button', { name: 'Choose again' }));
-    await waitFor(() => expect(screen.getByText(/tap “That’s me”/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Which one are you?' })).toBeInTheDocument(),
+    );
     expect(screen.getByText('next sunday for null')).toBeInTheDocument();
     await chartLoaded();
   });

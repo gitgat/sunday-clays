@@ -1,14 +1,30 @@
-import { useState } from 'react';
-import { getMe } from '../../../lib/me';
+import { useEffect, useRef, useState } from 'react';
+import { getMe, isMeSkipped } from '../../../lib/me';
 import { ClubPulse } from '../components/ClubPulse';
 import { LatestEventCard } from '../components/LatestEventCard';
 import { MePanel } from '../components/MePanel';
+import { WhichOneAreYou } from '../components/WhichOneAreYou';
 import { WidgetSlot } from '../components/WidgetSlot';
 import { homeWidgets } from '../widgets';
 import type { HomeWidget } from '../widgets';
 
 export function HomePage({ widgets = homeWidgets }: { widgets?: HomeWidget[] }) {
   const [meId, setMeId] = useState<number | null>(() => getMe());
+  const [skipped, setSkipped] = useState(isMeSkipped);
+  const asking = meId === null && !skipped;
+  // Which card the personal slot holds: the question, the prompt, or a shooter's panel.
+  const slot = asking ? 'ask' : String(meId);
+  const personal = useRef<HTMLElement>(null);
+  const before = useRef(slot);
+  // A pick, a skip or "Not me" swaps the card that held focus: carry on at the new card's heading.
+  useEffect(() => {
+    if (before.current === slot) return;
+    before.current = slot;
+    const heading = personal.current?.querySelector<HTMLElement>('h2');
+    if (heading === null || heading === undefined) return;
+    heading.tabIndex = -1;
+    heading.focus();
+  }, [slot]);
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-medium">Sunday Clays</h1>
@@ -20,8 +36,12 @@ export function HomePage({ widgets = homeWidgets }: { widgets?: HomeWidget[] }) 
           <WidgetSlot slot="main" widgets={widgets} meId={meId} />
         </div>
         {/* Named apart from the "Your panel" card inside it: landmark names stay unique. */}
-        <aside aria-label="Personal" className="flex min-w-0 flex-col gap-4">
-          <MePanel meId={meId} onCleared={() => setMeId(null)} widgets={widgets} />
+        <aside ref={personal} aria-label="Personal" className="flex min-w-0 flex-col gap-4">
+          {asking ? (
+            <WhichOneAreYou onPicked={setMeId} onSkipped={() => setSkipped(true)} />
+          ) : (
+            <MePanel meId={meId} onCleared={() => setMeId(null)} widgets={widgets} />
+          )}
         </aside>
       </div>
     </div>

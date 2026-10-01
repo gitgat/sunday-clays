@@ -161,8 +161,20 @@ export function MePanel({
   widgets: HomeWidget[];
 }) {
   const shootersLink = useRoundTypeLink('/shooters');
+  const notMe =
+    meId === null ? undefined : (
+      <Button
+        variant="ghost"
+        onClick={() => {
+          clearMe();
+          onCleared();
+        }}
+      >
+        Not me
+      </Button>
+    );
   return (
-    <Card title="Your panel">
+    <Card title="Your panel" actions={notMe}>
       {meId === null ? (
         // The link stands on its own line: inline in the sentence it could not be 44px tall (C10).
         <div className="flex flex-col gap-2">

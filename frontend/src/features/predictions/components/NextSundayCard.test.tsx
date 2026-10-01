@@ -45,12 +45,17 @@ describe('NextSundayCard', () => {
     expect(screen.getByText('Your expected score:')).toBeInTheDocument();
   });
 
-  it('points to Shooters when nobody is picked, with a link that keeps the filters', async () => {
+  it('points to Which one are you? and Shooters when nobody is picked', async () => {
     serve(NEXT_PREDICTIONS);
     renderWithProviders(<NextSundayCard meId={null} />, { route: '/?rt=sporting' });
     const link = await screen.findByRole('link', { name: 'Go to Shooters' });
     expect(link).toHaveAttribute('href', '/shooters?rt=sporting');
-    expect(screen.getByText(/Choose “That’s me”/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'To see your own expected score here, pick your name in “Which one are you?” or choose “That’s me” on your Shooters profile.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^Choose “That’s me”/)).toBeNull();
   });
 
   it('says so when the viewer has no expectation yet', async () => {

@@ -17,7 +17,10 @@ function YourExpectation({ data, meId }: { data: NextPredictions; meId: number |
   if (meId === null) {
     return (
       <div className="flex flex-col gap-2">
-        <p>Choose “That’s me” on your Shooters profile to see your own expected score here.</p>
+        <p>
+          To see your own expected score here, pick your name in “Which one are you?” or choose
+          “That’s me” on your Shooters profile.
+        </p>
         <Link to={shootersLink} className="inline-flex min-h-11 items-center self-start underline">
           Go to Shooters
         </Link>

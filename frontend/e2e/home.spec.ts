@@ -21,13 +21,13 @@ async function expectTapTargets(page: Page): Promise<void> {
   expect(small).toEqual([]);
 }
 
-test('home shows the latest event, the club pulse and the me prompt', async ({ page }) => {
+test('home shows the latest event, the club pulse and asks which one you are', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1, name: 'Sunday Clays' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sep 27, 2026' }).first()).toBeVisible();
   await expect(page.getByText('Winners: Finnegan, Stanton & Stockton, Ethan — 49')).toBeVisible();
   await expect(page.getByText('Turnout per Sunday', { exact: true })).toBeVisible();
-  await expect(page.getByText(/tap “That’s me”/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Which one are you?' })).toBeVisible();
 });
 
 test('the latest event link opens the full results', async ({ page }) => {
@@ -36,7 +36,15 @@ test('the latest event link opens the full results', async ({ page }) => {
   await expect(page).toHaveURL(/\/events\/2026-09-27$/);
 });
 
-test('every home tap target is at least 44px with the me prompt', async ({ page }) => {
+test('every home tap target is at least 44px while asking which one you are', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'CSV' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Which one are you?' })).toBeVisible();
+  await expectTapTargets(page);
+});
+
+test('every home tap target is at least 44px with the prompt after a skip', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('sc.me.skip', '1'));
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'CSV' })).toBeVisible();
   await expect(page.getByText(/tap “That’s me”/)).toBeVisible();
