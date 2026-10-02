@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { attendanceOnlyDetail, eventDetail } from '../../events/mocks';
+import { attendanceOnlyDetail, eventDetail, specialDetail } from '../../events/mocks';
 import type { EventDetail } from '../../events/api';
 import { EventShareCard } from './EventShareCard';
 
@@ -24,6 +24,31 @@ const many: EventDetail = {
     { ...result(7, 'Kolmanov, Dmitri', 30, 9), is_best_round: false },
   ],
 };
+
+/** Seven special results whose score order differs from alphabetical order (invented names). */
+function sevenSpecial(scores: number[]): EventDetail {
+  const names = [
+    'Abbott, Ann',
+    'Bishop, Bo',
+    'Cole, Cy',
+    'Dunn, Di',
+    'Egan, Ed',
+    'Fox, Flo',
+    'Gray, Gus',
+  ];
+  return {
+    ...specialDetail,
+    label: 'Flurry',
+    target_total: 75,
+    n_shooters: 7,
+    results: names.map((n, i) => ({
+      ...(specialDetail.results[0] as EventDetail['results'][number]),
+      round_id: 100 + i,
+      display_name: n,
+      score: scores[i] as number,
+    })),
+  };
+}
 
 describe('EventShareCard', () => {
   it('shows the day, round type and the top five best rounds by rank', () => {
@@ -52,5 +77,24 @@ describe('EventShareCard', () => {
     ).toBeInTheDocument();
     rerender(<EventShareCard event={{ ...attendanceOnlyDetail, head_count: null }} />);
     expect(screen.getByText('No scores recorded.')).toBeInTheDocument();
+  });
+
+  it('a special Sunday shows its label, total and the top five by score, never Sporting', () => {
+    render(<EventShareCard event={sevenSpecial([40, 70, 55, 72, 30, 71, 55])} />);
+    expect(screen.getByText('Flurry · Special · 75 targets · 7 shooters')).toBeInTheDocument();
+    expect(screen.queryByText(/Sporting/)).not.toBeInTheDocument();
+    const rows = within(screen.getByRole('list')).getAllByRole('listitem');
+    expect(rows.map((r) => r.textContent)).toEqual([
+      'Dunn, Di72 of 75',
+      'Fox, Flo71 of 75',
+      'Bishop, Bo70 of 75',
+      'Cole, Cy55 of 75',
+      'Gray, Gus55 of 75',
+    ]);
+  });
+
+  it('a special Sunday without a name reads Special · N targets', () => {
+    render(<EventShareCard event={{ ...specialDetail, label: null, target_total: 75 }} />);
+    expect(screen.getByText('Special · 75 targets · 3 shooters')).toBeInTheDocument();
   });
 });

@@ -79,3 +79,9 @@ export function specialName(e: { label?: string | null }): string | null {
   const label = e.label?.trim() ?? '';
   return label === '' ? null : label;
 }
+
+/** "3-Bird Shoot · Special · 60 targets" (the name is left out when the sheet gave none). */
+export function specialLine(e: { label?: string | null; target_total?: number }): string {
+  const name = specialName(e);
+  return `${name === null ? '' : `${name} · `}${specialTag(e)} targets`;
+}
