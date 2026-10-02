@@ -16,10 +16,11 @@ from sunday_clays.ingest.types import (
     ScoreRow,
     ScoresParse,
     Severity,
+    SpecialParse,
     StationSheet,
     StationsParse,
 )
-from sunday_clays.ingest.workbook import SCORES_SHEET
+from sunday_clays.ingest.workbook import SCORES_SHEET, SPECIAL_SHEET
 
 LAYOUT_TOTAL = 50
 _SUNDAY = 6  # date.weekday() of a Sunday
@@ -168,3 +169,11 @@ def _group_finding(code: str, severity: Severity, message: str, group: list[Scor
         event_date=first.event_date,
         name=clean_display_name(first.raw_name),
     )
+
+
+def validate_special(p: SpecialParse) -> tuple[Finding, ...]:
+    """A special sheet's date (repeated names are dropped by the parser)."""
+    findings: list[Finding] = []
+    if p.event_date.weekday() != _SUNDAY:
+        findings.append(_non_sunday(p.event_date, sheet=SPECIAL_SHEET))
+    return tuple(findings)

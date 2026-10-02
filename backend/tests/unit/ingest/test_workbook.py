@@ -326,5 +326,5 @@ def test_unrelated_workbook_raises_parse_error() -> None:
         detect_kind(roster)
 
     assert str(excinfo.value) == (
-        "This doesn't look like a Sunday Clays scores or station workbook"
+        "This doesn't look like a Sunday Clays scores, station or special shoot workbook"
     )

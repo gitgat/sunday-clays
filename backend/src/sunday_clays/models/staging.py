@@ -29,7 +29,7 @@ from sunday_clays.models.base import Base
 class Import(Base):
     __tablename__ = "imports"
     __table_args__ = (
-        CheckConstraint("kind IN ('scores', 'stations')", name=conv("ck_imports_kind")),
+        CheckConstraint("kind IN ('scores', 'stations', 'special')", name=conv("ck_imports_kind")),
         CheckConstraint(
             "status IN ('pending', 'committed', 'discarded', 'rolled_back')",
             name=conv("ck_imports_status"),
@@ -149,3 +149,22 @@ class ImportStationHit(Base):
     station_no: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     station_label: Mapped[str] = mapped_column(Text, nullable=False)
     hits: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+
+class ImportSpecialEvent(Base):
+    """A special import's Sunday, name and target total (Plan 17); rows and stations are staged
+    in import_score_rows and import_station_* under the same import."""
+
+    __tablename__ = "import_special_events"
+
+    import_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "imports.id",
+            ondelete="CASCADE",
+            name=conv("fk_import_special_events_import_id_imports"),
+        ),
+        primary_key=True,
+    )
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    target_total: Mapped[int] = mapped_column(SmallInteger, nullable=False)

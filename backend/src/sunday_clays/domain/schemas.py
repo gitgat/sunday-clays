@@ -55,13 +55,27 @@ class StationsDiff(BaseModel):
     sheets_skipped: list[str]
 
 
+class SpecialDiff(BaseModel):
+    """A special-event import (Plan 17): the one Sunday it adds or replaces."""
+
+    event_date: date
+    label: str
+    target_total: int
+    stations: list[str]
+    n_shooters: int
+    replaces_import: int | None  # the live special import of this date a commit replaces
+    regular_rows_on_date: int  # weekly-workbook rows on this date, left out while it is live
+    new_names: list[str]
+    possible_duplicates: list[tuple[str, str]]
+
+
 class ImportPreview(BaseModel):
     import_id: int
     kind: FileKind
     filename: str
     duplicate_of: int | None
     findings: list[FindingOut]
-    diff: ScoresDiff | StationsDiff
+    diff: ScoresDiff | StationsDiff | SpecialDiff
     requires_removal_confirmation: bool
 
 
