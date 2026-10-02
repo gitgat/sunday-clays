@@ -100,3 +100,12 @@ def prune_page_view_attempts(session: Session) -> None:
     beacon."""
     t = _page_view_attempts()
     session.execute(delete(t).where(t.c.at < datetime.now(UTC) - PAGE_VIEW_WINDOW))
+
+
+def prune_old_attempts(session: Session) -> None:
+    """Delete bump and login attempts older than ``PRUNE_AFTER`` (a day), in the caller's
+    transaction. Each is otherwise pruned only by the next bump or login, so a quiet spell would
+    keep the last burst's client fingerprints for months."""
+    cutoff = datetime.now(UTC) - PRUNE_AFTER
+    for t in (_bump_attempts(), _attempts()):
+        session.execute(delete(t).where(t.c.at < cutoff))

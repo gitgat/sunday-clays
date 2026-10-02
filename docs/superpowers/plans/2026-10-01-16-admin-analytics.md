@@ -119,6 +119,22 @@ Six conditions that the design implies but does not spell out, and that are most
 | 2 | Task 2 ∥ Task 3 | Task 1. T2 is backend only (`domain/site_analytics.py`, `api/routes/admin_analytics.py`, their tests). T3 is frontend only (`features/pageviews/*`, `features/auth/components/SessionShell*`) and needs T1's `PageViewIn` schema via `pnpm gen:api`. |
 | 3 | Task 4 | Tasks 2 and 3 (T2's generated types; T3's beacon for the e2e) |
 
+## Operator notes
+
+- **Changing `TIMEZONE` on a live site.** The rollup keeps one row per local day and week and
+  never rewrites a rolled one (`ON CONFLICT DO NOTHING`). Moving `TIMEZONE` west moves local
+  midnight later, so raw rows can land on a day or week that is already rolled. The rollup then
+  ignores them and deletes them, and their counts are lost (not a crash, not a double count).
+  The effect is small (a few hours of visits at the edge of one rolled day) and there is no
+  warning. Change `TIMEZONE` only when that is acceptable, or before the first rollup.
+- **Privacy at rest.** `bump_attempts`, `login_attempts` and `page_view_attempts` store a keyed
+  hash of the client address (HMAC-SHA256 with `SESSION_SECRET`, first 32 hex chars), never the
+  address. Rotating `SESSION_SECRET` resets every limit bucket, which is harmless. Rows older
+  than a day are deleted by the daily `page_view_rollup` job. `audit_log.ip` (admin actions
+  only) stays raw: it is the owner's own trail. uvicorn runs with `--no-access-log` so request
+  URLs never sit beside a device id in container logs. Outside this repo, keep traefik-public
+  and cloudflared access logs off or short.
+
 ## Running the e2e stack (Tasks 3 and 4)
 
 From the worktree root:
