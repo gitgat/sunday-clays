@@ -334,7 +334,7 @@ def test_new_faces_ignores_a_shooter_whose_debut_was_a_special_shoot(make_world,
     assert fact.params["n"] == 2  # shooter 2 and the filler; shooter 1 debuted a week earlier
 
 
-def test_new_faces_counts_a_special_debut_on_the_special_sunday_only(make_world, sun, run):
+def test_new_faces_is_silent_on_the_regular_sunday_after_a_special_debut(make_world, sun, run):
     world = make_world().series(200, 0, [30] * 12)
     world.special(1, sun(10)).round(1, sun(11), 30)
     assert run("ev.new-faces", world.frames(), [sun(11)]) == []

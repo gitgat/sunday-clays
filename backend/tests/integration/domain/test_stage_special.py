@@ -317,4 +317,60 @@ def test_a_stations_tab_on_a_live_special_date_is_warned_and_not_added(
         ("warning", SPECIAL, "9 20 26")
     ]
     assert "ignored" in flagged[0].message
-    assert not [f for f in preview.findings if f.code == "station_score_mismatch"]
+    assert not [f for f in preview.findings if f.code.startswith("station_")]
+
+
+def test_duplicate_shooter_warning_also_shows_with_weekly_rows_on_the_date(
+    session: Session,
+    special_workbook: Callable[..., bytes],
+    scores_workbook: Callable[..., bytes],
+    seed_live_round: Callable[..., int],
+) -> None:
+    seed_live_round(session, "Ace, Amy", BEFORE, 40)
+    amy_id = lookup_shooter(session, "ace amy")
+    assert amy_id is not None
+    create_rule(
+        session, RuleType.ALIAS_NAME, {"name_key": "ace amelia", "shooter_id": amy_id}, None
+    )
+    weekly = stage_import(session, scores_workbook([("Devlin, Sid", 35, SPECIAL)]), "w.xlsx")
+    commit_import(session, weekly.import_id)
+
+    import_id, diff = _stage(session, special_workbook([("Ace, Amy", HITS), ("Ace, Amelia", HITS)]))
+
+    assert diff.regular_rows_on_date == 1
+    codes = [f.code for f in get_import_preview(session, import_id).findings]
+    assert "special_duplicate_shooter" in codes
+    assert "regular_scores_on_special_date" in codes
+    message = next(
+        f.message
+        for f in get_import_preview(session, import_id).findings
+        if f.code == "special_duplicate_shooter"
+    )
+    assert message.startswith('"Ace, Amelia" and "Ace, Amy"')
+
+
+def test_a_hidden_first_row_does_not_make_the_second_a_duplicate(
+    session: Session,
+    special_workbook: Callable[..., bytes],
+    seed_live_round: Callable[..., int],
+) -> None:
+    seed_live_round(session, "Ace, Amy", BEFORE, 40)
+    amy_id = lookup_shooter(session, "ace amy")
+    assert amy_id is not None
+    create_rule(
+        session, RuleType.ALIAS_NAME, {"name_key": "ace amelia", "shooter_id": amy_id}, None
+    )
+    create_rule(
+        session,
+        RuleType.HIDE_ROUND,
+        {"event_date": SPECIAL, "name_key": "ace amy", "ordinal": 1, "raw_score": 50},
+        None,
+    )
+
+    import_id, diff = _stage(
+        session, special_workbook([("Ace, Amy", HITS), ("Ace, Amelia", (4,) * 10)])
+    )
+
+    assert diff.n_shooters == 1
+    findings = get_import_preview(session, import_id).findings
+    assert "special_duplicate_shooter" not in [f.code for f in findings]

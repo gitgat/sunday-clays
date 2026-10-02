@@ -15,6 +15,7 @@ from sunday_clays.domain.diff import (
     assign_ordinals,
     attendance_by_date,
     attendance_changes,
+    keyed_rows,
     possible_duplicate_pairs,
     representative_names,
     score_row_changes,
@@ -446,7 +447,16 @@ def _preview_special(
     regular = _regular_rows_on(session, parsed.event_date)
     first_row: dict[int | str, StagedScore] = {}
     repeats: list[Finding] = []
+    from sunday_clays.domain.rules import load_active_rules  # rules imports this module
+
+    keyed = {r.row_id: key for key, r in keyed_rows(rows).items()}
+    hidden = {
+        (h.event_date, h.name_key, h.ordinal): h.raw_score
+        for _, h in load_active_rules(session).hides
+    }
     for r in rows:  # P17-R3: the first sheet row of a shooter counts; later ones are dropped
+        if keyed[r.row_id] in hidden and hidden[keyed[r.row_id]] == r.score:
+            continue  # a hide_round rule drops it before rebuild picks the row to keep
         who: int | str = resolve(r.name_key) or r.name_key
         if who not in first_row:
             first_row[who] = r
@@ -455,8 +465,8 @@ def _preview_special(
             Finding(
                 "special_duplicate_shooter",
                 Severity.WARNING,
-                f"{r.raw_name!r} and {first_row[who].raw_name!r} are the same shooter: only the"
-                f" first row counts and {r.raw_name!r} is left out",
+                f'"{r.raw_name}" and "{first_row[who].raw_name}" are the same shooter: only the'
+                f' first row counts and "{r.raw_name}" is left out',
                 event_date=parsed.event_date,
             )
         )
