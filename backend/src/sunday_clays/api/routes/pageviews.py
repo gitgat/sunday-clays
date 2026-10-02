@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from sunday_clays.api.routes.bumps import parse_device_id
-from sunday_clays.auth.deps import TooManyRequestsError, client_ip, require_viewer
+from sunday_clays.auth.deps import TooManyRequestsError, ip_fingerprint, require_viewer
 from sunday_clays.auth.ratelimit import page_views_limited, record_page_view_attempt
 from sunday_clays.auth.sessions import Role
 from sunday_clays.db import SessionDep
@@ -40,7 +40,7 @@ def page_view(
 ) -> None:
     if role == "admin":
         return
-    ip = client_ip(request)
+    ip = ip_fingerprint(request)
     if page_views_limited(session, ip):
         raise TooManyRequestsError("rate_limited", "Too many page views from here. Try again soon.")
     record_page_view_attempt(session, ip)

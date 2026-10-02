@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
 
+from sunday_clays.auth.deps import fingerprint
 from sunday_clays.config import get_settings
 from sunday_clays.models import Base
 
@@ -94,7 +95,7 @@ def test_the_limitth_beacon_in_10_minutes_is_the_last(
 ) -> None:
     now = datetime.now(UTC)
     limit = get_settings().page_view_limit  # 600: viewer_client's auth_env leaves it unset
-    session.execute(insert(ATTEMPTS), [{"ip": "203.0.113.7", "at": now}] * (limit - 1))
+    session.execute(insert(ATTEMPTS), [{"ip": fingerprint("203.0.113.7"), "at": now}] * (limit - 1))
     assert _beacon(viewer_client).status_code == 204
     refused = _beacon(viewer_client, kind="records")
     assert refused.status_code == 429

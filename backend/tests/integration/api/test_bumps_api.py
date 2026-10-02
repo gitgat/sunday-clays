@@ -9,6 +9,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from sunday_clays.api.routes.bumps import MAX_KEYS
+from sunday_clays.auth.deps import fingerprint
 from sunday_clays.auth.ratelimit import BUMP_LIMIT
 from sunday_clays.domain.bumps import BumpState, add_bump, bump_state
 from sunday_clays.models import Base
@@ -117,7 +118,9 @@ def test_the_600th_action_in_10_minutes_is_the_last(
 ) -> None:
     key = _keys(fx_viewer_client)[0]
     now = datetime.now(UTC)
-    fx_session.execute(insert(ATTEMPTS), [{"ip": "203.0.113.7", "at": now}] * (BUMP_LIMIT - 1))
+    fx_session.execute(
+        insert(ATTEMPTS), [{"ip": fingerprint("203.0.113.7"), "at": now}] * (BUMP_LIMIT - 1)
+    )
     assert _post(fx_viewer_client, key, A).status_code == 200
     refused = _delete(fx_viewer_client, key, A)
     assert refused.status_code == 429

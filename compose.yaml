@@ -32,7 +32,7 @@ services:
     command:
       - sh
       - -c
-      - alembic upgrade head && exec uvicorn sunday_clays.api.app:create_app --factory --host 0.0.0.0 --port 8000 --no-proxy-headers
+      - alembic upgrade head && exec uvicorn sunday_clays.api.app:create_app --factory --host 0.0.0.0 --port 8000 --no-proxy-headers --no-access-log
     environment: *backend-secrets-env
     secrets: [database_url, session_secret, viewer_password_hash, admin_password_hash]
     depends_on: [db]
