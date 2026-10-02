@@ -111,7 +111,7 @@ const explainers = {
   },
   stations: {
     what: 'How many stations were shot on this Sunday.',
-    computed: ['Counted from the station sheet, so it is blank when there is none.'],
+    computed: ['Counted from the station sheet; "—" when there is none.'],
   },
   special: {
     what: 'A special shoot is a Sunday with its own format and number of targets, such as a 60-target 3-bird shoot.',
