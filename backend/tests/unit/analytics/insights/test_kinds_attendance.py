@@ -195,3 +195,17 @@ def test_year_wrapped_finish_needs_a_field_of_fifteen(make_world, run):
     full = wrapped_world(make_world, 40, [30] * 14).frames()
     (fact,) = [f for f in run("pf.year-wrapped", full) if f.subject_id == "1"]
     assert (fact.variant, fact.params["finish"]) == ("finish", 1)
+
+
+def test_attendance_streak_runs_through_a_special_sunday_and_never_breaks_on_it(
+    make_world, sun, run
+):
+    world = make_world()
+    for i in (0, 1, 3, 4, 5):
+        world.crowd(sun(i), [30, 31]).round(1, sun(i), 30).round(2, sun(i), 30)
+    world.special(1, sun(2))
+    fr = world.frames()
+
+    facts = {f.subject_id: f for f in run("pf.attendance-streak", fr) if f.anchor_date is None}
+    assert (facts["1"].params["k"], facts["1"].params["start"]) == (6, sun(0))
+    assert (facts["2"].params["k"], facts["2"].params["start"]) == (5, sun(0))

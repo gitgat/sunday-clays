@@ -366,8 +366,9 @@ def _sunday_milestone(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         )
     for sid, days in evergreen_days(fr, scope):
         last = days[-1]
-        nxt = next((level for level in SUNDAY_LEVELS if level > last.k), None)
-        if nxt is None or nxt - last.k > TO_GO_MAX or not shot_recently(days, scope.as_of):
+        shot = fr.appearances_through(sid, scope.as_of)  # special Sundays count (Decision 11)
+        nxt = next((level for level in SUNDAY_LEVELS if level > shot), None)
+        if nxt is None or nxt - shot > TO_GO_MAX or not shot_recently(days, scope.as_of):
             continue
         yield Fact(
             subject_id=str(sid),
@@ -377,7 +378,7 @@ def _sunday_milestone(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
             params={
                 "s": sid,
                 "next": nxt,
-                "to_go": nxt - last.k,
+                "to_go": nxt - shot,
                 "first": last.first_date,
                 "day": last.date,
             },

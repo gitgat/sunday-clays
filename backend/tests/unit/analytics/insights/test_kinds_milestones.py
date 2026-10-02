@@ -274,3 +274,31 @@ def test_first_since_needs_a_full_field_today_but_counts_any_field_in_history(ma
     assert result([(2, 15), (2, 15), *away, (2, 6)]) == []  # today's field is too small
     mid = [(8, 15)] * 26 + [(2, 6)] + [(8, 15)] * 25
     assert result([(2, 15), (2, 15), *mid, (2, 15)]) == []  # a 6-shooter podium in between counts
+
+
+def test_sunday_counts_include_special_sundays(make_world, sun, run):
+    world = make_world()
+    for i in range(24):
+        world.crowd(sun(i), [30]).round(1, sun(i), 30)
+    world.special(1, sun(24))  # Sunday 25 is special: no anchored milestone (Decision 11)
+    world.crowd(sun(25), [30]).round(1, sun(25), 30)
+    fr = world.frames()
+
+    assert fr.histories[1][-1].k == 26
+    assert fr.appearances_through(1, sun(25)) == 26
+    assert fr.specials_through(1, sun(25)) == (sun(24),)
+    assert not [f for f in run("pf.sunday-milestone", fr) if f.subject_id == "1" and f.anchor_date]
+
+
+def test_the_sundays_to_go_count_a_special_sunday_after_the_last_round(make_world, sun, run):
+    world = make_world()
+    for i in range(22):
+        world.crowd(sun(i), [30]).round(1, sun(i), 30)
+    world.special(1, sun(22))
+    world.crowd(sun(23), [30])  # the latest Sunday; shooter 1 missed it
+    fr = world.frames()
+
+    (fact,) = [
+        f for f in run("pf.sunday-milestone", fr) if f.subject_id == "1" and f.variant == "to_go"
+    ]
+    assert (fact.params["next"], fact.params["to_go"]) == (25, 2)
