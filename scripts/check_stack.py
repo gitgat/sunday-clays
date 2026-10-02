@@ -35,9 +35,11 @@ RELEASE_TAG = re.compile(r"^sha-[0-9a-f]{7}$")
 # node.labels.class (rpi4/rpi5) and node.labels.type (vm/physical) are the fleet's hardware labels:
 # a constraint on them pins a service to one architecture just as node.platform.arch does.
 ARCH_CONSTRAINT = re.compile(r"^node\.(platform\.arch|labels\.(arch|class|type))(==|!=)")
-# Services allowed an architecture constraint. None: every image is multi-arch, and Swarm already
-# keeps a task off nodes whose platform its image lacks.
-ARCH_PINNED: frozenset[str] = frozenset()
+# Every image is multi-arch, so no service needs an architecture constraint. The one exception
+# (2026-10-02): api and worker must run on the x86 nodes, because a 4-core arm64 Pi measured slow
+# against the database on x86. They may carry exactly this constraint and no other architecture one.
+X86_ONLY_SERVICES: frozenset[str] = frozenset({"api", "worker"})
+X86_CONSTRAINT = "node.platform.arch==x86_64"
 # Plan 13: the pull-based deployer is the only service that holds the Docker socket, and it runs as
 # one task on a manager (any architecture: the Swarm's managers are Raspberry Pis).
 DEPLOYER = "deployer"
@@ -208,12 +210,11 @@ def violations(stack: dict[str, Any]) -> list[str]:
     pinned_to: set[str] = set()
     for name, service in sorted(services.items()):
         constraints = _constraints(service)
-        if name not in ARCH_PINNED:
-            problems += [
-                f"{name}: must not be constrained to an architecture ({c}); images are multi-arch"
-                for c in constraints
-                if ARCH_CONSTRAINT.match(c)
-            ]
+        problems += [
+            f"{name}: must not be constrained to an architecture ({c}); images are multi-arch"
+            for c in constraints
+            if ARCH_CONSTRAINT.match(c) and not (name in X86_ONLY_SERVICES and c == X86_CONSTRAINT)
+        ]
         hosts = [c for c in constraints if c.startswith(HOSTNAME)]
         if name not in PINNED_SERVICES:
             problems += [f"{name}: must not be pinned to a node ({c})" for c in hosts]

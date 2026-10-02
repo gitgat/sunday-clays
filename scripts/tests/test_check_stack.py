@@ -12,6 +12,7 @@ import yaml
 SCRIPT = Path(__file__).resolve().parents[1] / "check_stack.py"
 DB_NODE = ["node.hostname==autopirate"]
 MANAGER = ["node.role==manager"]
+X86 = ["node.platform.arch==x86_64"]
 SOCKET = {"type": "bind", "source": "/var/run/docker.sock", "target": "/var/run/docker.sock"}
 STRIP = (
     "traefik.http.middlewares.sundayclays-strip-cf.headers.customrequestheaders.CF-Connecting-IP"
@@ -39,8 +40,8 @@ VALID: dict[str, Any] = {
             "deploy": {"placement": {"constraints": []}, "labels": dict(CADDY_LABELS)},
             "networks": {"default": None, "traefik_public": None, "edge_public": None},
         },
-        "api": backend(),
-        "worker": backend(),
+        "api": backend(deploy={"placement": {"constraints": list(X86)}}),
+        "worker": backend(deploy={"placement": {"constraints": list(X86)}}),
         "db": {
             "image": "postgres:17",
             "deploy": {"replicas": 1, "placement": {"constraints": list(DB_NODE)}},
@@ -88,6 +89,18 @@ def run(stack: dict[str, Any], sc_registry: str = "") -> subprocess.CompletedPro
     )
 
 
+def test_x86_on_api_and_worker_is_allowed_even_with_spaces() -> None:
+    stack = copy.deepcopy(VALID)
+    for name in ("api", "worker"):
+        stack["services"][name]["deploy"]["placement"]["constraints"] = [
+            "node.platform.arch == x86_64"
+        ]
+
+    result = run(stack)
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_valid_stack_passes() -> None:
     result = run(VALID)
 
@@ -121,10 +134,30 @@ def strip_middleware_not_declared(stack: dict[str, Any]) -> None:
     del stack["services"]["caddy"]["deploy"]["labels"][STRIP]
 
 
-def arch_on_worker(stack: dict[str, Any]) -> None:
+def arm_on_worker(stack: dict[str, Any]) -> None:
     stack["services"]["worker"]["deploy"]["placement"]["constraints"] = [
-        "node.platform.arch==x86_64"
+        "node.platform.arch==aarch64"
     ]
+
+
+def arm_on_api(stack: dict[str, Any]) -> None:
+    stack["services"]["api"]["deploy"]["placement"]["constraints"] = [
+        "node.platform.arch==aarch64"
+    ]
+
+
+def not_arm_on_api(stack: dict[str, Any]) -> None:
+    stack["services"]["api"]["deploy"]["placement"]["constraints"] = [
+        "node.platform.arch!=aarch64"
+    ]
+
+
+def x86_on_caddy(stack: dict[str, Any]) -> None:
+    stack["services"]["caddy"]["deploy"]["placement"]["constraints"] = list(X86)
+
+
+def x86_on_backup(stack: dict[str, Any]) -> None:
+    stack["services"]["backup"]["deploy"]["placement"]["constraints"].append(X86[0])
 
 
 def arm_label_on_caddy(stack: dict[str, Any]) -> None:
@@ -165,9 +198,9 @@ def backup_runs_the_frontend(stack: dict[str, Any]) -> None:
     stack["services"]["backup"]["image"] = "registry.thehalf.io/sunday-clays-frontend:sha-0000000"
 
 
-def spaced_arch_on_worker(stack: dict[str, Any]) -> None:
+def spaced_arm_on_worker(stack: dict[str, Any]) -> None:
     stack["services"]["worker"]["deploy"]["placement"]["constraints"] = [
-        "node.platform.arch == x86_64"
+        "node.platform.arch == aarch64"
     ]
 
 
@@ -364,8 +397,24 @@ def missing_deployer(stack: dict[str, Any]) -> None:
         ),
         (missing_deployer, "deployer: service missing"),
         (
-            arch_on_worker,
-            "worker: must not be constrained to an architecture (node.platform.arch==x86_64)",
+            arm_on_worker,
+            "worker: must not be constrained to an architecture (node.platform.arch==aarch64)",
+        ),
+        (
+            arm_on_api,
+            "api: must not be constrained to an architecture (node.platform.arch==aarch64)",
+        ),
+        (
+            not_arm_on_api,
+            "api: must not be constrained to an architecture (node.platform.arch!=aarch64)",
+        ),
+        (
+            x86_on_caddy,
+            "caddy: must not be constrained to an architecture (node.platform.arch==x86_64)",
+        ),
+        (
+            x86_on_backup,
+            "backup: must not be constrained to an architecture (node.platform.arch==x86_64)",
         ),
         (
             arm_label_on_caddy,
@@ -394,8 +443,8 @@ def missing_deployer(stack: dict[str, Any]) -> None:
             "backup: image must be registry.thehalf.io/sunday-clays-backend:sha-<7>",
         ),
         (
-            spaced_arch_on_worker,
-            "worker: must not be constrained to an architecture (node.platform.arch==x86_64)",
+            spaced_arm_on_worker,
+            "worker: must not be constrained to an architecture (node.platform.arch==aarch64)",
         ),
         (api_pinned_to_a_node, "api: must not be pinned to a node (node.hostname==autopirate)"),
         (db_on_two_nodes, "db: more than one node.hostname== constraint"),
