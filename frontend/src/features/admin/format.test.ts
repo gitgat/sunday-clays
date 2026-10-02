@@ -24,6 +24,7 @@ describe('admin formatting', () => {
   it.each([
     ['scores', 'Scores workbook'],
     ['stations', 'Station workbook'],
+    ['special', 'Special shoot workbook'],
     ['other', 'other'],
   ])('kind %s → %s', (kind, want) => {
     expect(kindLabel(kind)).toBe(want);
