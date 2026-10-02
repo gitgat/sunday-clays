@@ -7,6 +7,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from sunday_clays.analytics import frames
 from sunday_clays.analytics.achievements.context import build_context
 from sunday_clays.analytics.cache import clear_cache
 from sunday_clays.analytics.cohorts import cohort_returns
@@ -27,6 +28,7 @@ APPEARANCE_TROPHIES = {
     "perfect_month",
     "anniversary_1",
     "anniversary_5",
+    "three_bird_shoot",
 }
 APPEARANCE_INSIGHTS = {
     "pf.attendance-streak",
@@ -157,3 +159,24 @@ def test_every_appearance_shooter_has_a_profile(fx_special_session: Session) -> 
     assert kim in fr.appearance_dates
     assert kim not in fr.histories
     assert set(fr.appearance_dates) <= set(fr.profiles)
+
+
+def test_every_shooter_on_the_three_bird_sheet_holds_the_trophy_and_the_plain_world_does_not(
+    fx_session: Session, fx_special_session: Session
+) -> None:
+    on_sheet = {int(s) for s in frames.load_special_rounds(fx_special_session)["shooter_id"]}
+    held = {
+        s
+        for s, code, d in _awards(fx_special_session)
+        if code == "three_bird_shoot" and d == SPECIAL
+    }
+
+    assert len(on_sheet) == 5
+    assert held == on_sheet
+    assert {code for _, code, _ in _awards(fx_session)} & {"three_bird_shoot"} == set()
+    details = fx_special_session.execute(
+        text("SELECT details, round_id FROM achievements_awarded WHERE code = 'three_bird_shoot'")
+    ).all()
+    assert {(d["label"], d["event_date"], r) for d, r in details} == {
+        ("3-Bird Shoot", SPECIAL.isoformat(), None)
+    }

@@ -20,7 +20,7 @@ def test_the_special_world_is_the_fixture_world_plus_one_special_sunday(
 
     assert {(d, n) for d, n, kind, _, _ in special if kind == "regular"} == base
     assert [tuple(r) for r in special if r[2] == "special"] == [
-        (SPECIAL, 5, "special", "Three Clay Shoot", 60)
+        (SPECIAL, 5, "special", "3-Bird Shoot", 60)
     ]
     scores = fx_special_session.execute(
         select(Shooter.display_name, Round.score)

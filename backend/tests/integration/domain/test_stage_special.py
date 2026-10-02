@@ -44,14 +44,14 @@ def test_staging_stores_the_sunday_rows_and_stations(
 ) -> None:
     import_id, diff = _stage(session, special_workbook())
 
-    assert (diff.event_date, diff.label, diff.target_total) == (SPECIAL, "Three Clay Shoot", 60)
+    assert (diff.event_date, diff.label, diff.target_total) == (SPECIAL, "3-Bird Shoot", 60)
     assert diff.stations == [str(n) for n in range(1, 11)]
     assert diff.n_shooters == 5
     assert diff.replaces_import is None
     assert diff.regular_rows_on_date == 0
     event = session.get(ImportSpecialEvent, import_id)
     assert event is not None
-    assert (event.event_date, event.label, event.target_total) == (SPECIAL, "Three Clay Shoot", 60)
+    assert (event.event_date, event.label, event.target_total) == (SPECIAL, "3-Bird Shoot", 60)
     rows = session.execute(
         select(
             ImportScoreRow.raw_name,
@@ -124,7 +124,7 @@ def test_preview_says_which_live_import_it_replaces(
 ) -> None:
     first, _ = _stage(session, special_workbook())
     commit_import(session, first)
-    corrected = special_workbook(label="Three Clay Shoot (corrected)")
+    corrected = special_workbook(label="3-Bird Shoot (corrected)")
 
     second, diff = _stage(session, corrected, "special-corrected.xlsx")
 
@@ -133,7 +133,7 @@ def test_preview_says_which_live_import_it_replaces(
     assert active_special_sources(session)[SPECIAL].import_id == second
     rollback_import(session, second)
     assert active_special_sources(session)[SPECIAL].import_id == first
-    assert active_special_sources(session)[SPECIAL].label == "Three Clay Shoot"
+    assert active_special_sources(session)[SPECIAL].label == "3-Bird Shoot"
     rollback_import(session, first)
     assert active_special_sources(session) == {}
 
@@ -178,7 +178,7 @@ def test_regular_rows_on_the_special_date_are_flagged_in_both_previews(
             "warning",
             SPECIAL,
             "ALL SCORE DETAIL",
-            "2026-09-20 is the special shoot 'Three Clay Shoot': its 1 row here is left out "
+            "2026-09-20 is the special shoot '3-Bird Shoot': its 1 row here is left out "
             "while that import is live",
         ),
     ]
@@ -216,7 +216,7 @@ def test_several_regular_rows_on_the_special_date_use_the_plural(
     )
     (note,) = [f for f in again.findings if f.code == "special_event_date"]
     assert note.message == (
-        "2026-09-20 is the special shoot 'Three Clay Shoot': its 2 rows here are left out "
+        "2026-09-20 is the special shoot '3-Bird Shoot': its 2 rows here are left out "
         "while that import is live"
     )
 
@@ -264,6 +264,6 @@ def test_a_special_import_is_never_a_scores_or_stations_source(
     source = active_special_sources(session)[SPECIAL]
     assert (source.import_id, source.label, source.target_total) == (
         import_id,
-        "Three Clay Shoot",
+        "3-Bird Shoot",
         60,
     )
