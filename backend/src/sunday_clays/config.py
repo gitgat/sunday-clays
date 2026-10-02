@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     login_max_failures: int = 10
     login_window_minutes: int = 15
     page_view_limit: int = 600  # Plan 16: page-view beacons per IP per 10 minutes
+    # Plan 19 D4: comma-separated feature keys treated as on while their app_state row is missing
+    features_default_on: str = ""
     cookie_secure: bool = True
 
     @classmethod
