@@ -344,8 +344,13 @@ export function splitsModel(splits: SplitRow[]): ChartModel {
   return { columns, rows, option: barOption({ columns, rows }, { x: 'key', y: ['avg'] }) };
 }
 
-export function activeYears(rounds: ShooterRound[]): number[] {
-  return [...new Set(rounds.map((r) => Number(r.event_date.slice(0, 4))))].sort((a, b) => b - a);
+/** Years with a round or a special shoot (Plan 17), newest first. */
+export function activeYears(
+  rounds: ShooterRound[],
+  specialDates: readonly string[] = [],
+): number[] {
+  const dates = [...rounds.map((r) => r.event_date), ...specialDates];
+  return [...new Set(dates.map((d) => Number(d.slice(0, 4))))].sort((a, b) => b - a);
 }
 
 /**
@@ -356,6 +361,8 @@ export function attendanceModel(
   rounds: ShooterRound[],
   heldDates: readonly string[],
   year: number,
+  /** Plan 17: special shoots the shooter came to; drawn as 'special', never as 'missed'. */
+  specialDates: readonly string[] = [],
 ): ChartModel {
   const best = new Map<string, number>();
   for (const r of rounds) {
@@ -372,8 +379,14 @@ export function attendanceModel(
     state: 'shot',
     score,
   }));
-  for (const date of heldDates) {
+  const special = new Set(specialDates);
+  for (const date of special) {
     if (date.startsWith(`${year}-`) && !best.has(date)) {
+      rows.push({ date, state: 'special', score: null });
+    }
+  }
+  for (const date of heldDates) {
+    if (date.startsWith(`${year}-`) && !best.has(date) && !special.has(date)) {
       rows.push({ date, state: 'missed', score: null });
     }
   }
@@ -409,12 +422,15 @@ export function monthsBetween(first: string, last: string): string[] {
  * The calendar's month view (Plan 12 `cal.view=month`): Sundays shot in each month from the first
  * month to the last, empty months included. Categories are `YYYY-MM`, the keys insights highlight.
  */
-export function monthsModel(rounds: ShooterRound[]): ChartModel {
+export function monthsModel(
+  rounds: ShooterRound[],
+  specialDates: readonly string[] = [],
+): ChartModel {
   const columns: TabularData['columns'] = [
     { key: 'month', label: 'Month', type: 'string' },
     { key: 'sundays', label: 'Sundays shot', type: 'int' },
   ];
-  const dates = [...new Set(rounds.map((r) => r.event_date))].sort();
+  const dates = [...new Set([...rounds.map((r) => r.event_date), ...specialDates])].sort();
   const counts = new Map<string, number>();
   for (const d of dates) counts.set(d.slice(0, 7), (counts.get(d.slice(0, 7)) ?? 0) + 1);
   const first = dates[0];

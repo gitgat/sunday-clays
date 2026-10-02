@@ -154,6 +154,38 @@ describe('sundayCalendarOption', () => {
   it('throws for a column it is not given', () => {
     expect(() => sundayCalendarOption(DATA, { ...OPTS, state: 'nope' })).toThrow('nope');
   });
+
+  it('draws a special shoot the shooter came to as an accent-ringed cell off the score scale', () => {
+    const data: TabularData = {
+      ...DATA,
+      rows: [...DATA.rows, { date: '2026-09-20', score: null, state: 'special' }],
+    };
+    const o = sundayCalendarOption(data, OPTS);
+    const special = (o.series as HeatmapSeriesOption[])[2] as HeatmapSeriesOption;
+    expect(special.name).toBe('Special');
+    expect(special.data as Item[]).toEqual([{ value: [2, 8, -3], date: '2026-09-20' }]);
+    expect(special.itemStyle).toMatchObject({ color: 'transparent', borderWidth: 3 });
+    const label = special.label as { show: boolean; formatter: () => string };
+    expect(label.show).toBe(true);
+    expect(label.formatter()).toBe('★');
+    // The score scale still spans the shot cells only.
+    expect((o.visualMap as Record<string, unknown>[])[0]).toMatchObject({ min: 38, max: 44 });
+    expect((o.visualMap as Record<string, unknown>[])[2]).toMatchObject({
+      seriesIndex: 2,
+      show: false,
+      min: -4,
+      max: -3,
+      inRange: { color: ['transparent', 'transparent'] },
+    });
+  });
+
+  it('says special shoot in the tooltip', () => {
+    const tip = (sundayCalendarOption(DATA, OPTS).tooltip as { formatter: (p: unknown) => string })
+      .formatter;
+    expect(tip({ seriesName: 'Special', data: { value: [2, 8, -3], date: '2026-09-20' } })).toBe(
+      'Sunday 2026-09-20<br/>Special shoot, counts as a Sunday shot',
+    );
+  });
 });
 
 describe('shotDateOf', () => {
@@ -162,5 +194,9 @@ describe('shotDateOf', () => {
     expect(shotDateOf({ seriesName: 'Missed', data: { date: '2026-01-11' } })).toBeNull();
     expect(shotDateOf({ seriesName: 'Shot', data: undefined })).toBeNull();
     expect(shotDateOf({ seriesName: 'Shot', data: { date: 5 } })).toBeNull();
+  });
+
+  it('opens a clicked special shoot too', () => {
+    expect(shotDateOf({ seriesName: 'Special', data: { date: '2026-09-20' } })).toBe('2026-09-20');
   });
 });
