@@ -162,6 +162,50 @@ def test_select_records_a_pick(paths):
     }
 
 
+def test_select_can_reuse_another_selection(paths):
+    paths["selection"].write_text(json.dumps({"doubleheader": {"art_key": "doubleheader", "metal": None, "seed": 1}}))
+    assert run(paths, "select", "bonus", "-", "--reuse", "doubleheader") == 0
+    assert json.loads(paths["selection"].read_text())["bonus"] == {
+        "art_key": "bonus",
+        "metal": None,
+        "reuse": "doubleheader",
+    }
+
+
+def test_select_reuse_needs_an_existing_plain_selection(paths):
+    paths["selection"].write_text(
+        json.dumps(
+            {
+                "doubleheader": {"art_key": "doubleheader", "metal": None, "seed": 1},
+                "bonus": {"art_key": "bonus", "metal": None, "reuse": "doubleheader"},
+            }
+        )
+    )
+    assert run(paths, "select", "other", "-", "--reuse", "missing") == 1
+    assert run(paths, "select", "other", "-", "--reuse", "bonus") == 1
+    assert run(paths, "select", "other", "-") == 2
+    assert run(paths, "select", "other", "-", "5", "--reuse", "doubleheader") == 2
+
+
+def test_build_gives_a_reused_key_its_sources_art(paths):
+    target = paths["out"] / "candidates" / "doubleheader"
+    target.mkdir(parents=True)
+    (target / "1.png").write_bytes(png_bytes())
+    assert run(paths, "select", "doubleheader", "-", "1") == 0
+    assert run(paths, "select", "bonus", "-", "--reuse", "doubleheader") == 0
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 0
+    public = paths["repo"] / "frontend" / "public" / "trophies"
+    assert (public / "bonus.webp").read_bytes() == (public / "doubleheader.webp").read_bytes()
+    assert (public / "bonus@128.webp").read_bytes() == (public / "doubleheader@128.webp").read_bytes()
+    generated = (paths["repo"] / "frontend" / "src" / "features" / "achievements" / "trophyArt.gen.ts").read_text()
+    assert "  bonus: {\n    src: '/trophies/bonus.webp'," in generated
+
+
+def test_build_fails_when_a_reused_source_is_not_selected(paths):
+    paths["selection"].write_text(json.dumps({"bonus": {"art_key": "bonus", "metal": None, "reuse": "gone"}}))
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 1
+
+
 def test_select_rejects_missing_candidates_and_unknown_metals(paths):
     assert run(paths, "select", "doubleheader", "-", "9") == 1
     assert run(paths, "select", "doubleheader", "copper", "9") == 2

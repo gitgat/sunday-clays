@@ -560,3 +560,76 @@ def test_four_seasons_counts_a_season_covered_only_by_a_special_sunday(ctx_build
 
     (found,) = registry.evaluate_one(registry.get("four_seasons"), ctx)
     assert (found.shooter_id, found.event_date, found.round_id) == (1, date(2025, 10, 5), None)
+
+
+# ---- the 3-Bird Shoot (Plan 17 T10) -------------------------------------------------------
+
+
+def three_bird_awards(ctx):
+    return [
+        (w.shooter_id, w.event_date, w.round_id, w.details)
+        for w in registry.evaluate_one(registry.get("three_bird_shoot"), ctx)
+    ]
+
+
+def test_the_three_bird_trophy_is_a_non_tiered_calendar_one_off(ctx_builder):
+    from sunday_clays.analytics.achievements.registry import Category
+
+    achievement = registry.get("three_bird_shoot")
+    assert (achievement.name, achievement.description) == ("3-Bird Shoot", "Shot the 3-Bird Shoot.")
+    assert (achievement.category, achievement.art_key) == (Category.CALENDAR, "three_bird_shoot")
+    assert (achievement.tiers, achievement.repeatable) == ((), False)
+
+
+def test_a_three_bird_special_sunday_awards_its_shooters(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .round(1, sun(0), 30)
+        .special(1, sun(1), "3-Bird Shoot")
+        .special(2, sun(1), "3-Bird Shoot")
+        .build()
+    )
+
+    assert three_bird_awards(ctx) == [
+        (1, sun(1), None, {"label": "3-Bird Shoot", "event_date": sun(1).isoformat()}),
+        (2, sun(1), None, {"label": "3-Bird Shoot", "event_date": sun(1).isoformat()}),
+    ]
+
+
+@pytest.mark.parametrize("label", ["three bird shoot", " 3_BIRD  Shoot ", "THREE-Bird Shoot"])
+def test_three_bird_labels_are_normalised(label, ctx_builder):
+    ctx = ctx_builder().special(1, sun(1), label).build()
+
+    assert three_bird_awards(ctx) == [
+        (1, sun(1), None, {"label": label, "event_date": sun(1).isoformat()})
+    ]
+
+
+def test_another_special_shoot_or_a_regular_sunday_does_not_award(ctx_builder):
+    ctx = ctx_builder().round(1, sun(0), 30).special(1, sun(1), "Fun Shoot").build()
+
+    assert three_bird_awards(ctx) == []
+
+
+def test_only_the_first_three_bird_shoot_awards(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .special(1, sun(1), "3-Bird Shoot")
+        .special(1, sun(5), "Three Bird Shoot")
+        .special(2, sun(5), "Three Bird Shoot")
+        .build()
+    )
+
+    assert [(sid, day) for sid, day, _, _ in three_bird_awards(ctx)] == [
+        (1, sun(1)),
+        (2, sun(5)),
+    ]
+
+
+def test_three_bird_never_leaks(ctx_builder, no_leak):
+    ctx = (
+        ctx_builder().special(1, sun(1), "3-Bird Shoot").special(2, sun(5), "3-Bird Shoot").build()
+    )
+
+    assert no_leak("three_bird_shoot", ctx, sun(2)) == (1, 1)
+    assert three_bird_awards(ctx.until(sun(0))) == []

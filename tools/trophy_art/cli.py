@@ -114,15 +114,26 @@ def _select(args: argparse.Namespace) -> int:
     if metal is not None and metal not in METALS:
         print(f"metal must be one of {', '.join(METALS)} or '-'", file=sys.stderr)
         return 2
+    if (args.candidate is None) == (args.reuse is None):
+        print("give either a candidate seed or --reuse STEM", file=sys.stderr)
+        return 2
     stem = args.art_key if metal is None else f"{args.art_key}-{metal}"
-    candidate = args.out / "candidates" / stem / f"{args.candidate}.png"
-    if not candidate.exists():
-        print(f"no candidate {candidate}", file=sys.stderr)
-        return 1
     selection = _read_selection(args.selection)
-    selection[stem] = {"art_key": args.art_key, "metal": metal, "seed": args.candidate}
+    if args.reuse is not None:
+        source = selection.get(args.reuse)
+        if source is None or "seed" not in source:
+            print(f"--reuse needs an existing picked selection, not {args.reuse}", file=sys.stderr)
+            return 1
+        selection[stem] = {"art_key": args.art_key, "metal": metal, "reuse": args.reuse}
+        print(f"selected {stem} reusing {args.reuse}")
+    else:
+        candidate = args.out / "candidates" / stem / f"{args.candidate}.png"
+        if not candidate.exists():
+            print(f"no candidate {candidate}", file=sys.stderr)
+            return 1
+        selection[stem] = {"art_key": args.art_key, "metal": metal, "seed": args.candidate}
+        print(f"selected {stem} seed {args.candidate}")
     args.selection.write_text(json.dumps(selection, indent=2, sort_keys=True) + "\n")
-    print(f"selected {stem} seed {args.candidate}")
     return 0
 
 
@@ -131,7 +142,12 @@ def _build(args: argparse.Namespace) -> int:
     public = args.repo_root / "frontend" / "public" / "trophies"
     public.mkdir(parents=True, exist_ok=True)
     for stem, pick in sorted(selection.items()):
-        candidate = args.out / "candidates" / stem / f"{pick['seed']}.png"
+        source = selection.get(pick["reuse"]) if "reuse" in pick else pick
+        if source is None or "seed" not in source:
+            print(f"{stem} reuses {pick['reuse']}, which has no picked candidate", file=sys.stderr)
+            return 1
+        source_stem = pick.get("reuse", stem)
+        candidate = args.out / "candidates" / source_stem / f"{source['seed']}.png"
         if not candidate.exists():
             print(f"missing candidate {candidate}", file=sys.stderr)
             return 1
@@ -186,7 +202,12 @@ def build_parser() -> argparse.ArgumentParser:
     select = sub.add_parser("select", help="record the user's pick")
     select.add_argument("art_key")
     select.add_argument("metal", help="bronze|silver|gold|platinum|diamond, or - for a one-off")
-    select.add_argument("candidate", type=int, help="the picked candidate's seed")
+    select.add_argument("candidate", type=int, nargs="?", help="the picked candidate's seed")
+    select.add_argument(
+        "--reuse",
+        metavar="STEM",
+        help="use another key's picked art instead of a candidate, e.g. clays_thrown-gold",
+    )
     build = sub.add_parser("build", help="write WebP medallions and trophyArt.gen.ts")
     build.add_argument("--repo-root", type=Path, default=HERE.parent.parent)
     check = sub.add_parser("check", help="verify the manifest covers a JSON list of [art_key, metal|null]")
