@@ -12,7 +12,7 @@ import pandas as pd
 
 from sunday_clays.analytics.cohorts import cohort_returns
 from sunday_clays.analytics.insights import charts
-from sunday_clays.analytics.insights.club import CLUB, held_to
+from sunday_clays.analytics.insights.club import CLUB, held_to, special_turnout
 from sunday_clays.analytics.insights.context import (
     ACTIVE_WINDOW,
     InsightFrames,
@@ -57,6 +57,10 @@ def _rounds_to(fr: InsightFrames, day: date) -> pd.DataFrame:
     return fr.rounds.loc[[d <= day for d in fr.rounds["event_date"]]]
 
 
+def _appearances_to(fr: InsightFrames, day: date) -> pd.DataFrame:
+    return fr.appearances.loc[[d <= day for d in fr.appearances["event_date"]]]
+
+
 def _fact(scope: Scope, pages: frozenset[P], params: Mapping[str, object], strength: float) -> Fact:
     return Fact(
         subject_id=CLUB,
@@ -75,7 +79,8 @@ NEWCOMERS_LABEL = T(named("New shooters by year, and how many came back"))
 
 
 def _newcomers(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    returns = cohort_returns(_rounds_to(fr, scope.as_of), fr.shooters)
+    # cohorts follow Sundays shot, like the /club "new" chart this links to (Plan 17)
+    returns = cohort_returns(_appearances_to(fr, scope.as_of), fr.shooters)
     year = scope.as_of.year
     row = returns.loc[returns["cohort_year"] == year]
     if row.empty or int(row["n_cohort"].iloc[0]) < NEWCOMERS_MIN:
@@ -228,24 +233,30 @@ def _year_wrap(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     year = scope.as_of.year - 1 if wrapping is None else wrapping
     held = held_to(fr, scope.as_of)
     sundays = [s for s in held if s.date.year == year]
-    if len(sundays) < CLUB_WRAP_MIN:
+    # special Sundays are Sundays held, can be the busiest, and bring first-timers (Plan 17);
+    # the round count stays the scored rounds
+    specials = special_turnout(fr, date(year, 1, 1), min(date(year, 12, 31), scope.as_of))
+    if not held or len(sundays) + len(specials) < CLUB_WRAP_MIN:
         return
     rounds = _rounds_to(fr, scope.as_of)
     in_year = rounds.loc[[d.year == year for d in rounds["event_date"]]]
     firsts = sum(
         1
-        for days in fr.histories.values()
-        if days and days[0].date.year == year and not fr.profiles[days[0].shooter_id].left_censored
+        for sid, dates in fr.appearance_dates.items()
+        if dates and dates[0].year == year and not fr.profiles[sid].left_censored
     )
-    busiest = max(sundays, key=lambda s: (s.head_count or s.n, s.date))
+    busiest_n, busiest = max(
+        [(float(s.head_count or s.n), s.date) for s in sundays]
+        + [(turnout, day) for day, turnout in specials]
+    )
     params = {
         "first": held[0].date,
         "year": year,
-        "sundays": len(sundays),
+        "sundays": len(sundays) + len(specials),
         "rounds": len(in_year),
         "firsts": firsts,
-        "busiest": busiest.date,
-        "busiest_n": busiest.head_count or busiest.n,
+        "busiest": busiest,
+        "busiest_n": round(busiest_n),
     }
     pages = {P.CLUB} | ({P.HOME} if wrapping is not None else set())
     yield _fact(scope, frozenset(pages), params, 1.0)

@@ -6,6 +6,7 @@ from __future__ import annotations
 import calendar
 from collections.abc import Callable, Iterator
 from datetime import date, timedelta
+from typing import Any
 
 import pandas as pd
 
@@ -38,6 +39,11 @@ def _series(days: pd.DataFrame, values: pd.Series) -> pd.DataFrame:
     )
 
 
+def _round_id(value: Any) -> int | None:
+    """A day's best round id, or None on a special Sunday (no scored round, Plan 17)."""
+    return None if pd.isna(value) else int(value)
+
+
 # ---- tiered value functions (cumulative value after each attended date) ---------------------
 
 
@@ -52,19 +58,19 @@ def clays_thrown_value(ctx: AchContext) -> pd.DataFrame:
 
 
 def events_value(ctx: AchContext) -> pd.DataFrame:
-    days = ctx.shooter_days
+    days = ctx.attendance_days
     return _series(days, days["n_events"])
 
 
 def years_active_value(ctx: AchContext) -> pd.DataFrame:
-    days = ctx.shooter_days
+    days = ctx.attendance_days
     keys = pd.DataFrame({"shooter_id": days["shooter_id"], "year": days["event_ts"].dt.year})
     first_in_year = (~keys.duplicated()).astype(int)
     return _series(days, first_in_year.groupby(days["shooter_id"]).cumsum())
 
 
 def big_year_value(ctx: AchContext) -> pd.DataFrame:
-    days = ctx.shooter_days
+    days = ctx.attendance_days
     year = days["event_ts"].dt.year
     in_year = days.groupby([days["shooter_id"], year]).cumcount() + 1
     return _series(days, in_year.groupby(days["shooter_id"]).cummax())
@@ -72,7 +78,7 @@ def big_year_value(ctx: AchContext) -> pd.DataFrame:
 
 def iron_streak_value(ctx: AchContext) -> pd.DataFrame:
     """Longest run of consecutive held events attended, from analytics.streaks.streaks() (C7)."""
-    days = ctx.shooter_days
+    days = ctx.attendance_days
     if days.empty:
         return empty_value_frame()
     parts: list[pd.DataFrame] = []
@@ -113,15 +119,27 @@ def _doubleheader(ctx: AchContext) -> Iterator[Award]:
 
 
 def _new_year(ctx: AchContext) -> Iterator[Award]:
-    first_held: dict[int, date] = {}
-    for day in ctx.held_dates():
-        first_held.setdefault(day.year, day)
-    days = ctx.shooter_days
-    hits = days[days["event_date"].isin(set(first_held.values()))]
+    """The year's first regular held Sunday, and any special Sunday before it (Decision 10).
+
+    Each shooter at most once a year, at the earliest of those Sundays they shot."""
+    regular = ctx.held_dates()
+    first_regular: dict[int, date] = {}
+    for day in regular:
+        first_regular.setdefault(day.year, day)
+    regular_days = set(regular)
+    qualifying = set(first_regular.values()) | {
+        day
+        for day in ctx.calendar_held_dates()
+        if day not in regular_days
+        and (day.year not in first_regular or day < first_regular[day.year])
+    }
+    days = ctx.attendance_days
+    hits = days[days["event_date"].isin(qualifying)]
+    hits = hits.assign(year=hits["event_ts"].dt.year).drop_duplicates(["shooter_id", "year"])
     for sid, day, rid in zip(
         hits["shooter_id"], hits["event_date"], hits["best_round_id"], strict=True
     ):
-        yield Award(int(sid), "new_year", day, int(rid), {"year": day.year})
+        yield Award(int(sid), "new_year", day, _round_id(rid), {"year": day.year})
 
 
 def _anniversary(years: int) -> Callable[[AchContext], Iterator[Award]]:
@@ -130,7 +148,7 @@ def _anniversary(years: int) -> Callable[[AchContext], Iterator[Award]]:
     high = 365 * years + ANNIVERSARY_WINDOW_DAYS
 
     def evaluate(ctx: AchContext) -> Iterator[Award]:
-        days = ctx.shooter_days
+        days = ctx.attendance_days
         since_first = (
             days["event_ts"] - days.groupby("shooter_id")["event_ts"].transform("min")
         ).dt.days
@@ -142,14 +160,14 @@ def _anniversary(years: int) -> Callable[[AchContext], Iterator[Award]]:
 
 
 def _welcome_back(ctx: AchContext) -> Iterator[Award]:
-    days = ctx.shooter_days
+    days = ctx.attendance_days
     gap = (days["event_ts"] - days["prev_ts"]).dt.days
     back = gap >= WELCOME_BACK_DAYS
     hits = days[back]
     for sid, day, rid, away in zip(
         hits["shooter_id"], hits["event_date"], hits["best_round_id"], gap[back], strict=True
     ):
-        yield Award(int(sid), "welcome_back", day, int(rid), {"days_away": int(away)})
+        yield Award(int(sid), "welcome_back", day, _round_id(rid), {"days_away": int(away)})
 
 
 def _joined_club(ctx: AchContext) -> Iterator[Award]:
@@ -184,7 +202,7 @@ def _both_disciplines(ctx: AchContext) -> Iterator[Award]:
 
 
 def _four_seasons(ctx: AchContext) -> Iterator[Award]:
-    days = ctx.shooter_days
+    days = ctx.attendance_days
     if days.empty:
         return
     frame = pd.DataFrame(
@@ -213,16 +231,24 @@ def last_sunday(year: int, month: int) -> date:
 
 
 def _perfect_month(ctx: AchContext) -> Iterator[Award]:
-    """Month M with >= 3 held events, every one attended.
+    """Month M with >= 3 Sundays, every regular held one attended.
 
     Dated at the closing event: the first held event on or after M's last calendar Sunday L
     (L itself when L was held). Only M's held events up to the closing event count, so a held
-    non-Sunday after a held L cannot change an award already dated L (no leak, never moves)."""
+    non-Sunday after a held L cannot change an award already dated L (no leak, never moves).
+    A special Sunday shot in M up to the closing event counts toward the three and is never
+    required (Plan 17, Decision 10)."""
     held = ctx.held_dates()
-    days = ctx.shooter_days
+    days = ctx.attendance_days
     attendees: dict[date, set[int]] = {}
-    for sid, day in zip(days["shooter_id"], days["event_date"], strict=True):
-        attendees.setdefault(day, set()).add(int(sid))
+    specials: dict[int, list[date]] = {}
+    for sid, day, special in zip(
+        days["shooter_id"], days["event_date"], days["special"], strict=True
+    ):
+        if special:
+            specials.setdefault(int(sid), []).append(day)
+        else:
+            attendees.setdefault(day, set()).add(int(sid))
     months: dict[tuple[int, int], list[date]] = {}
     for day in held:
         months.setdefault((day.year, day.month), []).append(day)
@@ -232,12 +258,17 @@ def _perfect_month(ctx: AchContext) -> Iterator[Award]:
         if closing is None:
             continue
         counted = [day for day in month_days if day <= closing]
-        if len(counted) < PERFECT_MONTH_MIN_EVENTS:
-            continue
         perfect = set(attendees.get(counted[0], set()))
         for day in counted[1:]:
             perfect &= attendees.get(day, set())
         for sid in sorted(perfect):
+            extra = sum(
+                1
+                for day in specials.get(sid, ())
+                if (day.year, day.month) == (year, month) and day <= closing
+            )
+            if len(counted) + extra < PERFECT_MONTH_MIN_EVENTS:
+                continue
             yield Award(sid, "perfect_month", closing, None, {"month": f"{year:04d}-{month:02d}"})
 
 
@@ -269,7 +300,7 @@ register(
     Achievement(
         code="events",
         name="Events Attended",
-        description="Sundays with at least one recorded round.",
+        description="Sundays shot.",
         category=Category.MILESTONE,
         art_key="events",
         tiers=make_tiers((1, 10, 25, 50, 100, 150, 200, 250), "events", singular="event"),
@@ -280,7 +311,7 @@ register(
     Achievement(
         code="years_active",
         name="Years Active",
-        description="Distinct calendar years with at least one round.",
+        description="Calendar years with at least one Sunday shot.",
         category=Category.MILESTONE,
         art_key="years_active",
         tiers=make_tiers((2, 3, 5, 7), "years"),
@@ -336,7 +367,7 @@ register(
     Achievement(
         code="new_year",
         name="New Year's Shooter",
-        description="Shot the first held event of a calendar year.",
+        description="Shot the first Sunday of a calendar year.",
         category=Category.CALENDAR,
         art_key="new_year",
         evaluate=_new_year,
@@ -410,7 +441,7 @@ register(
     Achievement(
         code="perfect_month",
         name="Perfect Month",
-        description="Attended every held event of a month with three or more held events.",
+        description="Shot every Sunday held in a month with three or more Sundays.",
         category=Category.CALENDAR,
         art_key="perfect_month",
         evaluate=_perfect_month,

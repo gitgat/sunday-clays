@@ -205,6 +205,8 @@ def _next_trophy(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         events=fr.events,
         station_hits=fr.stations[list(STATION_COLUMNS)],
         rating_history=fr.rating,
+        appearances=fr.appearances,
+        calendar=fr.calendar,
     )
     active = [sid for sid, days in evergreen_days(fr, scope) if shot_recently(days, scope.as_of)]
     everyone = trophy_registry.progress_many(ctx, active, scope.as_of)
