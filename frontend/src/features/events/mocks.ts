@@ -34,6 +34,9 @@ const stationWeek = {
 
 export const eventSummaries: EventSummary[] = [
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scored,
     event_date: '2026-09-27',
     round_type: 'sporting',
@@ -49,6 +52,9 @@ export const eventSummaries: EventSummary[] = [
     ],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...stationWeek,
     event_date: '2026-09-13',
     round_type: 'super_sporting',
@@ -61,6 +67,9 @@ export const eventSummaries: EventSummary[] = [
     winners: [{ shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 }],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...stationWeek,
     event_date: '2026-09-06',
     round_type: 'super_sporting',
@@ -73,6 +82,9 @@ export const eventSummaries: EventSummary[] = [
     winners: [{ shooter_id: 32, display_name: 'Grimsby, Gregor', score: 48 }],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scored,
     event_date: '2026-08-30',
     round_type: 'sporting',
@@ -89,6 +101,9 @@ export const eventSummaries: EventSummary[] = [
     ],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scored,
     event_date: '2025-11-16',
     round_type: 'sporting',
@@ -103,6 +118,9 @@ export const eventSummaries: EventSummary[] = [
     winners: [],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scored,
     event_date: '2025-11-09',
     round_type: 'sporting',
@@ -129,6 +147,9 @@ function cells(hits: number[]): StationMatrix['entries'][number]['hits'] {
 }
 
 export const eventDetail: EventDetail = {
+  kind: 'regular',
+  label: null,
+  target_total: 50,
   event_date: '2026-09-13',
   round_type: 'super_sporting',
   round_type_source: 'stations',
@@ -286,6 +307,9 @@ export const eventDetail: EventDetail = {
 };
 
 export const attendanceOnlyDetail: EventDetail = {
+  kind: 'regular',
+  label: null,
+  target_total: 50,
   event_date: '2018-12-30',
   round_type: 'sporting',
   round_type_source: 'none',

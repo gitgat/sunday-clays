@@ -242,3 +242,127 @@ def test_leaderboard_echoes_since(fb: FrameBuilder) -> None:
     frames = fb.frames()
     assert leaderboard(frames, SEASON, LeaderboardMetric.ROUNDS, D1).since is None
     assert leaderboard(frames, SEASON, LeaderboardMetric.ROUNDS, D1, since=D1).since == D1
+
+
+def test_the_sundays_board_counts_special_sundays_and_score_boards_do_not(
+    fb: FrameBuilder,
+) -> None:
+    from sunday_clays.analytics import frames
+    from sunday_clays.analytics.leaderboards import make_leaderboard_frames
+
+    fb.shooter(1, "Ace, Amy").shooter(2, "Bee, Bob")
+    fb.day(D1, {1: 40}).day(D3, {1: 41})
+    rounds = fb.rounds()
+    special = pd.DataFrame(
+        [
+            {
+                "shooter_id": sid,
+                "event_date": D2,
+                "kind": "special",
+                "round_type": "sporting",
+                "display_name": name,
+                "shooter_status": "member",
+                "name_key": key,
+                "held": True,
+            }
+            for sid, name, key in [(1, "Ace, Amy", "ace amy"), (2, "Bee, Bob", "bee bob")]
+        ],
+        columns=list(frames.APPEARANCE_COLUMNS),
+    )
+    seen = pd.concat([frames.appearances_from_rounds(rounds), special], ignore_index=True)
+    lf = make_leaderboard_frames(rounds, fb.events(), fb.history(), seen)
+
+    sundays = leaderboard(lf, ALL, LeaderboardMetric.EVENTS, D3)
+    assert values(sundays) == {1: 3.0, 2: 1.0}
+    assert [r.display_name for r in sundays.records()] == ["Ace, Amy", "Bee, Bob"]
+    assert values(leaderboard(lf, ALL, LeaderboardMetric.BEST_SCORE, D3)) == {1: 41.0}
+    assert values(leaderboard(lf, ALL, LeaderboardMetric.ROUNDS, D3)) == {1: 2.0}
+    gauged = leaderboard(
+        lf, ALL, LeaderboardMetric.EVENTS, D3, LeaderboardFilters(gauge="unspecified")
+    )
+    assert values(gauged) == {1: 2.0}  # a gauge filter counts scored Sundays (Decision 7)
+
+
+def test_a_special_sheet_spelling_never_reorders_tied_score_rows(fb: FrameBuilder) -> None:
+    """The D6 tie key comes from scored rounds (Plan 17): a special-sheet spelling that sorts
+    before the shooter's own key (an alias-ruled first name) must not move tied rows."""
+    from sunday_clays.analytics import frames
+    from sunday_clays.analytics.leaderboards import make_leaderboard_frames
+
+    fb.shooter(1, "Ace, Amy").shooter(2, "Bee, Bob")
+    fb.day(D1, {1: 40, 2: 40})
+    rounds = fb.rounds()
+    special = pd.DataFrame(
+        [
+            {
+                "shooter_id": sid,
+                "event_date": D2,
+                "kind": "special",
+                "round_type": "sporting",
+                "display_name": name,
+                "shooter_status": "member",
+                "name_key": key,
+                "held": True,
+            }
+            # 2's sheet spelling sorts before "ace amy"; 3 shot only the special Sunday
+            for sid, name, key in [(2, "Bee, Bob", "aardvark bob"), (3, "Cy, Cal", "cy cal")]
+        ],
+        columns=list(frames.APPEARANCE_COLUMNS),
+    )
+    seen = pd.concat([frames.appearances_from_rounds(rounds), special], ignore_index=True)
+    plain = make_leaderboard_frames(rounds, fb.events(), fb.history())
+    with_special = make_leaderboard_frames(rounds, fb.events(), fb.history(), seen)
+
+    for lf in (plain, with_special):
+        board = leaderboard(lf, ALL, LeaderboardMetric.BEST_SCORE, D3)
+        assert [r.display_name for r in board.records()] == ["Ace, Amy", "Bee, Bob"]
+    sundays = leaderboard(with_special, ALL, LeaderboardMetric.EVENTS, D3)
+    assert [r.display_name for r in sundays.records()] == ["Bee, Bob", "Ace, Amy", "Cy, Cal"]
+    keys = dict(
+        zip(with_special.shooters["shooter_id"], with_special.shooters["sort_key"], strict=True)
+    )
+    assert keys == {1: "ace amy", 2: "bee bob", 3: "cy cal"}
+
+
+def test_the_sundays_board_honours_the_round_type_filter_over_appearances(
+    fb: FrameBuilder,
+) -> None:
+    from sunday_clays.analytics import frames
+    from sunday_clays.analytics.leaderboards import make_leaderboard_frames
+
+    fb.shooter(1, "Ace, Amy")
+    fb.day(D1, {1: 40})
+    rounds = fb.rounds()
+    special = pd.DataFrame(
+        [
+            {
+                "shooter_id": 1,
+                "event_date": D2,
+                "kind": "special",
+                "round_type": "super_sporting",
+                "display_name": "Ace, Amy",
+                "shooter_status": "member",
+                "name_key": "ace amy",
+                "held": True,
+            }
+        ],
+        columns=list(frames.APPEARANCE_COLUMNS),
+    )
+    seen = pd.concat([frames.appearances_from_rounds(rounds), special], ignore_index=True)
+    lf = make_leaderboard_frames(rounds, fb.events(), fb.history(), seen)
+
+    everything = leaderboard(lf, ALL, LeaderboardMetric.EVENTS, D3)
+    sporting = leaderboard(
+        lf, ALL, LeaderboardMetric.EVENTS, D3, LeaderboardFilters(round_types=(RoundType.SPORTING,))
+    )
+    super_only = leaderboard(
+        lf,
+        ALL,
+        LeaderboardMetric.EVENTS,
+        D3,
+        LeaderboardFilters(round_types=(RoundType.SUPER_SPORTING,)),
+    )
+
+    assert values(everything) == {1: 2.0}
+    assert values(sporting) == {1: 1.0}
+    assert values(super_only) == {1: 1.0}
