@@ -79,6 +79,8 @@ class ShooterExportOut(BaseModel):
 
 
 _PROFILE_SQL = text("SELECT display_name FROM shooter_profiles WHERE shooter_id = :s")
+# Regular Sundays only (Plan 17): a special Sunday such as the 3-Bird Shoot counts only as an
+# appearance, and its score (out of its own target total) is not a Sporting round to import.
 # COLLATE "C": byte order equals Python's codepoint order, which day_ordinals ranks by. The DB's
 # default collation (en_US.utf8 in postgres:17) ignores spaces, hyphens and apostrophes at the first
 # level, so it could list a day's ordinal 2 before its ordinal 1 after a merge.
@@ -88,7 +90,7 @@ SELECT r.id, r.event_date, r.name_key, r.ordinal, r.score, r.gauge_class, r.stat
        e.round_type
 FROM rounds r
 JOIN events e ON e.event_date = r.event_date
-WHERE r.shooter_id = :s
+WHERE r.shooter_id = :s AND e.kind = 'regular'
 ORDER BY r.event_date, r.ordinal, r.name_key COLLATE "C"
 """
 )
@@ -99,14 +101,17 @@ SELECT h.round_id, h.station_label, h.hits, l.target_count
 FROM station_hits h
 JOIN rounds r ON r.id = h.round_id
 JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
-WHERE r.shooter_id = :s
+JOIN events e ON e.event_date = r.event_date
+WHERE r.shooter_id = :s AND e.kind = 'regular'
 """
 )
 _LAYOUTS_SQL = text(
     """
 SELECT l.event_date, l.station_label
 FROM station_layouts l
-WHERE l.event_date IN (SELECT event_date FROM rounds WHERE shooter_id = :s)
+JOIN events e ON e.event_date = l.event_date
+WHERE e.kind = 'regular'
+  AND l.event_date IN (SELECT event_date FROM rounds WHERE shooter_id = :s)
 """
 )
 # Commits and rollbacks both change what is live; counting rollbacks keeps updated_at monotonic.
@@ -137,7 +142,10 @@ WHERE rule_type IN ('score_override', 'hide_round', 'round_type_override')
 
 
 def _rounds(session: Session, shooter_id: int, generated_at: datetime) -> list[ExportRoundOut]:
-    """Every live round of the shooter with its linked station hits; a fixed number of queries."""
+    """Every live regular-Sunday round of the shooter with its linked station hits.
+
+    A fixed number of queries. Special Sundays (Plan 17) are left out: see _ROUNDS_SQL.
+    """
     params = {"s": shooter_id}
     rounds = session.execute(_ROUNDS_SQL, params).all()
     hits: dict[int, list[tuple[str, int, int]]] = defaultdict(list)
