@@ -487,6 +487,8 @@ def _scores_station_findings(
             & (ImportStationHit.station_label == StationHit.station_label),
         )
         .join(ImportStationSheet, ImportStationSheet.id == StationHit.sheet_id)
+        .join(Import, Import.id == ImportStationSheet.import_id)
+        .where(Import.kind == FileKind.STATIONS.value)  # a special Sunday's sheet is its own
         .group_by(StationHit.event_date, StationHit.entry_row, StationHit.name_key)
         .order_by(StationHit.event_date, StationHit.entry_row)
     ).all()

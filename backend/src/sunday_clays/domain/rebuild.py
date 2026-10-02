@@ -1,6 +1,8 @@
 """Rebuild the live tables from the active imports and the active overlay rules (C4, C5)."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
+from collections.abc import Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -11,9 +13,18 @@ from sqlalchemy.orm import Session
 
 from sunday_clays.analytics.pipeline import bump_data_version
 from sunday_clays.domain.diff import RowKey, StagedScore, keyed_rows, representative_names
-from sunday_clays.domain.identity import identity_resolver, merge_map, resolve_shooter
+from sunday_clays.domain.identity import (
+    alias_rule_targets,
+    identity_resolver,
+    merge_map,
+    resolve_shooter,
+)
 from sunday_clays.domain.imports import (
+    SpecialSource,
+    _is_are,
+    _rows,
     active_scores_import,
+    active_special_sources,
     active_station_sources,
     load_staged_attendance,
     load_staged_scores,
@@ -60,6 +71,7 @@ LIVE_TABLES: tuple[str, ...] = tuple(str(model.__tablename__) for model in _LIVE
 # holds 7263001, domain.imports 7263002)
 REBUILD_LOCK_KEY = 7263003
 LEFT_CENSOR_DAYS = 56
+REGULAR_TARGETS = 50  # a regular Sunday's round; a special Sunday carries its own total
 # Inserts into tables with nullable columns pass execution_options(render_nulls=True): the ORM
 # bulk insert otherwise drops None keys and sends one statement per run of equal key sets.
 
@@ -93,14 +105,24 @@ def rebuild_live(session: Session) -> RebuildReport:
     rules = load_active_rules(session)
     merges = merge_map(session)
     active_id = active_scores_import(session)
-    rounds = _live_rounds(session, load_staged_scores(session, active_id), rules, merges, issues)
-    sources = active_station_sources(session)
+    specials = active_special_sources(session)
+    staged = _with_special_rows(session, load_staged_scores(session, active_id), specials, issues)
+    rounds = _live_rounds(session, staged, rules, merges, issues, specials.keys())
+    # a special Sunday's own sheet wins over a station workbook tab of the same date
+    sources = dict(
+        sorted(
+            {
+                **active_station_sources(session),
+                **{day: source.sheet_id for day, source in specials.items()},
+            }.items()
+        )
+    )
     layouts = _station_layouts(session, sources)
     attendance = load_staged_attendance(session, active_id)
-    n_events = _write_events(session, rounds, attendance, layouts, rules, issues)
+    n_events = _write_events(session, rounds, attendance, layouts, rules, issues, specials)
     _write_rounds(session, rounds)
     _write_station_data(session, sources, layouts, issues)
-    n_profiles = _write_profiles(session, rounds, rules, merges)
+    n_profiles = _write_profiles(session, rounds, rules, merges, specials.keys())
     _note_merged_same_day(rounds, issues)
     session.add_all(issues)
     session.flush()
@@ -155,12 +177,44 @@ def _rule_target_missing(
     )
 
 
+def _with_special_rows(
+    session: Session,
+    weekly: list[StagedScore],
+    specials: Mapping[date, SpecialSource],
+    issues: list[DataIssue],
+) -> list[StagedScore]:
+    """The scores import's rows minus any on a live special Sunday, plus every special row.
+
+    A special import owns its date (Decision 13): weekly rows on it are left out and reported.
+    """
+    left_out = Counter(row.event_date for row in weekly if row.event_date in specials)
+    for day, n in sorted(left_out.items()):
+        issues.append(
+            DataIssue(
+                code="special_event_date_conflict",
+                severity="warning",
+                event_date=day,
+                message=(
+                    f"{_rows(n)} in the scores workbook on {day} {_is_are(n)} left out: {day} is"
+                    f" the special shoot {specials[day].label!r}"
+                ),
+                details={"rows": n, "special_import_id": specials[day].import_id},
+            )
+        )
+    special_rows = [
+        row for source in specials.values() for row in load_staged_scores(session, source.import_id)
+    ]
+    kept = [row for row in weekly if row.event_date not in specials]
+    return [*kept, *special_rows]
+
+
 def _live_rounds(
     session: Session,
     staged: list[StagedScore],
     rules: ActiveRules,
     merges: dict[int, int],
     issues: list[DataIssue],
+    special_dates: AbstractSet[date] = frozenset(),
 ) -> list[_LiveRound]:
     """Visible rounds with overridden scores; ordinals come from the raw rows, before any rule.
 
@@ -187,16 +241,75 @@ def _live_rounds(
     visible = [(key, row) for key, row in by_key.items() if key not in hidden]
     names = representative_names(staged)
     first_dates: dict[str, date] = {}
+    # Special rows come after every weekly row, so a key's "first" date here is not always its
+    # earliest; harmless, because the date only matters to one-token keys, which carry their own
+    # '@date' (identity_key), and two-token keys ignore it.
     for row in staged:
         first_dates.setdefault(row.name_key, row.event_date)
-    shooter_ids: dict[str, int] = {}
-    for name_key in sorted({row.name_key for _, row in visible}):
+    # Weekly rows resolve exactly as before (Decision 15). A row on a special date goes to its
+    # key's alias_name rule target when there is one, else resolves like any other row.
+    ruled = alias_rule_targets(session) if special_dates else {}
+    weekly_keys = {row.name_key for _, row in visible if row.event_date not in special_dates}
+    special_keys = {row.name_key for _, row in visible if row.event_date in special_dates}
+
+    def resolved(name_key: str) -> int:
         shooter_id = resolve_shooter(session, names[name_key], first_dates[name_key])
-        shooter_ids[name_key] = merges.get(shooter_id, shooter_id)
-    return [
-        _LiveRound(row, key[2], scores.get(key, row.score), shooter_ids[row.name_key])
+        return merges.get(shooter_id, shooter_id)
+
+    shooter_ids = {name_key: resolved(name_key) for name_key in sorted(weekly_keys)}
+    special_ids = {
+        name_key: (
+            merges.get(ruled[name_key], ruled[name_key])
+            if name_key in ruled
+            else resolved(name_key)
+        )
+        for name_key in sorted(special_keys)
+    }
+    live = [
+        _LiveRound(
+            row,
+            key[2],
+            scores.get(key, row.score),
+            (special_ids if row.event_date in special_dates else shooter_ids)[row.name_key],
+        )
         for key, row in sorted(visible, key=lambda item: (item[1].event_date, item[1].row_number))
     ]
+    return _one_round_per_special_shooter(live, special_dates, issues)
+
+
+def _one_round_per_special_shooter(
+    rounds: list[_LiveRound], special_dates: AbstractSet[date], issues: list[DataIssue]
+) -> list[_LiveRound]:
+    """P17-R3: a special date keeps each shooter's first round (lowest row_number).
+
+    Alias rules and merges can map two sheet names to one shooter; every dropped repeat is
+    reported as a special_duplicate_shooter warning.
+    """
+    kept: list[_LiveRound] = []
+    seen: dict[tuple[date, int], _LiveRound] = {}
+    for rnd in rounds:  # sorted by (event_date, row_number)
+        slot = (rnd.row.event_date, rnd.shooter_id)
+        if rnd.row.event_date not in special_dates or slot not in seen:
+            seen[slot] = rnd
+            kept.append(rnd)
+            continue
+        issues.append(
+            DataIssue(
+                code="special_duplicate_shooter",
+                severity="warning",
+                event_date=rnd.row.event_date,
+                message=(
+                    f"{rnd.row.event_date} is a special shoot with one round per shooter:"
+                    f" the repeat under {rnd.row.name_key!r} is left out"
+                ),
+                details={
+                    "event_date": rnd.row.event_date.isoformat(),
+                    "shooter_id": rnd.shooter_id,
+                    "name_keys": [rnd.row.name_key],
+                },
+            )
+        )
+    return kept
 
 
 def _station_layouts(
@@ -235,7 +348,9 @@ def _write_events(
     layouts: dict[date, list[tuple[StationLayoutEntry, int]]],
     rules: ActiveRules,
     issues: list[DataIssue],
+    specials: Mapping[date, SpecialSource] | None = None,
 ) -> int:
+    specials = specials or {}
     n_rounds: dict[date, int] = defaultdict(int)
     shooters: dict[date, set[int]] = defaultdict(set)
     for rnd in rounds:
@@ -248,8 +363,11 @@ def _write_events(
         n_shooters = len(shooters[d])
         has_scores = n_rounds[d] > 0
         complete = has_scores and (head_count is None or n_shooters >= 0.5 * head_count)
+        special = specials.get(d)
         if d in rules.round_types:
             round_type, source = rules.round_types[d][1], "override"
+        elif special is not None:
+            round_type, source = RoundType.SPORTING, "none"  # Decision 16
         elif d in layouts:
             round_type, source = classify_round_type([e for e, _ in layouts[d]]), "stations"
         else:
@@ -265,6 +383,9 @@ def _write_events(
                 "has_scores": has_scores,
                 "has_stations": d in layouts,
                 "results_complete": complete,
+                "kind": "regular" if special is None else "special",
+                "label": None if special is None else special.label,
+                "target_total": REGULAR_TARGETS if special is None else special.target_total,
             }
         )
         if has_scores and not complete:
@@ -430,7 +551,11 @@ def _station_issue(finding: Finding, shooter_id: int | None, details: dict[str, 
 
 
 def _write_profiles(
-    session: Session, rounds: list[_LiveRound], rules: ActiveRules, merges: dict[int, int]
+    session: Session,
+    rounds: list[_LiveRound],
+    rules: ActiveRules,
+    merges: dict[int, int],
+    special_dates: AbstractSet[date] = frozenset(),
 ) -> int:
     if not rounds:
         return 0
@@ -456,7 +581,8 @@ def _write_profiles(
                 "status": statuses.get(shooter_id, _profile_status(own)),
                 "first_event": first_event,
                 "last_event": max(dates),
-                "n_rounds": len(own),
+                # Sundays shot count every appearance; rounds count scored (regular) rounds only
+                "n_rounds": sum(1 for r in own if r.row.event_date not in special_dates),
                 "n_events": len(dates),
                 "left_censored": first_event < earliest + timedelta(days=LEFT_CENSOR_DAYS),
             }
