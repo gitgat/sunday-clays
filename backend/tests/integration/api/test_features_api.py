@@ -45,6 +45,11 @@ def test_admin_sees_every_key(admin_client: TestClient) -> None:
     assert set(switches.values()) == {False}
 
 
+def test_features_without_a_session_is_401(anon_client: TestClient) -> None:
+    anon_client.cookies.clear()
+    assert anon_client.get("/api/features").status_code == 401
+
+
 def test_features_is_no_store_and_never_tagged(viewer_client: TestClient) -> None:
     response = viewer_client.get("/api/features")
     assert response.headers["cache-control"] == "no-store"

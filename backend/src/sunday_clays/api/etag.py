@@ -22,9 +22,12 @@ NO_ETAG_PREFIXES: tuple[str, ...] = (
     "/api/auth/",
     "/api/admin/",
     "/api/predictions/",
-    "/api/features",  # Plan 19 D3: switches change without a data_version bump
+    "/api/features/",
 )
-NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/", "/api/features")
+NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/", "/api/features/")
+# Plan 19 D3: switches change without a data_version bump. Matched exactly (plus the "/"
+# prefixes above), so a sibling such as /api/features-x is not swept in.
+SWITCH_PATH = "/api/features"
 # Plan 15: fist-bump counts change without a data_version bump, so a data_version ETag would
 # answer 304 with stale counts. They are never tagged and never stored.
 NO_STORE_SUFFIXES: tuple[str, ...] = ("/bumps",)
@@ -35,6 +38,7 @@ def etag_eligible(method: str, path: str) -> bool:
     return (
         method == "GET"
         and path.startswith("/api/")
+        and path != SWITCH_PATH
         and not path.startswith(NO_ETAG_PREFIXES)
         and not path.endswith(NO_STORE_SUFFIXES)
     )
@@ -42,8 +46,10 @@ def etag_eligible(method: str, path: str) -> bool:
 
 def cache_control_for(path: str) -> str | None:
     """`no-store` for auth, admin and bump counts, `private, no-cache` for other /api paths."""
-    if path.startswith(NO_STORE_PREFIXES) or (
-        path.startswith("/api/") and path.endswith(NO_STORE_SUFFIXES)
+    if (
+        path == SWITCH_PATH
+        or path.startswith(NO_STORE_PREFIXES)
+        or (path.startswith("/api/") and path.endswith(NO_STORE_SUFFIXES))
     ):
         return "no-store"
     if path == "/api" or path.startswith("/api/"):

@@ -1,9 +1,11 @@
 """R1 for the Features page copy: no he/she/his/her/him/hers/himself/herself and no "class"."""
 
+from typing import get_args
+
 import pytest
 
 from sunday_clays.analytics.insights.lints import lint_text
-from sunday_clays.domain.features import FEATURES, Feature
+from sunday_clays.domain.features import FEATURES, Feature, FeatureKey
 
 BANNED_CODES = ("pronoun", "class")
 
@@ -30,3 +32,9 @@ def test_the_registry_holds_exactly_the_six_feature_keys_in_order() -> None:
         "club_milestones",
         "summary_card",
     ]
+
+
+def test_the_registry_covers_every_feature_key_exactly_once() -> None:
+    keys = [f.key for f in FEATURES]
+    assert len(keys) == len(set(keys))
+    assert set(keys) == set(get_args(FeatureKey))

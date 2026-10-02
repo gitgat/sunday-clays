@@ -48,9 +48,17 @@ def test_a_stored_true_is_on(session: Session) -> None:
     assert features.read_switches(session, _settings())["summary_card"] is True
 
 
-@pytest.mark.parametrize("raw", ['"on"', '{"enabled": "yes"}', "null", '{"updated_at": "x"}'])
+@pytest.mark.parametrize(
+    ("raw", "leaked"),
+    [
+        ('"on"', '"on"'),
+        ('{"enabled": "yes"}', "yes"),
+        ("null", "null"),
+        ('{"updated_at": "x"}', "updated_at"),
+    ],
+)
 def test_a_corrupt_value_reads_as_off_with_one_warning_naming_the_key_only(
-    session: Session, caplog: pytest.LogCaptureFixture, raw: str
+    session: Session, caplog: pytest.LogCaptureFixture, raw: str, leaked: str
 ) -> None:
     _put_raw(session, "tour_glossary", raw)
     with caplog.at_level(logging.WARNING, logger="sunday_clays.domain.features"):
@@ -58,10 +66,10 @@ def test_a_corrupt_value_reads_as_off_with_one_warning_naming_the_key_only(
     assert switches["tour_glossary"] is False  # corrupt is off, never the default
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
-    assert "tour_glossary" in warnings[0].getMessage()
     message = warnings[0].getMessage()
-    assert "yes" not in message
-    assert '"on"' not in message
+    assert message == "feature switch tour_glossary has a corrupt value; reading it as off"
+    assert leaked not in message
+    assert raw not in message
 
 
 def test_an_unknown_key_is_feature_not_found(session: Session) -> None:

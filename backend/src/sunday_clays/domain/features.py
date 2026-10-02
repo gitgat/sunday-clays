@@ -77,8 +77,8 @@ FEATURES: Final[tuple[Feature, ...]] = (
     ),
 )
 _BY_KEY: Final[dict[str, Feature]] = {f.key: f for f in FEATURES}
-if set(_BY_KEY) != set(get_args(FeatureKey)):  # pragma: no cover - import-time guard
-    raise RuntimeError("FEATURES must list every FeatureKey once")
+if set(_BY_KEY) != set(get_args(FeatureKey)):
+    raise RuntimeError("FEATURES must list every FeatureKey once")  # pragma: no cover
 
 
 class FeatureSwitchOut(BaseModel):
@@ -132,9 +132,11 @@ def _rows(session: Session) -> dict[str, Any]:
     return {str(k).removeprefix(KEY_PREFIX): v for k, v in result}
 
 
-def _state(rows: dict[str, Any], settings: Settings, f: Feature) -> tuple[bool, datetime | None]:
+def _state(
+    rows: dict[str, Any], default_on: frozenset[str], f: Feature
+) -> tuple[bool, datetime | None]:
     if f.key not in rows:
-        return f.key in _default_on(settings), None
+        return f.key in default_on, None
     stored = _stored(rows[f.key], f.key)
     return (False, None) if stored is None else stored
 
@@ -142,7 +144,8 @@ def _state(rows: dict[str, Any], settings: Settings, f: Feature) -> tuple[bool, 
 def read_switches(session: Session, settings: Settings) -> dict[FeatureKey, bool]:
     """Every registered key with its effective value (one SELECT)."""
     rows = _rows(session)
-    return {f.key: _state(rows, settings, f)[0] for f in FEATURES}
+    default_on = _default_on(settings)
+    return {f.key: _state(rows, default_on, f)[0] for f in FEATURES}
 
 
 def switch_on(session: Session, settings: Settings, key: FeatureKey) -> bool:
@@ -162,7 +165,8 @@ def _out(f: Feature, enabled: bool, updated: datetime | None, tz: str) -> Featur
 
 def list_switches(session: Session, settings: Settings) -> list[FeatureSwitchOut]:
     rows = _rows(session)
-    return [_out(f, *_state(rows, settings, f), settings.timezone) for f in FEATURES]
+    default_on = _default_on(settings)
+    return [_out(f, *_state(rows, default_on, f), settings.timezone) for f in FEATURES]
 
 
 _UPSERT = text(
