@@ -162,6 +162,80 @@ def test_select_records_a_pick(paths):
     }
 
 
+def test_select_can_reuse_another_selection(paths):
+    paths["selection"].write_text(json.dumps({"doubleheader": {"art_key": "doubleheader", "metal": None, "seed": 1}}))
+    assert run(paths, "select", "bonus", "-", "--reuse", "doubleheader") == 0
+    assert json.loads(paths["selection"].read_text())["bonus"] == {
+        "art_key": "bonus",
+        "metal": None,
+        "reuse": "doubleheader",
+    }
+
+
+def test_select_reuse_needs_an_existing_plain_selection(paths):
+    paths["selection"].write_text(
+        json.dumps(
+            {
+                "doubleheader": {"art_key": "doubleheader", "metal": None, "seed": 1},
+                "bonus": {"art_key": "bonus", "metal": None, "reuse": "doubleheader"},
+            }
+        )
+    )
+    assert run(paths, "select", "other", "-", "--reuse", "missing") == 1
+    assert run(paths, "select", "other", "-", "--reuse", "bonus") == 1
+    assert run(paths, "select", "other", "-") == 2
+    assert run(paths, "select", "other", "-", "5", "--reuse", "doubleheader") == 2
+
+
+def _select_doubleheader_and_bonus(paths):
+    target = paths["out"] / "candidates" / "doubleheader"
+    target.mkdir(parents=True)
+    (target / "1.png").write_bytes(png_bytes())
+    assert run(paths, "select", "doubleheader", "-", "1") == 0
+    assert run(paths, "select", "bonus", "-", "--reuse", "doubleheader") == 0
+
+
+def _gen(paths) -> str:
+    return (paths["repo"] / "frontend" / "src" / "features" / "achievements" / "trophyArt.gen.ts").read_text()
+
+
+def test_build_points_a_reused_key_at_its_sources_files_without_new_art(paths):
+    _select_doubleheader_and_bonus(paths)
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 0
+    public = paths["repo"] / "frontend" / "public" / "trophies"
+    assert not (public / "bonus.webp").exists()
+    assert not (public / "bonus@128.webp").exists()
+    assert (
+        "  bonus: {\n    src: '/trophies/doubleheader.webp',\n    src128: '/trophies/doubleheader@128.webp',\n  },\n"
+    ) in _gen(paths)
+
+
+def test_manifest_command_rebuilds_the_ts_from_built_files_without_candidates(paths):
+    _select_doubleheader_and_bonus(paths)
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 0
+    built = _gen(paths)
+    gen = paths["repo"] / "frontend" / "src" / "features" / "achievements" / "trophyArt.gen.ts"
+    gen.write_text("stale\n")
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 0
+    assert _gen(paths) == built
+
+
+def test_manifest_command_fails_when_a_referenced_file_is_missing(paths):
+    _select_doubleheader_and_bonus(paths)
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 1
+    public = paths["repo"] / "frontend" / "public" / "trophies"
+    public.mkdir(parents=True)
+    (public / "doubleheader.webp").write_bytes(b"x")
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 1
+    (public / "doubleheader@128.webp").write_bytes(b"x")
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 0
+
+
+def test_build_fails_when_a_reused_source_is_not_selected(paths):
+    paths["selection"].write_text(json.dumps({"bonus": {"art_key": "bonus", "metal": None, "reuse": "gone"}}))
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 1
+
+
 def test_select_rejects_missing_candidates_and_unknown_metals(paths):
     assert run(paths, "select", "doubleheader", "-", "9") == 1
     assert run(paths, "select", "doubleheader", "copper", "9") == 2
@@ -289,3 +363,25 @@ def test_generate_prints_the_servers_validation_detail_on_422(paths, imagen_env,
     create.mock(return_value=httpx.Response(422, json={"detail": [{"msg": "steps: must be >= 1"}]}))
     assert run(paths, "generate") == 1
     assert "HTTP 422: [{'msg': 'steps: must be >= 1'}]" in capsys.readouterr().err
+
+
+def test_select_rejects_a_reuse_of_its_own_stem_and_keeps_the_pick(paths):
+    pick = {"doubleheader": {"art_key": "doubleheader", "metal": None, "seed": 1}}
+    paths["selection"].write_text(json.dumps(pick))
+    assert run(paths, "select", "doubleheader", "-", "--reuse", "doubleheader") == 1
+    assert json.loads(paths["selection"].read_text()) == pick
+
+
+def test_build_and_manifest_reject_a_hand_edited_self_reuse(paths, capsys):
+    paths["selection"].write_text(json.dumps({"rain": {"art_key": "rain", "metal": None, "seed": 5, "reuse": "rain"}}))
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 1
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 1
+    assert "rain reuses rain" in capsys.readouterr().err
+
+
+def test_build_counts_only_the_trophies_it_built(paths, capsys):
+    _select_doubleheader_and_bonus(paths)
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 0
+    out = capsys.readouterr().out
+    assert "built 1 trophies" in out
+    assert "1 reused" in out

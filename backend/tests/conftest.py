@@ -432,7 +432,7 @@ def _clear_analytics_cache() -> None:
 
 # --- Plan 17 T1: special-event workbooks ------------------------------------------------------
 SPECIAL_SUNDAY = date(2026, 9, 20)  # the fixture has no Sunday on this date
-SPECIAL_LABEL = "Three Clay Shoot"
+SPECIAL_LABEL = "3-Bird Shoot"
 SPECIAL_ENTRIES: tuple[tuple[str, tuple[int, ...]], ...] = (
     ("Hadley, Ike", (6, 5, 6, 4, 6, 5, 6, 6, 5, 6)),  # 55
     ("Kaplan, Noel", (6, 5, 5, 5, 6, 5, 5, 5, 4, 5)),  # 51
