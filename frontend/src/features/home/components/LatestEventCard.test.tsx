@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { expectExplainer } from '../../../test/charts';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
+import { specialDetail } from '../../events/mocks';
 import { homeMeta, latestEvent } from '../mocks';
 import { attendanceText, LatestEventCard, winners } from './LatestEventCard';
 
@@ -46,6 +47,23 @@ describe('LatestEventCard', () => {
       'href',
       '/events/2026-09-27',
     );
+  });
+
+  it('a special latest Sunday shows its tag, label and top score of the total, no blank stats', async () => {
+    server.use(
+      http.get('*/api/meta', () => HttpResponse.json(homeMeta)),
+      http.get('*/api/events/:date', () =>
+        HttpResponse.json({ ...specialDetail, label: 'Flurry', target_total: 75 }),
+      ),
+    );
+    renderWithProviders(<LatestEventCard />);
+    expect(await screen.findByText('Flurry · Special · 75 targets')).toBeInTheDocument();
+    expect(screen.getByText(/Top score: Hadley, Ike — \d+ of 75/)).toBeInTheDocument();
+    expect(screen.getByText('Shooters')).toBeInTheDocument();
+    expect(screen.queryByText('Median')).not.toBeInTheDocument();
+    expect(screen.queryByText('Top score')).not.toBeInTheDocument();
+    expect(screen.getByText(/Special shoots are not ranked or rated/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Full results' })).toBeInTheDocument();
   });
 
   it('is titled Latest Sunday and explains each number', async () => {

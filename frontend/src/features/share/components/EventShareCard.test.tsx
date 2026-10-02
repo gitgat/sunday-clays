@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { attendanceOnlyDetail, eventDetail } from '../../events/mocks';
+import { attendanceOnlyDetail, eventDetail, specialDetail } from '../../events/mocks';
 import type { EventDetail } from '../../events/api';
 import { EventShareCard } from './EventShareCard';
 
@@ -52,5 +52,22 @@ describe('EventShareCard', () => {
     ).toBeInTheDocument();
     rerender(<EventShareCard event={{ ...attendanceOnlyDetail, head_count: null }} />);
     expect(screen.getByText('No scores recorded.')).toBeInTheDocument();
+  });
+
+  it('a special Sunday shows its label, total and as-entered results, never Sporting', () => {
+    render(<EventShareCard event={{ ...specialDetail, label: 'Flurry', target_total: 75 }} />);
+    expect(screen.getByText('Flurry · Special · 75 targets · 3 shooters')).toBeInTheDocument();
+    expect(screen.queryByText(/Sporting/)).not.toBeInTheDocument();
+    const rows = within(screen.getByRole('list')).getAllByRole('listitem');
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringMatching(/^Hadley, Ike\d+ of 75$/),
+      expect.stringMatching(/^Kaplan, Noel\d+ of 75$/),
+      expect.stringMatching(/^Kim, Pat\d+ of 75$/),
+    ]);
+  });
+
+  it('a special Sunday without a name reads Special · N targets', () => {
+    render(<EventShareCard event={{ ...specialDetail, label: null, target_total: 75 }} />);
+    expect(screen.getByText('Special · 75 targets · 3 shooters')).toBeInTheDocument();
   });
 });
