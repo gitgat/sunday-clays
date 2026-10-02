@@ -136,7 +136,7 @@ Plan 19 owns the mechanism: the admin **Features** page, the `app_state` storage
 | Piece | Name (Plan 19) | Use here |
 |---|---|---|
 | Registry | `domain/features.py` `FEATURES` tuple and `FeatureKey` | gains `Feature(key="events", label=…, description=…)` |
-| Backend gate | `api/routes/_features.py` `feature_gate("events")` | router-level dependency of `api/routes/club_events.py`: `APIRouter(prefix="/api/club-events", dependencies=[Depends(require_viewer), Depends(feature_gate("events"))])` |
+| Backend gate | `api/routes/_features.py` `feature_gate("events")` | router-level dependency of `api/routes/club_events.py`: `APIRouter(prefix="/api/club-events", dependencies=[feature_gate("events")])` (Plan 19's `feature_gate` returns `Depends(gate)` and `gate` depends on `require_viewer`; discovery adds `require_viewer` too) |
 | Frontend hook | `lib/features.ts` `useFeature('events')` → `{ visible, preview, on }` | Home card, About bullets, the "Admin preview" badge |
 | Route gate | `<FeatureGate feature="events">` (`components/FeatureGate.tsx`) | wraps both lazy pages in `features/club-events/routes.tsx` |
 | Nav key | `NavItem.feature: 'events'` | the "Club events" nav item |
