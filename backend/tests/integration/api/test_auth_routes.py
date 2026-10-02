@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from sunday_clays.api.app import create_app
 from sunday_clays.api.routes import auth as auth_routes
+from sunday_clays.auth.deps import fingerprint
 from sunday_clays.auth.sessions import COOKIE_NAME, Role, issue_session
 from sunday_clays.config import Settings, get_settings
 from sunday_clays.db import SessionFactory
@@ -120,7 +121,9 @@ def real_session_client(auth_env: Settings, engine: Engine) -> Iterator[TestClie
     finally:
         SessionFactory.configure(bind=previous_bind)
         with engine.begin() as conn:
-            conn.execute(delete(ATTEMPTS).where(ATTEMPTS.c.ip == REAL_SESSION_PROBE_IP))
+            conn.execute(
+                delete(ATTEMPTS).where(ATTEMPTS.c.ip == fingerprint(REAL_SESSION_PROBE_IP))
+            )
 
 
 def test_failed_attempt_row_persists_after_401(
@@ -136,9 +139,11 @@ def test_failed_attempt_row_persists_after_401(
     assert response.status_code == 401
     with engine.connect() as conn:
         rows = conn.execute(
-            select(ATTEMPTS.c.ip, ATTEMPTS.c.success).where(ATTEMPTS.c.ip == REAL_SESSION_PROBE_IP)
+            select(ATTEMPTS.c.ip, ATTEMPTS.c.success).where(
+                ATTEMPTS.c.ip == fingerprint(REAL_SESSION_PROBE_IP)
+            )
         ).all()
-    assert [tuple(r) for r in rows] == [(REAL_SESSION_PROBE_IP, False)]
+    assert [tuple(r) for r in rows] == [(fingerprint(REAL_SESSION_PROBE_IP), False)]
 
 
 def test_login_holds_no_pooled_connection_while_waiting_for_and_running_a_verify(
