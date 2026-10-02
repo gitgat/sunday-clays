@@ -575,6 +575,48 @@ describe('ProfileCharts', () => {
       ).toEqual(['2026-09', '4']);
     });
 
+    it('keeps a special shoot under the sporting round-type filter, which it counts as', async () => {
+      const user = userEvent.setup();
+      server.use(http.get('*/api/shooters/:id/special', () => HttpResponse.json(hadleySpecials)));
+      renderWithProviders(<ProfileCharts shooterId={3} />, {
+        route: '/shooters/3?rt=sporting',
+      });
+      expect(await calendarRows(user)).toContainEqual(['2026-09-20', 'special']);
+    });
+
+    it('hides a special shoot from the calendar under the super sporting filter (P17-R5)', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('*/api/events', () =>
+          HttpResponse.json([...held(['2026-09-13']), special('2026-09-20')]),
+        ),
+        http.get('*/api/shooters/:id/special', () => HttpResponse.json(hadleySpecials)),
+      );
+      renderWithProviders(<ProfileCharts shooterId={3} />, {
+        route: '/shooters/3?rt=super_sporting',
+      });
+      const rows = await calendarRows(user);
+      expect(rows.map(([date]) => date)).not.toContain('2026-09-20');
+      expect(rows.flat()).not.toContain('special');
+    });
+
+    it('leaves a special shoot out of Sundays shot per month under the super sporting filter', async () => {
+      const user = userEvent.setup();
+      server.use(http.get('*/api/shooters/:id/special', () => HttpResponse.json(hadleySpecials)));
+      renderWithProviders(<ProfileCharts shooterId={3} />, {
+        route: '/shooters/3?cal.view=month&rt=super_sporting',
+      });
+      const table = await openTable(user, 'Sundays shot per month');
+      const sep = within(table).queryByRole('row', { name: /2026-09/ });
+      const cells = sep
+        ? within(sep)
+            .getAllByRole('cell')
+            .map((c) => c.textContent)
+        : [];
+      expect(cells).not.toEqual(['2026-09', '4']);
+      expect(cells).not.toContain('special');
+    });
+
     it('still draws the calendar when the special shoots cannot load', async () => {
       const user = userEvent.setup();
       server.use(

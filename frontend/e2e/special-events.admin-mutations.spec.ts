@@ -135,7 +135,15 @@ test('a special shoot: preview, commit, every page at both sizes, unchanged scor
       await expectNoSideScroll(page);
 
       await page.goto(`/events/${DATE}`);
-      await expect(page.getByText(`${LABEL} · Special · 60 targets`)).toBeVisible();
+      const header = page
+        .locator('header')
+        .filter({ has: page.getByRole('heading', { level: 1 }) });
+      await expect(header.getByText(`${LABEL} · Special · 60 targets`)).toBeVisible();
+      // The shareable card carries the same line and the scores out of the total, never "Sporting".
+      const share = page.getByRole('region', { name: 'Shareable results card' });
+      await expect(share).toContainText(`${LABEL} · Special · 60 targets · 5 shooters`);
+      await expect(share).toContainText('55 of 60');
+      await expect(share).not.toContainText('Sporting');
       await expect(
         page.getByRole('note').filter({ hasText: 'counts as a Sunday shot' }),
       ).toBeVisible();

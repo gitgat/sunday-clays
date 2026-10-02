@@ -59,4 +59,12 @@ describe('home explainers', () => {
     }
     expect(homeExplainers.latestMedian.scope).toBeUndefined();
   });
+
+  it('says special shoots are left out of clays broken and counted as Sundays', () => {
+    const text = homeExplainers.meOdometer.computed.join(' ');
+    expect(text).toContain(
+      'Clays broken: every regular Sunday score you have shot, added up, second rounds included; special shoots are left out.',
+    );
+    expect(text).toContain('special shoots included');
+  });
 });

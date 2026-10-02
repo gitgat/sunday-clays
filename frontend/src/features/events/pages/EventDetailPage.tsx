@@ -26,8 +26,7 @@ import {
   isSpecial,
   neighbourSundays,
   roundTypeLabel,
-  specialName,
-  specialTag,
+  specialLine,
   targetsOf,
 } from '../format';
 import { eventSections, sectionsAt } from '../sections';
@@ -53,12 +52,6 @@ export function attendanceOnlyTitle(headCount: number | null): string {
 /** Decision 20: the counting rule, in neutral words. */
 const SPECIAL_NOTE =
   'A special shoot counts as a Sunday shot for everyone who came, so it keeps streaks going. Its scores stay out of averages, best scores, records and leaderboards.';
-
-/** "3-Bird Shoot · Special · 60 targets" (the name is left out when the sheet gave none). */
-function specialHeader(event: EventDetail): string {
-  const name = specialName(event);
-  return `${name === null ? '' : `${name} · `}${specialTag(event)} targets`;
-}
 
 function SpecialEvent({ event }: { event: EventDetail }) {
   useScrollToTarget('results', true);
@@ -217,7 +210,7 @@ function EventDetailView({ event, sections }: { event: EventDetail; sections: Ev
         <h1 className="text-2xl font-medium">{formatDay(event.event_date)}</h1>
         <p className="text-text-muted">
           {special ? (
-            <span>{specialHeader(event)}</span>
+            <span>{specialLine(event)}</span>
           ) : (
             <>
               <span>{roundTypeLabel(event.round_type)}</span>

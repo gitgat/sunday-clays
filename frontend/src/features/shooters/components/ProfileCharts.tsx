@@ -490,9 +490,12 @@ function AttendanceCalendar({ shooterId }: { shooterId: number }) {
   const query = useShooterRounds(shooterId);
   // Plan 17: special shoots count as Sundays shot (an error leaves them out rather than blocking).
   const specials = useShooterSpecials(shooterId);
+  // P17-R5: a special shoot is a sporting Sunday, so the round-type filter keeps or hides it.
+  const [roundTypes] = useRoundTypes();
+  const keepSpecials = roundTypes.length === 0 || roundTypes.includes('sporting');
   const specialDates = useMemo(
-    () => (specials.data ?? []).map((s) => s.event_date),
-    [specials.data],
+    () => (keepSpecials ? (specials.data ?? []).map((s) => s.event_date) : []),
+    [specials.data, keepSpecials],
   );
   // `calYear`, not `cal`: the ChartFrame below keeps its Table/Fullscreen view state under urlKey "cal" (C10).
   const [yearParam, setYear] = useUrlState('calYear', intCodec, 0);
