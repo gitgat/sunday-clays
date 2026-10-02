@@ -110,7 +110,10 @@ services:
   # Pull-based auto-deployer (Plan 13; deploy/README.md "Automatic deploys"). The only service
   # allowed the Docker socket and a manager placement (scripts/check_stack.py). It never updates
   # db or itself; `docker stack deploy` refreshes it. Any manager will do, Pi or VM: the image is
-  # multi-arch like the others.
+  # multi-arch like the others. Its state (state.json, deploy.lock) is a bind under
+  # /var/data/sunday-clays/deployer, NFS-shared by every node, never a named volume: it survives the
+  # task moving to another manager, and `deployer.py pause|resume|tag|status` can run from any manager
+  # as a one-off container on that directory (deploy/README.md "Automatic deploys").
   deployer:
     image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-deployer:${IMAGE_TAG:?IMAGE_TAG is required}
     environment:
@@ -121,7 +124,7 @@ services:
     secrets: [deployer_github_token, deployer_ghcr_token]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - deployer-state:/state
+      - /var/data/sunday-clays/deployer:/state
     stop_grace_period: 30s
     deploy:
       replicas: 1
@@ -135,9 +138,6 @@ services:
           memory: 256M
       restart_policy:
         condition: any
-
-volumes:
-  deployer-state:
 
 networks:
   traefik_public:

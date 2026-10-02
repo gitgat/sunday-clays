@@ -43,6 +43,10 @@ ARCH_PINNED: frozenset[str] = frozenset()
 DEPLOYER = "deployer"
 MANAGER = "node.role==manager"
 DOCKER_SOCKETS = ("/var/run/docker.sock", "/run/docker.sock")
+# Owner rule: persistent data is never on a Docker named volume. The deployer's state is a bind under
+# the NFS-shared DATA_ROOT, so it survives the task moving to another manager.
+DEPLOYER_STATE_SOURCE = DATA_ROOT + "deployer"
+DEPLOYER_STATE_TARGET = "/state"
 PUBLIC_EDGE = "edge_public"
 CLOUDFLARE_IP = "CF-Connecting-IP"
 ROUTER_LABEL = re.compile(r"^traefik\.http\.routers\.([^.]+)\.rule$")
@@ -104,6 +108,39 @@ def _bind_sources(service: dict[str, Any]) -> list[str]:
     return sources
 
 
+def _binds(service: dict[str, Any]) -> list[tuple[str, str]]:
+    """(source, target) of every bind mount, long or short syntax."""
+    binds = []
+    for volume in service.get("volumes") or []:
+        if isinstance(volume, dict) and volume.get("type") == "bind":
+            binds.append((str(volume.get("source", "")), str(volume.get("target", ""))))
+        elif isinstance(volume, str) and volume.startswith("/") and ":" in volume:
+            source, _, rest = volume.partition(":")
+            binds.append((source, rest.split(":", 1)[0]))
+    return binds
+
+
+def _named_volume_rule(name: str, service: dict[str, Any]) -> list[str]:
+    """No named (or anonymous) volumes: a non-bind `volume` mount, or a short string whose source
+    does not start with `/`."""
+    problems: list[str] = []
+    for volume in service.get("volumes") or []:
+        if isinstance(volume, dict):
+            if volume.get("type", "volume") == "volume":
+                label = volume.get("source") or volume.get("target")
+                problems.append(f"{name}: named volume {str(label)!r} is not allowed")
+        elif isinstance(volume, str) and (":" not in volume or not volume.startswith("/")):
+            label = volume.split(":", 1)[0]
+            problems.append(f"{name}: named volume {label!r} is not allowed")
+    return problems
+
+
+def _deployer_state_rule(service: dict[str, Any]) -> list[str]:
+    if (DEPLOYER_STATE_SOURCE, DEPLOYER_STATE_TARGET) in _binds(service):
+        return []
+    return [f"{DEPLOYER}: must bind {DEPLOYER_STATE_SOURCE} to {DEPLOYER_STATE_TARGET}"]
+
+
 def _release_registry() -> str:
     """The registry the stack pulls from: SC_REGISTRY (as exported for the render) or the fleet's."""
     return os.environ.get("SC_REGISTRY") or FLEET_REGISTRY
@@ -150,10 +187,12 @@ def _socket_and_manager_rules(
         problems.append(f"{name}: deploy.replicas must be 1")
     if DOCKER_SOCKETS[0] not in binds:
         problems.append(f"{name}: needs a bind mount of {DOCKER_SOCKETS[0]}")
+    problems += _deployer_state_rule(service)
     problems += [
-        f"{name}: bind mount {s!r} is not allowed (only {DOCKER_SOCKETS[0]})"
+        f"{name}: bind mount {s!r} is not allowed (only {DOCKER_SOCKETS[0]} and "
+        f"{DEPLOYER_STATE_SOURCE})"
         for s in binds
-        if s != DOCKER_SOCKETS[0]
+        if s not in (DOCKER_SOCKETS[0], DEPLOYER_STATE_SOURCE)
     ]
     if service.get("ports"):
         problems.append(f"{name}: must not publish ports")
@@ -192,6 +231,7 @@ def violations(stack: dict[str, Any]) -> list[str]:
                 problems.append(f"{name}: deploy.replicas must be 1")
             if not any(source.startswith(DATA_ROOT) for source in _bind_sources(service)):
                 problems.append(f"{name}: needs a bind mount under {DATA_ROOT}")
+        problems += _named_volume_rule(name, service)
         problems.extend(_socket_and_manager_rules(name, service, constraints))
     if len(pinned_to) > 1:
         problems.append(f"db and backup must be pinned to one node, not {sorted(pinned_to)}")
