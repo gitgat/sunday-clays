@@ -258,7 +258,7 @@ def feed_home(
 
 
 def _edge(row: InsightRow) -> float:
-    return float(row.params.get("mine", 0)) - float(row.params.get("field", 0))
+    return float(row.params["mine"]) - float(row.params["field"])
 
 
 def one_specialist_per_station(rows: Sequence[InsightRow]) -> list[InsightRow]:
@@ -268,11 +268,11 @@ def one_specialist_per_station(rows: Sequence[InsightRow]) -> list[InsightRow]:
     for r in rows:
         if r.kind != STATION_BEST:
             continue
-        station = str(r.params.get("station"))
+        station = str(r.params["station"])
         cur = best.get(station)
         if cur is None or _specialist_order(r) < _specialist_order(cur):
             best[station] = r
-    return [r for r in rows if r.kind != STATION_BEST or best[str(r.params.get("station"))] is r]
+    return [r for r in rows if r.kind != STATION_BEST or best[str(r.params["station"])] is r]
 
 
 def _specialist_order(r: InsightRow) -> tuple[float, float, str]:

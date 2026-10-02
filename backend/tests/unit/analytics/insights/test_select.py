@@ -306,3 +306,12 @@ def test_profile_feed_still_shows_the_shooters_own_station_best():
     ]
     feed = sel.feed_profile(rows, 1, REF, HELD, supersedes)
     assert [r.key for r in feed.top] == ["mine"]
+
+
+def test_stations_page_ranks_by_edge_not_raw_hit_rate():
+    rows = [
+        station_row("high-raw", 1, "Station 5", 95, field=90, rank_score=9),
+        station_row("big-edge", 2, "Station 5", 80, field=60, rank_score=1),
+    ]
+    page = station_page(rows)
+    assert [r.key for r in (*page.top, *page.more)] == ["big-edge"]
