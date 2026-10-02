@@ -117,4 +117,14 @@ describe('UploadForm', () => {
     fireEvent.submit(form);
     expect(uploads).toBe(0);
   });
+
+  it('says the special shoot workbook is detected too, and keeps the input label', () => {
+    renderUpload();
+    expect(
+      screen.getByText(
+        'The kind (scores, stations or a special shoot) is detected from the workbook itself.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Workbook (.xlsx)')).toBeInTheDocument();
+  });
 });
