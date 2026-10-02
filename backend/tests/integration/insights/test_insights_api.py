@@ -167,3 +167,31 @@ def test_kudos_chip_without_a_profile_is_dropped(fx_viewer_client, fx_session, m
 
 def test_admin_readiness_matches_the_engine_on_the_fx_world(fx_session):
     assert readiness_from_db(fx_session) == readiness_of(build_frames(fx_session))
+
+
+def test_stations_feed_one_specialist_per_station_and_more_capped(
+    fx_viewer_client, fx_session, monkeypatch
+):
+    from dataclasses import replace
+
+    base = insights_routes.load_rows(fx_session)[0]
+    rows = [
+        replace(
+            base,
+            key=f"inv{i}",
+            kind="pf.station-best",
+            family="station",
+            subject_id=str(i),
+            pages=("profile", "stations"),
+            expires={},
+            anchor_date=None,
+            params={"s": i, "station": f"Station {i % 12}", "mine": 60 + i, "field": 50},
+        )
+        for i in range(1, 40)
+    ]
+    monkeypatch.setattr(insights_routes, "load_rows", lambda session, *where: rows)
+    body = fx_viewer_client.get("/api/insights/stations").json()
+    items = body["top"] + body["more"]
+    stations = [int(i["key"][3:]) % 12 for i in items if i["kind"] == "pf.station-best"]
+    assert len(stations) == len(set(stations)) > 0
+    assert len(body["more"]) <= 8

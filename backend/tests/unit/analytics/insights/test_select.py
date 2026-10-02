@@ -229,3 +229,89 @@ def test_home_cards_skip_the_shooter_to_know():
 def test_silence_when_nothing_passes():
     feed = sel.feed_page([], "club", REF, HELD, supersedes)
     assert (feed.top, feed.more, feed.n_more) == ((), (), 0)
+
+
+def station_row(key: str, shooter: int, station: str, mine: int, field: int = 50, **changes):
+    fields = {
+        "kind": "pf.station-best",
+        "family": "station",
+        "home_slot": None,
+        "subject_id": str(shooter),
+        "named_shooter_ids": (shooter,),
+        "pages": ("profile", "stations"),
+        "params": {"s": shooter, "station": station, "mine": mine, "field": field},
+    }
+    return row(key, **{**fields, **changes})
+
+
+def station_page(rows):
+    return sel.feed_page(rows, "stations", REF, HELD, supersedes)
+
+
+def test_stations_page_keeps_the_biggest_edge_per_station():
+    level = row(
+        "hard",
+        kind="st.hardest-easiest",
+        family="station",
+        subject_type="station",
+        subject_id="x",
+        pages=("stations",),
+        named_shooter_ids=(),
+        rank_score=0.5,
+    )
+    rows = [
+        station_row("a", 1, "Station 5", 70, rank_score=9),
+        station_row("b", 2, "Station 5", 90, rank_score=1),
+        station_row("c", 3, "Station 5", 80, rank_score=5),
+        station_row("d", 4, "Station 3", 65, rank_score=3),
+        level,
+    ]
+    feed = station_page(rows)
+    keys = {r.key for r in (*feed.top, *feed.more)}
+    assert keys == {"b", "d", "hard"}
+    assert feed.n_more + len(feed.top) == 3
+
+
+def test_stations_page_edge_tie_goes_to_rank_then_subject_id():
+    by_rank = [
+        station_row("lo", 1, "Station 5", 80, rank_score=1),
+        station_row("hi", 2, "Station 5", 80, rank_score=2),
+    ]
+    page = station_page(by_rank)
+    assert [r.key for r in (*page.top, *page.more)] == ["hi"]
+    by_id = [
+        station_row("p9", 9, "Station 5", 80, rank_score=1),
+        station_row("p2", 2, "Station 5", 80, rank_score=1),
+    ]
+    for rows in (by_id, by_id[::-1]):
+        page = station_page(rows)
+        assert [r.key for r in (*page.top, *page.more)] == ["p2"]
+
+
+def test_stations_more_is_capped_at_8_and_counts_the_deduped_total():
+    rows = [
+        station_row(f"s{i}", i, f"Station {i}", 80, rank_score=100 - i, family=f"f{i}")
+        for i in range(1, 15)
+    ]
+    feed = station_page(rows)
+    assert len(feed.top) == sel.TOP_SIZES["stations"]
+    assert len(feed.more) == 8
+    assert feed.n_more == 14 - sel.TOP_SIZES["stations"]
+
+
+def test_profile_feed_still_shows_the_shooters_own_station_best():
+    rows = [
+        station_row("mine", 1, "Station 5", 70),
+        station_row("theirs", 2, "Station 5", 90),
+    ]
+    feed = sel.feed_profile(rows, 1, REF, HELD, supersedes)
+    assert [r.key for r in feed.top] == ["mine"]
+
+
+def test_stations_page_ranks_by_edge_not_raw_hit_rate():
+    rows = [
+        station_row("high-raw", 1, "Station 5", 95, field=90, rank_score=9),
+        station_row("big-edge", 2, "Station 5", 80, field=60, rank_score=1),
+    ]
+    page = station_page(rows)
+    assert [r.key for r in (*page.top, *page.more)] == ["big-edge"]
