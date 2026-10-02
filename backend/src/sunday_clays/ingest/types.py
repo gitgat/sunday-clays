@@ -12,6 +12,7 @@ from typing import ClassVar
 class FileKind(StrEnum):
     SCORES = "scores"
     STATIONS = "stations"
+    SPECIAL = "special"  # Plan 17: one special Sunday with its own label and target total
 
 
 class Severity(StrEnum):
@@ -95,7 +96,37 @@ class StationsParse:
     kind: ClassVar[FileKind] = FileKind.STATIONS
 
 
-ParsedUpload = ScoresParse | StationsParse
+@dataclass(frozen=True)
+class SpecialRow:
+    """One shooter's row on a special-event sheet: (station label, hits) in layout order."""
+
+    row_number: int
+    raw_name: str
+    hits: tuple[tuple[str, int], ...]
+
+    @property
+    def total(self) -> int:
+        """The score: always recomputed from the stations, never read from a total cell."""
+        return sum(hits for _, hits in self.hits)
+
+
+@dataclass(frozen=True)
+class SpecialParse:
+    """A special event (Plan 17): one Sunday, its own name and target total, one round each."""
+
+    event_date: date
+    label: str
+    layout: tuple[StationLayoutEntry, ...]
+    rows: tuple[SpecialRow, ...]
+    findings: tuple[Finding, ...]
+    kind: ClassVar[FileKind] = FileKind.SPECIAL
+
+    @property
+    def target_total(self) -> int:
+        return sum(entry.target_count for entry in self.layout)
+
+
+ParsedUpload = ScoresParse | StationsParse | SpecialParse
 
 # Codes of the findings parse_stations emits when it leaves a whole sheet out.
 # Each such finding has `sheet` set and `row` None (Plan 03 T3 builds

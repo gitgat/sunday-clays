@@ -47,4 +47,25 @@ describe('DiffSummary', () => {
     );
     expect(screen.queryByRole('list', { name: 'Removed events' })).not.toBeInTheDocument();
   });
+
+  it('shows one neutral line for a special-shoot preview until its full view lands (Plan 17 T7)', () => {
+    const special = {
+      event_date: '2026-09-20',
+      label: 'Three Clay Shoot',
+      target_total: 60,
+      stations: ['1', '2'],
+      n_shooters: 5,
+      replaces_import: null,
+      regular_rows_on_date: 0,
+      new_names: [],
+      possible_duplicates: [],
+    };
+    renderWithProviders(<DiffSummary diff={special} />);
+    const card = screen.getByRole('region', { name: 'Changes' });
+    expect(
+      within(card).getByText('Three Clay Shoot · 5 shooters · 60 targets'),
+    ).toBeInTheDocument();
+    expect(within(card).queryByText('Weeks replaced')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Rows added')).not.toBeInTheDocument();
+  });
 });

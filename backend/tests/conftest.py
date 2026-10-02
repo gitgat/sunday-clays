@@ -7,7 +7,8 @@ change these.
 import os
 import socket
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
+from datetime import date
 from pathlib import Path
 from typing import cast
 
@@ -397,3 +398,49 @@ def fx_client(fx_session: Session, test_settings: Settings) -> Iterator[TestClie
 def _clear_analytics_cache() -> None:
     """C2: every test starts with an empty analytics memo (Plan 06 T1)."""
     clear_cache()
+
+
+# --- Plan 17 T1: special-event workbooks ------------------------------------------------------
+SPECIAL_SUNDAY = date(2026, 9, 20)  # the fixture has no Sunday on this date
+SPECIAL_LABEL = "Three Clay Shoot"
+SPECIAL_ENTRIES: tuple[tuple[str, tuple[int, ...]], ...] = (
+    ("Hadley, Ike", (6, 5, 6, 4, 6, 5, 6, 6, 5, 6)),  # 55
+    ("Kaplan, Noel", (6, 5, 5, 5, 6, 5, 5, 5, 4, 5)),  # 51
+    ("Devlin, Sid", (5, 5, 4, 5, 5, 4, 5, 5, 5, 5)),  # 48
+    ("Abernathy, Preston", (4, 5, 4, 5, 4, 4, 5, 4, 5, 4)),  # 44
+    ("Kim, Pat", (4, 4, 3, 4, 4, 4, 4, 4, 4, 4)),  # 39, not in the fixture: a new shooter
+)
+
+
+def _special_workbook(
+    entries: Sequence[tuple[str, Sequence[int]]] = SPECIAL_ENTRIES,
+    *,
+    event_date: date = SPECIAL_SUNDAY,
+    label: str = SPECIAL_LABEL,
+    stations: Sequence[object] = tuple(range(1, 11)),
+    targets: Sequence[int] = (6,) * 10,
+    total: bool = True,
+) -> bytes:
+    """A special-event workbook (Plan 17 format) with correct totals."""
+    import io
+
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.title = "Special Event"
+    sheet.append(["Special event", label])
+    sheet.append(["Event date", event_date])
+    sheet.append(["Station", *stations, *(["Total"] if total else [])])
+    sheet.append(["Targets", *targets])
+    for name, hits in entries:
+        sheet.append([name, *hits, *([sum(hits)] if total else [])])
+    out = io.BytesIO()
+    workbook.save(out)
+    return out.getvalue()
+
+
+@pytest.fixture
+def special_workbook() -> Callable[..., bytes]:
+    return _special_workbook
