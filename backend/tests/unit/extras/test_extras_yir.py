@@ -343,3 +343,81 @@ def test_filter_round_types_keeps_only_matching_rounds_events_and_trophies() -> 
 def test_filter_round_types_empty_selection_is_no_filter() -> None:
     world = _world(ROUNDS, EVENTS, super_days=frozenset({B1}))
     assert filter_round_types(world, []) is world
+
+
+def test_special_sundays_count_as_sundays_but_never_as_rounds_in_the_year() -> None:
+    special_day = date(2025, 2, 9)
+    events = pd.concat(
+        [
+            WORLD.events.assign(kind="regular"),
+            pd.DataFrame(
+                [
+                    {
+                        "event_date": special_day,
+                        "has_scores": True,
+                        "results_complete": True,
+                        "head_count": NAN,
+                        "median": NAN,
+                        "difficulty": NAN,
+                        "round_type": "sporting",
+                        "n_shooters": 2.0,
+                        "top_score": NAN,
+                        "kind": "special",
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    regular = WORLD.rounds[["event_date", "shooter_id", "round_type"]].drop_duplicates()
+    extra = pd.DataFrame(
+        [(special_day, 1, "sporting"), (special_day, 4, "sporting")],
+        columns=["event_date", "shooter_id", "round_type"],
+    )
+    data = replace(WORLD, events=events, appearances=pd.concat([regular, extra], ignore_index=True))
+
+    base, club = club_year(WORLD, 2025), club_year(data, 2025)
+    assert club.totals.held_events == base.totals.held_events + 1
+    assert club.totals.scored_events == base.totals.scored_events
+    assert club.totals.shooters == base.totals.shooters + 1  # shooter 4's only 2025 Sunday
+    assert (club.totals.rounds, club.totals.clays_thrown, club.totals.avg_score) == (
+        base.totals.rounds,
+        base.totals.clays_thrown,
+        base.totals.avg_score,
+    )
+    assert club.events == base.events + 1
+    assert club.months[1].events == base.months[1].events + 1
+    assert club.months[1].rounds == base.months[1].rounds
+    assert club.newcomers == base.newcomers
+    mine, before = shooter_year(data, 1, 2025), shooter_year(WORLD, 1, 2025)
+    assert mine.totals.events == before.totals.events + 1
+    assert (mine.totals.rounds, mine.totals.clays_broken) == (
+        before.totals.rounds,
+        before.totals.clays_broken,
+    )
+    assert on_this_day(data, date(2026, 2, 9)) == on_this_day(WORLD, date(2026, 2, 9))
+    assert scored_years(data) == scored_years(WORLD)
+
+
+def test_a_year_with_only_a_special_sunday_is_not_a_scored_year() -> None:
+    special_day = date(2031, 3, 2)
+    special = pd.DataFrame(
+        [
+            {
+                "event_date": special_day,
+                "has_scores": True,
+                "results_complete": True,
+                "head_count": NAN,
+                "median": NAN,
+                "difficulty": NAN,
+                "round_type": "sporting",
+                "n_shooters": 2.0,
+                "top_score": NAN,
+                "kind": "special",
+            }
+        ]
+    )
+    data = replace(WORLD, events=pd.concat([WORLD.events.assign(kind="regular"), special]))
+
+    assert scored_years(data) == scored_years(WORLD)
+    assert 2031 not in scored_years(data)

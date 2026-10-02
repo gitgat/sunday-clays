@@ -121,11 +121,12 @@ def get_trends(
 ) -> ClubTrendsOut:
     as_of = resolve_as_of(None, settings.timezone)
     rounds, events = frames.load_rounds(session), frames.load_events(session)
+    calendar, seen = frames.load_calendar(session), frames.load_appearances(session)
     return ClubTrendsOut(
         as_of=as_of,
         years=[
             YearTrendOut.model_validate(asdict(y))
-            for y in club_insights.yearly_trends(rounds, events, as_of)
+            for y in club_insights.yearly_trends(rounds, calendar, as_of, seen)
         ],
         events=[
             EventTrendOut.model_validate(asdict(e))
@@ -133,6 +134,6 @@ def get_trends(
         ],
         months=[
             MonthTrendOut.model_validate(asdict(m))
-            for m in club_insights.seasonality(events, as_of)
+            for m in club_insights.seasonality(calendar, as_of)  # Sundays and head counts
         ],
     )

@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from sunday_clays.analytics.cache import cached_by_data_version
 from sunday_clays.analytics.frames import (
     apply_round_type_filter,
+    load_appearances,
+    load_calendar,
     load_events,
     load_rating_history,
     load_rounds,
@@ -236,10 +238,14 @@ def compute_records(
     round_types: Sequence[RoundType] = (),
     limit: int | None = RECORD_LIMIT,
     since: date | None = None,
+    appearances: pd.DataFrame | None = None,
+    calendar: pd.DataFrame | None = None,
 ) -> Records:
     """Records over ``[since, as_of]`` (everything up to ``as_of`` when ``since`` is None).
 
     ``limit`` caps every list (``None`` = every row). The perfect 50s list is newest first.
+    "Most Sundays" and "Longest runs" read ``appearances`` and ``calendar`` (special Sundays
+    included, Plan 17); without them the rounds and events stand in.
     """
     all_rounds = _with_dates(rounds)
     upto = all_rounds[all_rounds["event_date"] <= as_of]
@@ -260,10 +266,18 @@ def compute_records(
     past_history = in_range(dated_history[dated_history["event_date"] <= as_of])
     perfect = past_rounds[past_rounds["score"] == PERFECT_SCORE]
     adjusted = past_rounds[past_rounds["adjusted"].notna()]
-    attended = past_rounds.groupby("shooter_id", as_index=False).agg(
-        value=("event_date", "nunique")
+    seen = _with_dates(rounds if appearances is None else appearances)
+    seen_upto = seen[seen["event_date"] <= as_of]
+    sunday_names = seen_upto.groupby("shooter_id", as_index=False).agg(
+        display_name=("display_name", "first"), sort_key=("name_key", "min")
     )
-    streak = streaks(past_rounds, past_events, as_of)
+    every_sunday = _with_dates(events if calendar is None else calendar)
+    past_seen = in_range(apply_round_type_filter(seen_upto, round_types))
+    past_calendar = in_range(
+        apply_round_type_filter(every_sunday[every_sunday["event_date"] <= as_of], round_types)
+    )
+    attended = past_seen.groupby("shooter_id", as_index=False).agg(value=("event_date", "nunique"))
+    streak = streaks(past_seen, past_calendar, as_of)
     longest = streak.loc[streak["longest_streak"] > 0, ["shooter_id", "longest_streak"]].rename(
         columns={"longest_streak": "value"}
     )
@@ -271,8 +285,8 @@ def compute_records(
     perfects = _round_records(perfect, perfect["score"], names, limit, newest_first=True)
     beat_field = _round_records(adjusted, adjusted["adjusted"], names, limit)
     jumps = _jumps(past_rounds, past_events, names, limit)
-    attendance = _shooter_records(attended, names, limit)
-    runs = _shooter_records(longest, names, limit)
+    attendance = _shooter_records(attended, sunday_names, limit)
+    runs = _shooter_records(longest, sunday_names, limit)
     ratings = _highest_ratings(past_history, upto, names, limit)
     listed = {
         "highest_scores": scores,
@@ -315,4 +329,6 @@ def records_for(
         round_types=round_types,
         since=since,
         limit=limit,
+        appearances=load_appearances(session),
+        calendar=load_calendar(session),
     )

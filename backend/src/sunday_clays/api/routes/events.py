@@ -17,6 +17,7 @@ from sunday_clays.domain.round_type import RoundType
 router = APIRouter()
 
 PB_MIN_PRIOR_ROUNDS = 5
+EventKind = Literal["regular", "special"]
 
 
 class WinnerOut(BaseModel):
@@ -40,6 +41,10 @@ class EventSummaryOut(BaseModel):
     difficulty: float | None
     condition: str | None
     winners: list[WinnerOut]
+    # Plan 17: a special Sunday counts only as an appearance; its own name and target total
+    kind: EventKind = "regular"
+    label: str | None = None
+    target_total: int = frames.REGULAR_TARGETS
 
 
 class EventResultOut(BaseModel):
@@ -138,6 +143,14 @@ class EventDetailOut(BaseModel):
     stations: StationMatrixOut | None
     notables: list[NotableOut]
     vs_prev: VsPrevOut | None
+    # Plan 17: a special Sunday counts only as an appearance; its own name and target total
+    kind: EventKind = "regular"
+    label: str | None = None
+    target_total: int = frames.REGULAR_TARGETS
+
+
+def _kind(row: dict[str, Any]) -> EventKind:
+    return "special" if row["kind"] == frames.EVENT_KIND_SPECIAL else "regular"
 
 
 def _winners(rounds: pd.DataFrame) -> dict[date, list[WinnerOut]]:
@@ -162,7 +175,7 @@ def list_events(
     date_to: Annotated[date | None, Query(alias="to")] = None,
 ) -> list[EventSummaryOut]:
     """Events in date order; `year` and the inclusive `from`/`to` window each narrow the list."""
-    events = frames.apply_round_type_filter(frames.load_events(session), round_types)
+    events = frames.apply_round_type_filter(frames.load_calendar(session), round_types)
     if year is not None:
         events = events.loc[[d.year == year for d in events["event_date"]]]
     if date_from is not None:
@@ -187,8 +200,39 @@ def list_events(
             difficulty=opt_float(row["difficulty"]),
             condition=opt_str(row["condition"]),
             winners=winners.get(row["event_date"], []),
+            kind=_kind(row),
+            label=opt_str(row["label"]),
+            target_total=int(row["target_total"]),
         )
         for row in rows(events)
+    ]
+
+
+def _special_results(special: pd.DataFrame, event_date: date) -> list[EventResultOut]:
+    """A special Sunday's rounds, best first: as entered, never ranked or rated (Decision 18)."""
+    day = special.loc[special["event_date"] == event_date]
+    ordered = day.sort_values(["score", "display_name", "ordinal"], ascending=[False, True, True])
+    return [
+        EventResultOut(
+            round_id=int(r["round_id"]),
+            shooter_id=int(r["shooter_id"]),
+            display_name=str(r["display_name"]),
+            name_key=str(r["name_key"]),
+            shooter_status=str(r["shooter_status"]),
+            ordinal=int(r["ordinal"]),
+            score=int(r["score"]),
+            gauge_class=None,
+            is_best_round=True,
+            event_rank=None,
+            percentile=None,
+            adjusted=None,
+            expected=None,
+            residual=None,
+            mu_before=None,
+            mu_after=None,
+            rating_delta=None,
+        )
+        for r in rows(ordered)
     ]
 
 
@@ -342,15 +386,24 @@ def get_event(
     event_date: Annotated[date, Path(alias="date")],
     session: SessionDep,
 ) -> EventDetailOut:
-    events = frames.load_events(session)
+    events = frames.load_calendar(session)
     match = events.loc[events["event_date"] == event_date]
     if match.empty:
         raise NotFoundError("event_not_found", f"No event on {event_date.isoformat()}")
     event = rows(match)[0]
+    special = _kind(event) == "special"
     rounds = frames.load_rounds(session)
     shooters = frames.load_shooters(session)
-    hits = frames.load_station_hits(session)
+    hits = (
+        frames.load_special_station_hits(session) if special else frames.load_station_hits(session)
+    )
     names = {int(r["shooter_id"]): str(r["display_name"]) for r in rows(shooters)}
+    results = (
+        _special_results(frames.load_special_rounds(session), event_date)
+        if special
+        else _results(rounds.loc[rounds["event_date"] == event_date])
+    )
+    regular = events.loc[events["kind"] == frames.EVENT_KIND_REGULAR]
     return EventDetailOut(
         event_date=event_date,
         round_type=RoundType(str(event["round_type"])),
@@ -366,9 +419,12 @@ def get_event(
         stdev=opt_float(event["stdev"]),
         top_score=opt_int(event["top_score"]),
         difficulty=opt_float(event["difficulty"]),
-        results=_results(rounds.loc[rounds["event_date"] == event_date]),
+        results=results,
         weather=_weather(event),
         stations=_stations(hits.loc[hits["event_date"] == event_date], names),
         notables=event_notables(rounds, shooters, event_date),
-        vs_prev=_vs_prev(events, event),
+        vs_prev=None if special else _vs_prev(regular, event),
+        kind=_kind(event),
+        label=opt_str(event["label"]),
+        target_total=int(event["target_total"]),
     )

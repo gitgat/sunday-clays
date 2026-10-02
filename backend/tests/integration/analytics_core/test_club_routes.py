@@ -56,14 +56,6 @@ def test_club_openapi_paths_and_response_schemas() -> None:
             "deceased_rounds",
             "unrecorded_rounds",
         ],
-        "AttendanceOut": [
-            "event_date",
-            "head_count",
-            "n_rounds",
-            "n_shooters",
-            "has_scores",
-            "results_complete",
-        ],
         "CohortOut": ["year", "n_new", "n_returned", "retention"],
         "RetentionOut": ["offset", "n_active", "share"],
         "DistributionOut": ["key", "n", "mean", "median", "p10", "p25", "p75", "p90", "counts"],
@@ -73,6 +65,20 @@ def test_club_openapi_paths_and_response_schemas() -> None:
             names,
             names,
         ), model
+    # Plan 17: kind, label and target_total are defaulted, so listed but never required
+    attendance = components["AttendanceOut"]
+    assert list(attendance["properties"]) == [
+        "event_date",
+        "head_count",
+        "n_rounds",
+        "n_shooters",
+        "has_scores",
+        "results_complete",
+        "kind",
+        "label",
+        "target_total",
+    ]
+    assert attendance["required"] == list(attendance["properties"])[:6]
     nested = {
         ("ClubSummaryOut", "status_by_year"): "StatusYearOut",
         ("CohortOut", "retention"): "RetentionOut",
@@ -183,6 +189,9 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "n_shooters": 0,
             "has_scores": False,
             "results_complete": False,
+            "kind": "regular",
+            "label": None,
+            "target_total": 50,
         },
         {
             "event_date": "2026-09-06",
@@ -191,6 +200,9 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "n_shooters": 1,
             "has_scores": True,
             "results_complete": True,
+            "kind": "regular",
+            "label": None,
+            "target_total": 50,
         },
         {
             "event_date": "2026-09-13",
@@ -199,6 +211,9 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "n_shooters": 1,
             "has_scores": True,
             "results_complete": True,
+            "kind": "regular",
+            "label": None,
+            "target_total": 50,
         },
     ]
 
