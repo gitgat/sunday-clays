@@ -184,7 +184,7 @@ def _sunday_recap(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
             # both from the same rounds.
             day = next(d for d in days if d.date == sunday.date)
             pbs += is_pb(day)
-            firsts += days[0].date == sunday.date
+            firsts += fr.appearance_dates[r.shooter_id][0] == sunday.date
         params: dict[str, object] = {
             "day": sunday.date,
             "n": sunday.n,

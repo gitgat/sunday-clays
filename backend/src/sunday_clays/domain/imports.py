@@ -15,6 +15,7 @@ from sunday_clays.domain.diff import (
     assign_ordinals,
     attendance_by_date,
     attendance_changes,
+    keyed_rows,
     possible_duplicate_pairs,
     representative_names,
     score_row_changes,
@@ -444,27 +445,53 @@ def _preview_special(
     new_names, duplicates = _name_hints(session, rows, new_keys, aliases)
     live = active_special_sources(session).get(parsed.event_date)
     regular = _regular_rows_on(session, parsed.event_date)
+    first_row: dict[int | str, StagedScore] = {}
+    repeats: list[Finding] = []
+    from sunday_clays.domain.rules import load_active_rules  # rules imports this module
+
+    keyed = {r.row_id: key for key, r in keyed_rows(rows).items()}
+    hidden = {
+        (h.event_date, h.name_key, h.ordinal): h.raw_score
+        for _, h in load_active_rules(session).hides
+    }
+    for r in rows:  # P17-R3: the first sheet row of a shooter counts; later ones are dropped
+        if keyed[r.row_id] in hidden and hidden[keyed[r.row_id]] == r.score:
+            continue  # a hide_round rule drops it before rebuild picks the row to keep
+        who: int | str = resolve(r.name_key) or r.name_key
+        if who not in first_row:
+            first_row[who] = r
+            continue
+        repeats.append(
+            Finding(
+                "special_duplicate_shooter",
+                Severity.WARNING,
+                f'"{r.raw_name}" and "{first_row[who].raw_name}" are the same shooter: only the'
+                f' first row counts and "{r.raw_name}" is left out',
+                event_date=parsed.event_date,
+            )
+        )
     diff = SpecialDiff(
         event_date=parsed.event_date,
         label=parsed.label,
         target_total=parsed.target_total,
         stations=[entry.label for entry in parsed.layout],
-        n_shooters=len({r.name_key for r in rows}),
+        n_shooters=len(first_row),
         replaces_import=None if live is None else live.import_id,
         regular_rows_on_date=regular,
         new_names=new_names,
         possible_duplicates=duplicates,
     )
     if regular == 0:
-        return diff, []
+        return diff, repeats
     return diff, [
+        *repeats,
         Finding(
             "regular_scores_on_special_date",
             Severity.WARNING,
             f"The live scores workbook has {_rows(regular)} on this date; {_it_they(regular)}"
             f" {_is_are(regular)} left out while this special shoot is live",
             event_date=parsed.event_date,
-        )
+        ),
     ]
 
 
@@ -526,6 +553,20 @@ def _scores_station_findings(
 def _preview_stations(
     session: Session, staged: dict[date, int], parsed: StationsParse
 ) -> tuple[StationsDiff, list[Finding]]:
+    specials = active_special_sources(session)
+    ignored = [
+        Finding(
+            "stations_tab_on_special_date",
+            Severity.WARNING,
+            f"{sheet.event_date.isoformat()} is the special shoot"
+            f" '{specials[sheet.event_date].label}': this tab is ignored while that import is live",
+            sheet=sheet.sheet_name,
+            event_date=sheet.event_date,
+        )
+        for sheet in parsed.sheets
+        if sheet.event_date in specials
+    ]
+    staged = {d: sheet_id for d, sheet_id in staged.items() if d not in specials}
     added, replaced, unchanged = station_changes(
         sheet_contents(session, staged), sheet_contents(session, active_station_sources(session))
     )
@@ -546,6 +587,8 @@ def _preview_stations(
     entries: list[StationEntry] = []
     tabs: dict[tuple[date | None, int | None], str] = {}
     for sheet in parsed.sheets:
+        if sheet.event_date in specials:
+            continue
         for row in sheet.rows:
             key = identity_key(name_key(row.raw_name), sheet.event_date)
             entries.append(
@@ -563,7 +606,7 @@ def _preview_stations(
         LinkRound(r.id, r.event_date, r.shooter_id, r.ordinal, r.score)
         for r in session.scalars(select(Round).where(Round.event_date.in_(list(staged))))
     ]
-    return diff, _station_findings(entries, rounds, tabs)
+    return diff, [*ignored, *_station_findings(entries, rounds, tabs)]
 
 
 def _placed_findings(parsed: ScoresParse | StationsParse | SpecialParse) -> list[Finding]:

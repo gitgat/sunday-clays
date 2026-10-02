@@ -321,3 +321,31 @@ def test_the_sunday_milestone_club_count_includes_a_milestone_reached_on_a_speci
     ]
     assert fact.params["club"] == 2
     assert fact.variant != "first"
+
+
+def test_back_strong_measures_the_gap_from_the_last_appearance(make_world, sun, run):
+    world = make_world().series(1, 0, [30] * 5)
+    world.special(1, sun(38)).round(1, sun(40), 31)  # a special shoot two weeks before
+    assert [f for f in run("pf.back-strong", world.frames()) if f.subject_id == "1"] == []
+
+
+def test_back_strong_quotes_the_special_shoot_as_the_previous_visit(make_world, sun, run):
+    world = make_world().series(1, 0, [30] * 5)
+    world.special(1, sun(20)).round(1, sun(50), 31)
+    (fact,) = [f for f in run("pf.back-strong", world.frames()) if f.subject_id == "1"]
+    assert fact.params["prev"] == sun(20)
+    assert fact.params["months"] == round((sun(50) - sun(20)).days / 30.44)
+
+
+def test_sunday_milestone_chart_starts_at_the_first_appearance(make_world, sun, run):
+    world = make_world().series(9, 0, [30] * 26)
+    world.special(1, sun(0))
+    for j in range(1, 25):
+        world.round(1, sun(j), 30)
+    (fact,) = [
+        f
+        for f in run("pf.sunday-milestone", world.frames())
+        if f.subject_id == "1" and f.variant in ("", "first")
+    ]
+    assert (fact.anchor_date, fact.params["level"]) == (sun(24), 25)
+    assert fact.params["first"] == sun(0)

@@ -104,6 +104,7 @@ Six inputs or conditions that the design implies but does not spell out, and tha
 24. **e2e.** The special Sunday cannot be in the shared seed (golden counts), so the e2e is `special-events.admin-mutations.spec.ts`, matched by the existing `admin-mutations` project (`testMatch: /admin-mutations\.spec\.ts/` is unanchored and the read-only projects ignore the same pattern). It uploads, previews and commits a fixture workbook, checks the pages at 390×844 and at 1440×900 with `page.setViewportSize`, checks the API for unchanged score numbers and the extended streak, and rolls back in `finally`. `playwright.config.ts` is not edited (C10).
 25. **Commit trailer.** Commands carry `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; an implementer on another model names its own model.
 26. **Owner-preview notes.** Flag at preview: Decision 8's list (including the one-Sunday difference between `cl.turnout-trend` and its Explorer chart); no first-timers shown on the special Sunday's page (Decision 20); the csv path being an operator conversion (Decision 4); the special Sunday showing no Sunday-page insights (Decision 12); `last_score_date` still anchoring on a special Sunday if one is ever the latest (Decision 8).
+27. **Operator note (parked).** After a rollback of a special import, a re-upload's preview lists the earlier new names as known, because the first rebuild already created their shooters and aliases (weekly imports behave the same). Compare the new names against the earlier list rather than expecting the original count.
 
 ## File map
 

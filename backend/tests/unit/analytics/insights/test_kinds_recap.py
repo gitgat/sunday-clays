@@ -119,3 +119,16 @@ def test_sunday_recap_needs_three_slots_and_names_a_tie(make_world, sun, run, he
     (fact,) = run("home.sunday-recap", fr, [sun(4)])
     assert fact.variant == "wt"
     assert "shared the top of the board with 30" in headline("home.sunday-recap", fact, fr)
+
+
+def test_sunday_recap_does_not_count_a_special_debut_as_a_first_timer(make_world, sun, run):
+    world = make_world()
+    world.series(1, 0, [30, 31, 32, 33, 34, 35])
+    world.special(60, sun(4))
+    world.round(60, sun(5), 20)  # second Sunday, first regular round
+    world.round(50, sun(5), 20)  # a true first-timer
+    for i in range(5):
+        world.crowd(sun(i), [35, 36])
+    fr = world.frames()
+    (fact,) = run("home.sunday-recap", fr, [sun(5)])
+    assert fact.params["firsts"] == 1
