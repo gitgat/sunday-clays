@@ -102,3 +102,19 @@ def merge_map(session: Session) -> dict[int, int]:
             target = direct[target]
         resolved[source] = target
     return resolved
+
+
+def alias_rule_targets(session: Session) -> dict[str, int]:
+    """name_key -> shooter id of its newest active alias_name rule (Plan 17, special rows).
+
+    Ascending ids, so the newest rule per key is the one left in the dict; merges are applied by
+    the caller, as for every other shooter id.
+    """
+    payloads: list[dict[str, Any]] = list(
+        session.scalars(
+            select(Rule.payload)
+            .where(Rule.rule_type == "alias_name", Rule.active.is_(True))
+            .order_by(Rule.id)
+        )
+    )
+    return {str(p["name_key"]): int(p["shooter_id"]) for p in payloads}

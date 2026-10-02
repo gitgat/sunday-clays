@@ -444,3 +444,99 @@ def _special_workbook(
 @pytest.fixture
 def special_workbook() -> Callable[..., bytes]:
     return _special_workbook
+
+
+# --- Plan 17 T2: the committed-fixtures world plus one special Sunday --------------------------
+@pytest.fixture(scope="session")
+def fx_special_engine(engine: Engine) -> Iterator[Engine]:
+    """`fx_engine`'s world built the same way, plus the special Sunday 2026-09-20 (Plan 17).
+
+    SPECIAL_ENTRIES: four fixture shooters who shot 2026-09-13 and 2026-09-27, and Kim, Pat, who
+    is new. Its own database, so the analytics memo (keyed by database name) never mixes it with
+    fx_engine; tests that read both worlds still call clear_cache() between them.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import NullPool
+
+    from sunday_clays.analytics.pipeline import run_pipeline
+    from sunday_clays.domain.imports import commit_import, stage_import
+    from sunday_clays.domain.rebuild import rebuild_live
+
+    url = engine.url.set(database=f"{engine.url.database}_fx_special")
+    drop = f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)'
+    admin = create_engine(
+        engine.url.set(database="postgres"), isolation_level="AUTOCOMMIT", poolclass=NullPool
+    )
+    with admin.connect() as conn:
+        conn.exec_driver_sql(drop)
+        conn.exec_driver_sql(f'CREATE DATABASE "{url.database}"')
+    world = make_engine(url.render_as_string(hide_password=False))
+    try:
+        config = alembic_config()
+        with world.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        uploads = [
+            (name, (FIXTURES_DIR / name).read_bytes())
+            for name in ("scores_2026-09-27.xlsx", "stations_2026-09-27.xlsx")
+        ]
+        uploads.append(("special_2026-09-20.xlsx", _special_workbook()))
+        with Session(world) as setup:
+            for filename, data in uploads:
+                preview = stage_import(setup, data, filename)
+                commit_import(setup, preview.import_id)
+                rebuild_live(setup)
+            load_weather_fixture(setup)
+            run_pipeline(setup)
+            setup.commit()
+        yield world
+    finally:
+        world.dispose()
+        with admin.connect() as conn:
+            conn.exec_driver_sql(drop)
+        admin.dispose()
+
+
+@pytest.fixture
+def fx_special_session(fx_special_engine: Engine) -> Iterator[Session]:
+    """Like ``fx_session``, on the special-Sunday world."""
+    connection = fx_special_engine.connect()
+    outer = connection.begin()
+    db_session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    try:
+        yield db_session
+    finally:
+        db_session.close()
+        outer.rollback()
+        connection.close()
+
+
+@pytest.fixture
+def fx_special_client(fx_special_session: Session, test_settings: Settings) -> Iterator[TestClient]:
+    """Like ``fx_client``, bound to ``fx_special_session``."""
+    app = create_app()
+
+    def session_override() -> Iterator[Session]:
+        nested = fx_special_session.begin_nested()
+        try:
+            yield fx_special_session
+        except BaseException:
+            if nested.is_active:
+                nested.rollback()
+            raise
+        else:
+            if nested.is_active:
+                nested.commit()
+
+    app.dependency_overrides[get_session] = session_override
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def fx_special_viewer_client(
+    fx_special_client: TestClient, auth_env: Settings
+) -> Iterator[TestClient]:
+    logged_in = _logged_in(_use_env_settings(fx_special_client), "viewer")
+    yield logged_in
+    logged_in.close()
