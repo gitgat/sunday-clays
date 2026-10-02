@@ -1,11 +1,15 @@
-import type { Page } from '@playwright/test';
+import { request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { ADMIN_STATE } from './authState';
 import { expect, test } from './fixtures';
 import { expectNoSideScroll, whenSettled } from './layout';
 
 // Project `admin-mutations` (matched by the unanchored /admin-mutations\.spec\.ts/): one worker, after
 // every read-only spec. The special Sunday is rolled back in `finally`, so the shared seed and the
-// read-only specs' counts never see it. A run that dies between commit and roll back needs `down -v`.
+// read-only specs' counts never see it. The roll back is in `test.afterEach` on a fresh request context,
+// so it also runs after a timeout or a closed page. Only a run that dies outright between commit and
+// roll back needs `down -v`.
+// On a reused stack the new shooter (Kim, Pat) stays in the directory after the roll back, so a repeat
+// run has no new names. That is why the preview is checked for `Shooters5`, not for "New names".
 test.use({ storageState: ADMIN_STATE });
 
 const FILE = 'e2e/fixtures/special_2026-09-20.xlsx';
@@ -39,19 +43,51 @@ async function odometer(page: Page, id: number): Promise<Odometer> {
   return (await apiJson<{ odometer: Odometer }>(page, `/api/shooters/${id}`)).odometer;
 }
 
-async function rollBack(page: Page): Promise<void> {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/admin');
-  const row = page
-    .getByRole('table', { name: 'Import history' })
-    .getByRole('row', { name: /special_2026-09-20\.xlsx/ })
-    .first();
-  await expect(row).toContainText('Committed');
-  await row.getByRole('button', { name: 'Roll back' }).click();
-  await row.getByRole('button', { name: 'Confirm roll back' }).click();
-  await expect(page.getByText(/^Rolling back #\d+: Done$/)).toBeVisible({ timeout: 120_000 });
-  await expect(row).toContainText('Rolled back');
+type ImportRow = { id: number; filename: string; status: string };
+
+let committedImportId: number | null = null;
+let hadleyBefore: { id: number; odometer: Odometer } | null = null;
+
+async function rollBackAndWait(api: APIRequestContext, importId: number): Promise<void> {
+  const rolled = await api.post(`/api/admin/imports/${importId}/rollback`);
+  if (!rolled.ok()) throw new Error(`roll back of import #${importId}: HTTP ${rolled.status()}`);
+  const { job_id: jobId } = (await rolled.json()) as { job_id: number };
+  await expect
+    .poll(
+      async () =>
+        ((await (await api.get(`/api/admin/jobs/${jobId}`)).json()) as { status: string }).status,
+      { timeout: 120_000 },
+    )
+    .toBe('done');
 }
+
+test.afterEach(async ({ baseURL }, testInfo) => {
+  if (committedImportId === null) return;
+  const importId = committedImportId;
+  committedImportId = null;
+  const api = await pwRequest.newContext({ baseURL, storageState: ADMIN_STATE });
+  try {
+    try {
+      await rollBackAndWait(api, importId);
+    } catch (error) {
+      // Never mask the test's own failure: record the cleanup problem and move on.
+      testInfo.annotations.push({ type: 'cleanup-error', description: String(error) });
+      console.error(`special-events cleanup failed (import #${importId}):`, error);
+      return;
+    }
+    if (testInfo.status === 'passed' && hadleyBefore) {
+      expect((await api.get(`/api/events/${DATE}`)).status()).toBe(404);
+      const after = (await (await api.get(`/api/shooters/${hadleyBefore.id}`)).json()) as {
+        odometer: Odometer;
+      };
+      expect(after.odometer).toEqual(hadleyBefore.odometer);
+      const rows = (await (await api.get('/api/admin/imports')).json()) as ImportRow[];
+      expect(rows.find((r) => r.id === importId)?.status).toBe('rolled_back');
+    }
+  } finally {
+    await api.dispose();
+  }
+});
 
 test('a special shoot: preview, commit, every page at both sizes, unchanged scores, then roll back', async ({
   page,
@@ -59,11 +95,11 @@ test('a special shoot: preview, commit, every page at both sizes, unchanged scor
   test.setTimeout(420_000);
   const id = await hadleyId(page);
   const before = await odometer(page, id);
+  hadleyBefore = { id, odometer: before };
   const boardBefore = await apiJson<Board>(page, BEST_SCORES);
   expect((await page.request.get(`/api/events/${DATE}`)).status()).toBe(404);
 
-  let committed = false;
-  try {
+  {
     await page.goto('/admin');
     await page.getByLabel('Workbook (.xlsx)').setInputFiles(FILE);
     await page.getByRole('button', { name: 'Upload and preview' }).click();
@@ -74,8 +110,13 @@ test('a special shoot: preview, commit, every page at both sizes, unchanged scor
     // "New names" is not asserted: the new shooter stays after a roll back, so a repeat run has none.
     await expect(page.getByText('Special shoot workbook').first()).toBeVisible();
     await page.getByRole('button', { name: 'Commit import' }).click();
-    committed = true;
     await expect(page.getByText('Rebuilding live data: Done')).toBeVisible({ timeout: 120_000 });
+    const rows = await apiJson<ImportRow[]>(page, '/api/admin/imports');
+    const mine = rows.find(
+      (r) => r.filename === 'special_2026-09-20.xlsx' && r.status === 'committed',
+    );
+    expect(mine, 'the committed special import in the history').toBeDefined();
+    committedImportId = (mine as ImportRow).id;
 
     for (const viewport of VIEWPORTS) {
       await page.setViewportSize(viewport);
@@ -128,10 +169,5 @@ test('a special shoot: preview, commit, every page at both sizes, unchanged scor
     expect(after.rounds).toBe(before.rounds);
     expect(after.clays_thrown).toBe(before.clays_thrown);
     expect((await apiJson<Board>(page, BEST_SCORES)).rows).toEqual(boardBefore.rows);
-  } finally {
-    if (committed) await rollBack(page);
   }
-
-  expect((await page.request.get(`/api/events/${DATE}`)).status()).toBe(404);
-  expect(await odometer(page, id)).toEqual(before);
 });
