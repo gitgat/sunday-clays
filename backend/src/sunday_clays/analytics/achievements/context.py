@@ -63,6 +63,8 @@ _STATION_SQL = text(
            h.shooter_id, h.round_id, h.hits
     FROM station_hits h
     JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
+    JOIN events e ON e.event_date = h.event_date
+    WHERE e.kind = 'regular'
     ORDER BY h.event_date, h.entry_row, h.station_no, h.station_label
     """
 )
