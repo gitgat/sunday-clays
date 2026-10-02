@@ -10,10 +10,12 @@ from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from sunday_clays.api.errors import error_body
 from sunday_clays.api.routes._claysmasher import (
     TARGETS_PER_ROUND,
     day_ordinals,
@@ -24,6 +26,7 @@ from sunday_clays.api.routes._claysmasher import (
 )
 from sunday_clays.db import SessionDep
 from sunday_clays.domain.errors import NotFoundError
+from sunday_clays.domain.identity import merge_map
 from sunday_clays.domain.round_type import RoundType
 
 router = APIRouter()
@@ -193,12 +196,30 @@ def _rounds(session: Session, shooter_id: int, generated_at: datetime) -> list[E
     return out
 
 
+def _not_found(session: Session, shooter_id: int) -> JSONResponse:
+    """404: `shooter_merged` plus `merged_into` for a merged-away shooter, else shooter_not_found.
+
+    A merged-away shooter keeps its `shooters` row but has no profile, as no live round names it.
+    The standard handler only renders {"error": ...}, so the merged case is built here.
+    """
+    target = merge_map(session).get(shooter_id)
+    if target is None:
+        raise NotFoundError("shooter_not_found", f"No shooter with id {shooter_id}")
+    content: dict[str, object] = {
+        **error_body("shooter_merged", f"Shooter {shooter_id} was merged into {target}"),
+        "merged_into": target,
+    }
+    return JSONResponse(status_code=404, content=content)
+
+
 @router.get("/api/shooters/{id}/export", response_model=ShooterExportOut)
-def get_shooter_export(shooter_id: ShooterId, session: SessionDep) -> ShooterExportOut:
+def get_shooter_export(
+    shooter_id: ShooterId, session: SessionDep
+) -> ShooterExportOut | JSONResponse:
     """One shooter's rounds with their per-station hits, for the ClaySmasher app."""
     name = session.execute(_PROFILE_SQL, {"s": shooter_id}).scalar_one_or_none()
     if name is None:
-        raise NotFoundError("shooter_not_found", f"No shooter with id {shooter_id}")
+        return _not_found(session, shooter_id)
     generated_at = datetime.now(UTC)
     return ShooterExportOut(
         club=CLUB,
