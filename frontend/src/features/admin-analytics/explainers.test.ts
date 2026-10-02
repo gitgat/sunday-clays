@@ -55,6 +55,17 @@ describe('analytics explainers', () => {
     expect(all('bumps')).toMatch(/headline/i);
   });
 
+  it('says admin bumps count, and keeps "never counted" for visits only', () => {
+    const all = (key: keyof typeof analyticsExplainers) => {
+      const e = analyticsExplainers[key] as { what: string; read?: string[]; computed: string[] };
+      return [e.what, ...(e.read ?? []), ...e.computed].join(' ');
+    };
+    expect(all('bumps')).toMatch(/everyone.*admins included/i);
+    expect(all('bumps')).not.toMatch(/never counted/i);
+    expect(all('visitors')).toMatch(/Admin visits .* never counted/);
+    expect(all('pages')).toMatch(/Admin visits are never counted/);
+  });
+
   it('keeps each explainer short', () => {
     const totals = new Map<string, number>();
     for (const [key, text] of texts()) {

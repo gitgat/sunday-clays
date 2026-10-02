@@ -9,6 +9,7 @@ import { AdminError } from '../../admin/components/AdminError';
 import {
   allTime,
   fetchUptake,
+  todayIso,
   uptakeKey,
   useUptake,
   type AnalyticsRange,
@@ -28,8 +29,10 @@ function summary(data: Uptake): string {
 /** Answers per week (stacked), with each device's last answer across the window above. */
 export function UptakeCard({ range }: { range: AnalyticsRange }) {
   const query = useUptake(range);
+  // Fullscreen and the CSV run to today even when the window is custom and ends earlier.
+  const today = todayIso();
   const fullQuery = useMemo<ChartFullQuery>(() => {
-    const all = allTime(range.asOf);
+    const all = allTime(today);
     return {
       queryKey: [...uptakeKey(all), 'chart-full'],
       queryFn: async () => ({
@@ -37,7 +40,7 @@ export function UptakeCard({ range }: { range: AnalyticsRange }) {
         note: 'Every week on record.',
       }),
     };
-  }, [range.asOf]);
+  }, [today]);
 
   if (query.isPending) {
     return (
@@ -54,13 +57,6 @@ export function UptakeCard({ range }: { range: AnalyticsRange }) {
     );
   }
   const model = uptakeModel(query.data);
-  if (query.data.weeks.every((w) => w.picked + w.skipped + w.none === 0)) {
-    return (
-      <Card title={TITLE} subtitle={summary(query.data)}>
-        <EmptyState title="Nothing counted in this window yet." />
-      </Card>
-    );
-  }
   return (
     <ChartFrame
       title={TITLE}
@@ -73,6 +69,11 @@ export function UptakeCard({ range }: { range: AnalyticsRange }) {
       urlKey="uptake"
       explainer={analyticsExplainers.uptake}
       fullQuery={fullQuery}
+      emptyInline={
+        query.data.weeks.every((w) => w.picked + w.skipped + w.none === 0) ? (
+          <EmptyState title="Nothing counted in this window yet." />
+        ) : undefined
+      }
     />
   );
 }

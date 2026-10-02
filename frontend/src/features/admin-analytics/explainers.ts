@@ -41,8 +41,9 @@ export const analyticsExplainers = {
     ],
     computed: [
       'One bump per device per insight. Taking a bump back removes it.',
-      'The list shows each insight’s headline and its bump count. One no longer on the site loses its headline.',
+      'The list shows each insight’s headline and bump count. One no longer on the site has no headline.',
       'Devices that bumped counts each device once.',
+      'Everyone’s bumps count, admins included.',
     ],
   },
   uptake: {
