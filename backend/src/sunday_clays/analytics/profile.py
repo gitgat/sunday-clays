@@ -203,14 +203,27 @@ def milestone(event_dates: set[date], as_of: date) -> Milestone:
     )
 
 
+def _sundays_shot(
+    mine: pd.DataFrame, appearances: pd.DataFrame | None, shooter_id: int, as_of: date
+) -> pd.Series:
+    if appearances is None:
+        return mine["event_date"]
+    seen = _upto(appearances, as_of)
+    return seen.loc[seen["shooter_id"] == shooter_id, "event_date"]
+
+
 def shooter_insights(
     rounds: pd.DataFrame,
     history: pd.DataFrame,
     shooters: pd.DataFrame,
     shooter_id: int,
     as_of: date,
+    appearances: pd.DataFrame | None = None,
 ) -> ShooterInsights:
-    """Everything is computed from rows dated <= as_of (no-leak)."""
+    """Everything is computed from rows dated <= as_of (no-leak).
+
+    The Sundays milestone counts `appearances` (special Sundays included, Plan 17) when given.
+    """
     club_rounds = _upto(rounds, as_of)
     mine = club_rounds.loc[club_rounds["shooter_id"] == shooter_id]
     best = mine.loc[mine["is_best_round"]]
@@ -236,5 +249,5 @@ def shooter_insights(
         peak_date=peak_date,
         learning_curve=learning_curve(club_rounds, shooters, shooter_id),
         rust=Rust(effect=effect, n=n, club_effect=club_effect),
-        milestone=milestone(set(mine["event_date"]), as_of),
+        milestone=milestone(set(_sundays_shot(mine, appearances, shooter_id, as_of)), as_of),
     )

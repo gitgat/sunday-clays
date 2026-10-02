@@ -220,18 +220,31 @@ def _ytd_cutoff(year: int, as_of: date) -> date:
     return date(year, as_of.month, as_of.day)
 
 
-def yearly_trends(rounds: pd.DataFrame, events: pd.DataFrame, as_of: date) -> list[YearTrend]:
-    """Per calendar year up to as_of; the YTD window ends on as_of's month/day."""
+def yearly_trends(
+    rounds: pd.DataFrame,
+    events: pd.DataFrame,
+    as_of: date,
+    appearances: pd.DataFrame | None = None,
+) -> list[YearTrend]:
+    """Per calendar year up to as_of; the YTD window ends on as_of's month/day.
+
+    Pass the calendar as `events` and the appearance frame as `appearances` (Plan 17): Sundays
+    held, head counts and unique shooters then count special Sundays; ytd_rounds stays the
+    scored rounds.
+    """
     held = list(_held_events(events, as_of)["event_date"])
     upto = rounds.loc[rounds["event_date"] <= as_of]
+    seen = upto if appearances is None else appearances.loc[appearances["event_date"] <= as_of]
     heads = events.loc[events["event_date"] <= as_of]
-    years = sorted({d.year for d in heads["event_date"]} | {d.year for d in upto["event_date"]})
+    years = sorted({d.year for d in heads["event_date"]} | {d.year for d in seen["event_date"]})
     out: list[YearTrend] = []
     ytd_by_year: dict[int, int] = {}
     for year in years:
         cutoff = _ytd_cutoff(year, as_of)
         in_year = upto.loc[[d.year == year for d in upto["event_date"]]]
+        seen_year = seen.loc[[d.year == year for d in seen["event_date"]]]
         ytd = in_year.loc[in_year["event_date"] <= cutoff]
+        seen_ytd = seen_year.loc[seen_year["event_date"] <= cutoff]
         head_counts = heads.loc[
             [d.year == year for d in heads["event_date"]], "head_count"
         ].dropna()
@@ -242,10 +255,10 @@ def yearly_trends(rounds: pd.DataFrame, events: pd.DataFrame, as_of: date) -> li
                 year=year,
                 events_held=sum(1 for d in held if d.year == year),
                 mean_head_count=None if head_counts.empty else float(head_counts.mean()),
-                unique_shooters=int(in_year["shooter_id"].nunique()),
+                unique_shooters=int(seen_year["shooter_id"].nunique()),
                 ytd_events=ytd_events,
                 ytd_rounds=len(ytd),
-                ytd_unique_shooters=int(ytd["shooter_id"].nunique()),
+                ytd_unique_shooters=int(seen_ytd["shooter_id"].nunique()),
                 ytd_events_yoy=None
                 if previous_ytd == 0
                 else (ytd_events - previous_ytd) / previous_ytd,

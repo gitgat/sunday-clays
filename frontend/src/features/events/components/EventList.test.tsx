@@ -7,6 +7,9 @@ import { EventList, summaryLine } from './EventList';
 
 function summary(over: Partial<EventSummary>): EventSummary {
   return {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     event_date: '2026-09-13',
     round_type: 'super_sporting',
     round_type_source: 'stations',

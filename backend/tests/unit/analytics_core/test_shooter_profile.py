@@ -366,3 +366,30 @@ def test_insights_no_leak(make_rounds: Callable[..., pd.DataFrame]) -> None:
     assert ahead.learning_curve[0] == profile.LearningPoint(
         k=1, value=-2.0, club_median=1.0, n_club=3
     )
+
+
+def test_the_sundays_milestone_counts_special_sundays(
+    make_rounds: Callable[..., pd.DataFrame],
+) -> None:
+    from sunday_clays.analytics import frames
+
+    days = [date(2026, 1, 4) + timedelta(weeks=i) for i in range(9)]
+    special_day = days[-1] + timedelta(weeks=1)
+    rounds = make_rounds([(d, 1, 30) for d in days])
+    special = frames.appearances_from_rounds(make_rounds([(special_day, 1, 30)]))
+    seen = pd.concat(
+        [frames.appearances_from_rounds(rounds), special.assign(kind="special")],
+        ignore_index=True,
+    )
+    shooters = pd.DataFrame(
+        [(1, "Shooter 1", "member", days[0], special_day, 9, 10, False)],
+        columns=list(frames.SHOOTER_COLUMNS),
+    )
+    history = pd.DataFrame(columns=list(frames.RATING_COLUMNS))
+
+    base = profile.shooter_insights(rounds, history, shooters, 1, special_day)
+    counted = profile.shooter_insights(rounds, history, shooters, 1, special_day, seen)
+
+    assert (base.milestone.next_events, base.milestone.events_to_go) == (10, 1)
+    assert (counted.milestone.next_events, counted.milestone.events_to_go) == (25, 15)
+    assert counted.n_rounds == base.n_rounds == 9

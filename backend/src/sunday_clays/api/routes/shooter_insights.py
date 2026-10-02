@@ -75,5 +75,6 @@ def get_shooter_insights(
         shooters,
         shooter_id,
         day,
+        frames.load_appearances(session),
     )
     return ShooterInsightsOut.model_validate({"shooter_id": shooter_id, **asdict(insights)})
