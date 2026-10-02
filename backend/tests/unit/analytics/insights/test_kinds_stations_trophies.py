@@ -148,3 +148,15 @@ def test_station_best_can_be_a_lettered_station(make_world, sun, run, headline):
         "Station 7A is Pat Shooter1's station"
     )
     assert get("pf.station-best").chart(best["1"]).highlight.keys == ("7A",)
+
+
+def test_next_trophy_counts_a_special_sunday_toward_events(make_world, sun, run):
+    world = make_world()
+    for i in [*range(7), 8]:
+        world.round(1, sun(i), 44)
+    fr = world.frames()
+    (fact,) = run("pf.next-trophy", fr)
+    assert (fact.params["code"], fact.params["left"]) == ("events:2", 2)
+
+    (fact,) = run("pf.next-trophy", world.special(1, sun(7)).frames())
+    assert (fact.params["code"], fact.params["left"]) == ("events:2", 1)

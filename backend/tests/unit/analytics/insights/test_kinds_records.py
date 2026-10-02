@@ -96,3 +96,17 @@ def test_streak_chase_names_the_longest_current_win_run(make_world, sun, run):
         world.round(1, sun(i), 45).round(2, sun(i), 45)
     facts = {f.variant: f for f in run("rec.streak-chase", world.frames())}
     assert (facts["wins"].params["s"], facts["wins"].params["run"]) == (2, 5)
+
+
+def test_streak_chase_counts_a_special_sunday_in_the_run(make_world, sun, run):
+    world = make_world()
+    for i in [*range(7), *range(8, 15)]:  # 14 regular Sundays around the special sun(7)
+        world.crowd(sun(i), [30]).round(1, sun(i), 30).round(2, sun(i), 30)
+    world.special(1, sun(7))
+    fr = world.frames()
+
+    (fact,) = [f for f in run("rec.streak-chase", fr) if f.variant == "attendance"]
+    # CHASE_RUN is 15: shooter 1 (14 regular + the special) is chasing; shooter 2 (14, never
+    # broken by the special Sunday) is not yet.
+    assert fact.params["record"] == 15
+    assert fact.params["ids"] == [1]

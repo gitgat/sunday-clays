@@ -36,6 +36,8 @@ def build_frames(session: Session) -> InsightFrames:
         rating=inspect.unwrap(frames.load_rating_history)(session),
         stations=inspect.unwrap(frames.load_station_hits)(session),
         awards=awards,
+        appearances=inspect.unwrap(frames.load_appearances)(session),
+        calendar=inspect.unwrap(frames.load_calendar)(session),
     )
 
 

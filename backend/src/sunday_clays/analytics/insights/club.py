@@ -61,14 +61,34 @@ def held_to(fr: InsightFrames, as_of: date) -> list[Sunday]:
     return [s for s in fr.sundays if s.date <= as_of]
 
 
+def special_turnout(fr: InsightFrames, start: date, end: date) -> list[tuple[date, float]]:
+    """(date, turnout) of every held special Sunday in [start, end], oldest first (Plan 17): its
+    head count, else the shooters on its sheet (the insights' `head_count or n` turnout rule)."""
+    cal = fr.calendar
+    return sorted(
+        (day, float(n if pd.isna(heads) else heads))
+        for day, kind, heads, n, held in zip(
+            cal["event_date"],
+            cal["kind"],
+            cal["head_count"],
+            cal["n_shooters"],
+            cal["results_complete"],
+            strict=True,
+        )
+        if kind == frames.EVENT_KIND_SPECIAL and bool(held) and start <= day <= end
+    )
+
+
 def head_counts(fr: InsightFrames, start: date, end: date) -> list[tuple[date, float]]:
     """(date, head count) of every event in [start, end] with one, oldest first: the Explorer
-    `attendance` rows (Plan 11 T2 turnout rule; an event without full results still counts)."""
-    return sorted(
+    `attendance` rows (Plan 11 T2 turnout rule; an event without full results still counts),
+    plus every held special Sunday's turnout (Plan 17: club turnout counts special Sundays)."""
+    regular = [
         (day, float(heads))
         for day, heads in zip(fr.events["event_date"], fr.events["head_count"], strict=True)
         if start <= day <= end and not pd.isna(heads)
-    )
+    ]
+    return sorted([*regular, *special_turnout(fr, start, end)])
 
 
 def clear(gap: float, a: Sequence[float], b: Sequence[float]) -> bool:
