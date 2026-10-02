@@ -302,3 +302,22 @@ def test_the_sundays_to_go_count_a_special_sunday_after_the_last_round(make_worl
         f for f in run("pf.sunday-milestone", fr) if f.subject_id == "1" and f.variant == "to_go"
     ]
     assert (fact.params["next"], fact.params["to_go"]) == (25, 2)
+
+
+def test_the_sunday_milestone_club_count_includes_a_milestone_reached_on_a_special_sunday(
+    make_world, sun, run
+):
+    world = make_world()
+    for i in range(24):
+        world.crowd(sun(i), [30]).round(2, sun(i), 30).round(1, sun(i), 30)
+    world.special(2, sun(24))  # shooter 2's 25th Sunday is the special one
+    world.crowd(sun(25), [30]).round(1, sun(25), 30)  # shooter 1's 25th is a week later
+    fr = world.frames()
+
+    (fact,) = [
+        f
+        for f in run("pf.sunday-milestone", fr)
+        if f.subject_id == "1" and f.anchor_date == sun(25)
+    ]
+    assert fact.params["club"] == 2
+    assert fact.variant != "first"

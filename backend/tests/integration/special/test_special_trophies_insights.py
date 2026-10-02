@@ -119,6 +119,7 @@ def test_only_appearance_insights_change(fx_session: Session, fx_special_session
 
     changed = rows(fx_session) ^ rows(fx_special_session)
 
+    assert changed, "the special Sunday must move some appearance insight"
     assert {kind for _, _, kind in changed} <= APPEARANCE_INSIGHTS
     assert all(r.anchor_date != SPECIAL for r in load_rows(fx_special_session))
 
@@ -144,3 +145,15 @@ def test_club_turnout_and_newcomers_count_the_special_sunday(
         return int(returns.loc[returns["cohort_year"] == 2026, "n_cohort"].iloc[0])
 
     assert new_in_2026(special) == new_in_2026(base) + 1  # Kim, Pat
+
+
+def test_every_appearance_shooter_has_a_profile(fx_special_session: Session) -> None:
+    """community.py indexes `fr.profiles` for every shooter in `appearance_dates` (year-wrap), so a
+    special-only shooter must have a shooter_profiles row, whatever year is wrapping."""
+    clear_cache()
+    fr = build_frames(fx_special_session)
+    kim = _shooter(fx_special_session, "Kim, Pat")
+
+    assert kim in fr.appearance_dates
+    assert kim not in fr.histories
+    assert set(fr.appearance_dates) <= set(fr.profiles)

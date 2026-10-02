@@ -341,3 +341,13 @@ def test_turnout_trend_counts_a_special_sunday(make_world, run, sun):
     (fact,) = run("cl.turnout-trend", by_heads)
     assert (fact.params["recent"], fact.params["start"]) == (26, sun(8))
     assert club.special_turnout(by_heads, sun(0), sun(15)) == [(sun(8), 26.0)]
+
+
+def test_special_turnout_ignores_a_special_sunday_without_full_results(make_world, sun):
+    from dataclasses import replace
+
+    fr = make_world().special(1, sun(0), heads=12).special(2, sun(1), heads=9).frames()
+    unheld = fr.calendar["event_date"].eq(sun(1))
+    fr = replace(fr, calendar=fr.calendar.assign(results_complete=~unheld))
+
+    assert club.special_turnout(fr, sun(0), sun(2)) == [(sun(0), 12.0)]

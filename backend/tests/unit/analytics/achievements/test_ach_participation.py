@@ -545,3 +545,18 @@ def test_perfect_month_counts_a_special_sunday_toward_the_three(ctx_builder):
 @pytest.mark.parametrize("code", ["events", "iron_streak", "new_year", "perfect_month"])
 def test_appearance_trophies_with_a_special_sunday_never_leak(ctx_builder, no_leak, code):
     no_leak(code, special_ctx(ctx_builder), sun(1))  # the fixture asserts full == sliced
+
+
+def test_four_seasons_counts_a_season_covered_only_by_a_special_sunday(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .round(1, date(2025, 4, 6), 30)
+        .round(1, date(2025, 7, 6), 30)
+        .special(1, date(2025, 10, 5))
+        .round(1, date(2025, 12, 7), 30)  # winter 2026: not 2025's winter
+        .round(1, date(2025, 2, 2), 30)
+        .build()
+    )
+
+    (found,) = registry.evaluate_one(registry.get("four_seasons"), ctx)
+    assert (found.shooter_id, found.event_date, found.round_id) == (1, date(2025, 10, 5), None)

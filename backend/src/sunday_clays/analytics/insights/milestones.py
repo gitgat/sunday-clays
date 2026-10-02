@@ -340,10 +340,10 @@ TO_GO_MAX = 3
 
 def _sunday_milestone(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     reached: dict[int, list[tuple[date, int]]] = {}
-    for sid, days in fr.histories.items():
-        for d in days:
-            if d.k in SUNDAY_LEVELS:
-                reached.setdefault(d.k, []).append((d.date, sid))
+    for sid, dates in fr.appearance_dates.items():  # special Sundays count (Decision 11)
+        for level in SUNDAY_LEVELS:
+            if len(dates) >= level:
+                reached.setdefault(level, []).append((dates[level - 1], sid))
     for i, days in anchor_days(fr, scope):
         d = days[i]
         if d.k not in SUNDAY_LEVELS:

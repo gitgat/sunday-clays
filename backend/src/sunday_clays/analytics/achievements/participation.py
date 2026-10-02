@@ -126,10 +126,11 @@ def _new_year(ctx: AchContext) -> Iterator[Award]:
     first_regular: dict[int, date] = {}
     for day in regular:
         first_regular.setdefault(day.year, day)
+    regular_days = set(regular)
     qualifying = set(first_regular.values()) | {
         day
         for day in ctx.calendar_held_dates()
-        if day not in set(regular)
+        if day not in regular_days
         and (day.year not in first_regular or day < first_regular[day.year])
     }
     days = ctx.attendance_days
@@ -299,7 +300,7 @@ register(
     Achievement(
         code="events",
         name="Events Attended",
-        description="Sundays with at least one recorded round.",
+        description="Sundays shot.",
         category=Category.MILESTONE,
         art_key="events",
         tiers=make_tiers((1, 10, 25, 50, 100, 150, 200, 250), "events", singular="event"),
@@ -310,7 +311,7 @@ register(
     Achievement(
         code="years_active",
         name="Years Active",
-        description="Distinct calendar years with at least one round.",
+        description="Calendar years with at least one Sunday shot.",
         category=Category.MILESTONE,
         art_key="years_active",
         tiers=make_tiers((2, 3, 5, 7), "years"),
@@ -366,7 +367,7 @@ register(
     Achievement(
         code="new_year",
         name="New Year's Shooter",
-        description="Shot the first held event of a calendar year.",
+        description="Shot the first Sunday of a calendar year.",
         category=Category.CALENDAR,
         art_key="new_year",
         evaluate=_new_year,
@@ -440,7 +441,7 @@ register(
     Achievement(
         code="perfect_month",
         name="Perfect Month",
-        description="Attended every held event of a month with three or more held events.",
+        description="Shot every Sunday held in a month with three or more Sundays.",
         category=Category.CALENDAR,
         art_key="perfect_month",
         evaluate=_perfect_month,
