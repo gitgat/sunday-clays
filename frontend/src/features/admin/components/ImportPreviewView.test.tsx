@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import type { ImportPreview } from '../api';
-import { doneJob, duplicatePreview, scoresPreview, stalePreview } from '../mocks';
+import { doneJob, duplicatePreview, scoresPreview, specialPreview, stalePreview } from '../mocks';
 import { ImportPreviewView } from './ImportPreviewView';
 
 /** Stands in for ImportDetailPage, whose status comes from the import list that a finished commit refreshes. */
@@ -147,5 +147,14 @@ describe('ImportPreviewView', () => {
     renderPreview(stalePreview, 'pending');
     await user.click(screen.getByRole('button', { name: 'Discard this upload' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Import 3 is not pending');
+  });
+
+  it('previews a special shoot with its kind, findings and Sunday', async () => {
+    renderPreview(specialPreview, 'pending');
+    expect(
+      await screen.findByText('special_2026-09-20.xlsx · Special shoot workbook · Pending'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/does not match the station hits/)).toBeInTheDocument();
+    expect(screen.getByText('3-Bird Shoot')).toBeInTheDocument();
   });
 });
