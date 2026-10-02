@@ -56,6 +56,15 @@ _VALUE_DTYPES: dict[str, str] = {
     "event_date": _TS_DTYPE,
     "value": "float64",
 }
+_ATTENDANCE_DTYPES: dict[str, str] = {
+    "shooter_id": "int64",
+    "event_ts": _TS_DTYPE,
+    "event_date": "object",
+    "special": "bool",
+    "n_events": "int64",
+    "prev_ts": _TS_DTYPE,
+    "best_round_id": "Int64",
+}
 
 _STATION_SQL = text(
     """
@@ -63,6 +72,8 @@ _STATION_SQL = text(
            h.shooter_id, h.round_id, h.hits
     FROM station_hits h
     JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
+    JOIN events e ON e.event_date = h.event_date
+    WHERE e.kind = 'regular'
     ORDER BY h.event_date, h.entry_row, h.station_no, h.station_label
     """
 )
@@ -118,14 +129,43 @@ def _shooter_days(rounds: pd.DataFrame) -> pd.DataFrame:
     return days[list(_DAY_DTYPES)]
 
 
+def _attendance_days(appearances: pd.DataFrame, shooter_days: pd.DataFrame) -> pd.DataFrame:
+    """One row per shooter per Sunday shot, special Sundays included (Plan 17): the view the
+    attendance trophies read. best_round_id is the day's best round, <NA> on a special Sunday."""
+    if appearances.empty:
+        return _empty(_ATTENDANCE_DTYPES)
+    days = (
+        appearances[["shooter_id", "event_ts", "kind"]]
+        .drop_duplicates(["shooter_id", "event_ts"])
+        .sort_values(["shooter_id", "event_ts"], kind="stable")
+        .reset_index(drop=True)
+    )
+    days["shooter_id"] = days["shooter_id"].astype("int64")
+    days["event_date"] = days["event_ts"].dt.date
+    days["special"] = days["kind"].eq(frames.EVENT_KIND_SPECIAL)
+    by_shooter = days.groupby("shooter_id", sort=False)
+    days["n_events"] = by_shooter.cumcount() + 1
+    days["prev_ts"] = by_shooter["event_ts"].shift(1)
+    best = shooter_days[["shooter_id", "event_ts", "best_round_id"]]
+    days = days.merge(best, on=["shooter_id", "event_ts"], how="left")
+    days["best_round_id"] = days["best_round_id"].astype("Int64")
+    return days[list(_ATTENDANCE_DTYPES)]
+
+
 @dataclass(frozen=True, eq=False)
 class AchContext:
-    """Frames as frames.load_* return them, each with an extra `event_ts` (datetime64) column."""
+    """Frames as frames.load_* return them, each with an extra `event_ts` (datetime64) column.
+
+    `rounds`, `events` and `station_hits` are regular Sundays only (score trophies read them);
+    `appearances` and `calendar` include special Sundays (attendance trophies, Plan 17).
+    """
 
     rounds: pd.DataFrame
     events: pd.DataFrame
     station_hits: pd.DataFrame
     rating_history: pd.DataFrame
+    appearances: pd.DataFrame
+    calendar: pd.DataFrame
     as_of: date | None = None
     _memo: dict[Any, Any] = field(default_factory=dict, repr=False)
 
@@ -137,13 +177,22 @@ class AchContext:
         events: pd.DataFrame,
         station_hits: pd.DataFrame,
         rating_history: pd.DataFrame,
+        appearances: pd.DataFrame | None = None,
+        calendar: pd.DataFrame | None = None,
         as_of: date | None = None,
     ) -> AchContext:
+        """Without appearances/calendar, the rounds and events imply them (all regular)."""
         return cls(
             rounds=_with_ts(rounds),
             events=_with_ts(events),
             station_hits=_with_ts(station_hits),
             rating_history=_with_ts(rating_history),
+            appearances=_with_ts(
+                frames.appearances_from_rounds(rounds) if appearances is None else appearances
+            ),
+            calendar=_with_ts(
+                frames.calendar_from_events(events) if calendar is None else calendar
+            ),
             as_of=as_of,
         )
 
@@ -156,17 +205,21 @@ class AchContext:
             events=_cut(self.events, as_of),
             station_hits=_cut(self.station_hits, as_of),
             rating_history=_cut(self.rating_history, as_of),
+            appearances=_cut(self.appearances, as_of),
+            calendar=_cut(self.calendar, as_of),
             as_of=as_of,
         )
 
     def for_shooter(self, shooter_id: int) -> AchContext:
-        """One shooter's rows; events stay whole (held events are club-wide)."""
+        """One shooter's rows; events and the calendar stay whole (held Sundays are club-wide)."""
         linked = self.station_hits["shooter_id"].eq(shooter_id).fillna(False).astype(bool)
         return AchContext(
             rounds=self.rounds[self.rounds["shooter_id"] == shooter_id],
             events=self.events,
             station_hits=self.station_hits[linked],
             rating_history=self.rating_history[self.rating_history["shooter_id"] == shooter_id],
+            appearances=self.appearances[self.appearances["shooter_id"] == shooter_id],
+            calendar=self.calendar,
             as_of=self.as_of,
         )
 
@@ -178,13 +231,28 @@ class AchContext:
             self._memo["shooter_days"] = cached
         return cached
 
+    @property
+    def attendance_days(self) -> pd.DataFrame:
+        """Every Sunday shot, special ones included (Plan 17); see _attendance_days."""
+        cached: pd.DataFrame | None = self._memo.get("attendance_days")
+        if cached is None:
+            cached = _attendance_days(self.appearances, self.shooter_days)
+            self._memo["attendance_days"] = cached
+        return cached
+
     def held_dates(self) -> list[date]:
+        """Regular held Sundays."""
         return sorted(held_event_dates(self.events, self.as_of))
 
+    def calendar_held_dates(self) -> list[date]:
+        """Every held Sunday, special ones included."""
+        return sorted(held_event_dates(self.calendar, self.as_of))
+
     def streaks_at(self, day: date) -> pd.DataFrame:
+        """C7 streaks over appearances: a special Sunday extends a run, never breaks one."""
         key = ("streaks", day)
         if key not in self._memo:
-            self._memo[key] = streaks(self.rounds, self.events, day)
+            self._memo[key] = streaks(self.appearances, self.calendar, day)
         result: pd.DataFrame = self._memo[key]
         return result
 
@@ -217,6 +285,8 @@ def build_context(session: Session) -> AchContext:
         events=inspect.unwrap(frames.load_events)(session),
         station_hits=load_station_entries(session),
         rating_history=inspect.unwrap(frames.load_rating_history)(session),
+        appearances=inspect.unwrap(frames.load_appearances)(session),
+        calendar=inspect.unwrap(frames.load_calendar)(session),
     )
 
 

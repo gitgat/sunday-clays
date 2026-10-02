@@ -445,3 +445,200 @@ def test_every_family_handles_a_shooter_with_no_rounds(ctx_builder):
 def test_no_leak(code, scenario, cut, ctx_builder, no_leak):
     _, after = no_leak(code, scenario(ctx_builder), cut)
     assert after > 0  # the scenario has awards after the cut, so a leak would be visible
+
+
+# ---- special Sundays (Plan 17): they count as Sundays shot, never as rounds ---------------
+
+
+def special_ctx(b):
+    """Shooter 1 shoots sun(0), the special sun(1) and sun(2); shooter 2 skips the special."""
+    return (
+        b()
+        .round(1, sun(0), 30)
+        .special(1, sun(1))
+        .round(1, sun(2), 31)
+        .round(2, sun(0), 40)
+        .round(2, sun(2), 41)
+        .build()
+    )
+
+
+def test_a_special_sunday_counts_toward_events_years_and_big_year(ctx_builder):
+    ctx = special_ctx(ctx_builder)
+
+    assert value_series("events", ctx, 1) == [1.0, 2.0, 3.0]
+    assert value_series("events", ctx, 2) == [1.0, 2.0]
+    assert value_series("big_year", ctx, 1) == [1.0, 2.0, 3.0]
+    assert value_series("years_active", ctx, 1) == [1.0, 1.0, 1.0]
+
+
+def test_iron_streak_runs_through_a_special_sunday_and_never_breaks_on_it(ctx_builder):
+    ctx = special_ctx(ctx_builder)
+
+    assert value_series("iron_streak", ctx, 1) == [1.0, 2.0, 3.0]
+    assert value_series("iron_streak", ctx, 2) == [1.0, 2.0]
+
+
+def test_score_trophies_ignore_the_special_sunday(ctx_builder):
+    ctx = special_ctx(ctx_builder)
+
+    assert value_series("clays_broken", ctx, 1) == [30.0, 61.0]
+    assert value_series("clays_thrown", ctx, 1) == [50.0, 100.0]
+    assert value_series("personal_bests", ctx, 1) == [0.0, 0.0]
+    assert awards("doubleheader", ctx) == []
+
+
+def test_new_year_goes_to_a_special_sunday_before_the_first_regular_one(ctx_builder):
+    jan4, jan11, jan18 = date(2026, 1, 4), date(2026, 1, 11), date(2026, 1, 18)
+    ctx = (
+        ctx_builder()
+        .special(1, jan4)
+        .special(2, jan4)
+        .round(1, jan11, 30)
+        .round(3, jan11, 30)
+        .special(4, jan18)
+        .build()
+    )
+
+    found = sorted(
+        (w.shooter_id, w.event_date, w.round_id is None)
+        for w in registry.evaluate_one(registry.get("new_year"), ctx)
+    )
+    assert found == [(1, jan4, True), (2, jan4, True), (3, jan11, False)]
+
+
+def test_welcome_back_and_the_anniversary_count_a_special_sunday(ctx_builder):
+    d0 = date(2025, 1, 5)
+    back, year_on = d0 + timedelta(weeks=29), d0 + timedelta(weeks=52)
+    ctx = ctx_builder().round(1, d0, 30).special(1, back).special(1, year_on).build()
+
+    (welcome,) = registry.evaluate_one(registry.get("welcome_back"), ctx)
+    assert (welcome.event_date, welcome.round_id, welcome.details) == (
+        back,
+        None,
+        {"days_away": 203},
+    )
+    assert awards("anniversary_1", ctx) == [(1, "anniversary_1", year_on)]
+
+
+def test_perfect_month_counts_a_special_sunday_toward_the_three(ctx_builder):
+    mar1, mar8, mar15, apr5 = (
+        date(2026, 3, 1),
+        date(2026, 3, 8),
+        date(2026, 3, 15),
+        date(2026, 4, 5),
+    )
+    ctx = (
+        ctx_builder()
+        .round(1, mar1, 30)
+        .round(2, mar1, 30)
+        .special(1, mar8)
+        .round(1, mar15, 30)
+        .round(2, mar15, 30)
+        .round(3, apr5, 30)
+        .build()
+    )
+
+    assert awards("perfect_month", ctx) == [(1, "perfect_month", apr5)]
+
+
+@pytest.mark.parametrize("code", ["events", "iron_streak", "new_year", "perfect_month"])
+def test_appearance_trophies_with_a_special_sunday_never_leak(ctx_builder, no_leak, code):
+    no_leak(code, special_ctx(ctx_builder), sun(1))  # the fixture asserts full == sliced
+
+
+def test_four_seasons_counts_a_season_covered_only_by_a_special_sunday(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .round(1, date(2025, 4, 6), 30)
+        .round(1, date(2025, 7, 6), 30)
+        .special(1, date(2025, 10, 5))
+        .round(1, date(2025, 12, 7), 30)  # winter 2026: not 2025's winter
+        .round(1, date(2025, 2, 2), 30)
+        .build()
+    )
+
+    (found,) = registry.evaluate_one(registry.get("four_seasons"), ctx)
+    assert (found.shooter_id, found.event_date, found.round_id) == (1, date(2025, 10, 5), None)
+
+
+# ---- the 3-Bird Shoot (Plan 17 T10) -------------------------------------------------------
+
+
+def three_bird_awards(ctx):
+    return [
+        (w.shooter_id, w.event_date, w.round_id, w.details)
+        for w in registry.evaluate_one(registry.get("three_bird_shoot"), ctx)
+    ]
+
+
+def test_the_three_bird_trophy_is_a_non_tiered_calendar_one_off(ctx_builder):
+    from sunday_clays.analytics.achievements.registry import Category
+
+    achievement = registry.get("three_bird_shoot")
+    assert (achievement.name, achievement.description) == ("3-Bird Shoot", "Shot the 3-Bird Shoot.")
+    assert (achievement.category, achievement.art_key) == (Category.CALENDAR, "three_bird_shoot")
+    assert (achievement.tiers, achievement.repeatable) == ((), False)
+
+
+def test_a_three_bird_special_sunday_awards_its_shooters(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .round(1, sun(0), 30)
+        .special(1, sun(1), "3-Bird Shoot")
+        .special(2, sun(1), "3-Bird Shoot")
+        .build()
+    )
+
+    assert three_bird_awards(ctx) == [
+        (1, sun(1), None, {"label": "3-Bird Shoot", "event_date": sun(1).isoformat()}),
+        (2, sun(1), None, {"label": "3-Bird Shoot", "event_date": sun(1).isoformat()}),
+    ]
+
+
+@pytest.mark.parametrize("label", ["three bird shoot", " 3_BIRD  Shoot ", "THREE-Bird Shoot"])
+def test_three_bird_labels_are_normalised(label, ctx_builder):
+    ctx = ctx_builder().special(1, sun(1), label).build()
+
+    assert three_bird_awards(ctx) == [
+        (1, sun(1), None, {"label": label, "event_date": sun(1).isoformat()})
+    ]
+
+
+def test_another_special_shoot_does_not_award(ctx_builder):
+    ctx = ctx_builder().round(1, sun(0), 30).special(1, sun(1), "Fun Shoot").build()
+
+    assert three_bird_awards(ctx) == []
+
+
+def test_a_regular_sunday_does_not_award_even_with_a_three_bird_label(ctx_builder):
+    ctx = ctx_builder().round(1, sun(0), 30).build()
+    regular = ctx.calendar["event_date"] == sun(0)
+    ctx.calendar.loc[regular, "label"] = "3-Bird Shoot"
+
+    assert ctx.calendar.loc[regular, "kind"].tolist() == ["regular"]
+    assert three_bird_awards(ctx) == []
+
+
+def test_only_the_first_three_bird_shoot_awards(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .special(1, sun(1), "3-Bird Shoot")
+        .special(1, sun(5), "Three Bird Shoot")
+        .special(2, sun(5), "Three Bird Shoot")
+        .build()
+    )
+
+    assert [(sid, day) for sid, day, _, _ in three_bird_awards(ctx)] == [
+        (1, sun(1)),
+        (2, sun(5)),
+    ]
+
+
+def test_three_bird_never_leaks(ctx_builder, no_leak):
+    ctx = (
+        ctx_builder().special(1, sun(1), "3-Bird Shoot").special(2, sun(5), "3-Bird Shoot").build()
+    )
+
+    assert no_leak("three_bird_shoot", ctx, sun(2)) == (1, 1)
+    assert three_bird_awards(ctx.until(sun(0))) == []

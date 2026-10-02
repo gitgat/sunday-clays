@@ -55,3 +55,33 @@ export function neighbourSundays(
   }
   return { prev, next };
 }
+
+/** Regular Sundays are out of 50 (the weekly workbook's rounds). */
+const REGULAR_TARGETS = 50;
+
+/** Plan 17: a special shoot. Payloads from before Plan 17 omit `kind`; they are regular. */
+export function isSpecial(e: { kind?: string }): boolean {
+  return e.kind === 'special';
+}
+
+/** Targets a round on this Sunday is out of. */
+export function targetsOf(e: { target_total?: number }): number {
+  return e.target_total ?? REGULAR_TARGETS;
+}
+
+/** "Special · 60": the tag a special shoot carries wherever it is listed. */
+export function specialTag(e: { target_total?: number }): string {
+  return `Special · ${targetsOf(e)}`;
+}
+
+/** The special shoot's name ("3-Bird Shoot"), or null when the sheet gave none. */
+export function specialName(e: { label?: string | null }): string | null {
+  const label = e.label?.trim() ?? '';
+  return label === '' ? null : label;
+}
+
+/** "3-Bird Shoot · Special · 60 targets" (the name is left out when the sheet gave none). */
+export function specialLine(e: { label?: string | null; target_total?: number }): string {
+  const name = specialName(e);
+  return `${name === null ? '' : `${name} · `}${specialTag(e)} targets`;
+}

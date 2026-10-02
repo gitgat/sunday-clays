@@ -17,6 +17,9 @@ PRECIP_BANDS: tuple[str, ...] = ("dry", "wet")
 SEASONS: tuple[str, ...] = ("winter", "spring", "summer", "fall")
 WET_PRECIP_IN = 0.02
 UNSPECIFIED_GAUGE = "unspecified"
+EVENT_KIND_REGULAR = "regular"
+EVENT_KIND_SPECIAL = "special"  # Plan 17: a special Sunday counts only as an appearance
+REGULAR_TARGETS = 50
 
 ROUND_COLUMNS: tuple[str, ...] = (
     "round_id",
@@ -102,6 +105,32 @@ SHOOTER_COLUMNS: tuple[str, ...] = (
     "left_censored",
 )
 
+CALENDAR_COLUMNS: tuple[str, ...] = (*EVENT_COLUMNS, "kind", "label", "target_total")
+APPEARANCE_COLUMNS: tuple[str, ...] = (
+    "shooter_id",
+    "event_date",
+    "kind",
+    "round_type",
+    "display_name",
+    "shooter_status",
+    "name_key",
+    "held",
+)
+SPECIAL_ROUND_COLUMNS: tuple[str, ...] = (
+    "round_id",
+    "event_date",
+    "shooter_id",
+    "name_key",
+    "display_name",
+    "shooter_status",
+    "ordinal",
+    "score",
+    "label",
+    "target_total",
+)
+
+# Plan 17: every score frame reads regular Sundays only (`WHERE e.kind = 'regular'`); the
+# appearance frames below are the only readers that see special Sundays.
 _ROUNDS_SQL = """
 SELECT r.id AS round_id, r.event_date, r.shooter_id, r.name_key, p.display_name,
        r.ordinal, r.score, r.gauge_class, r.status, p.status AS shooter_status,
@@ -114,6 +143,7 @@ JOIN events e ON e.event_date = r.event_date
 JOIN shooter_profiles p ON p.shooter_id = r.shooter_id
 LEFT JOIN round_metrics m ON m.round_id = r.id
 LEFT JOIN event_weather w ON w.event_date = r.event_date
+WHERE e.kind = 'regular'
 ORDER BY r.event_date, r.shooter_id, r.name_key, r.ordinal
 """
 _EVENTS_SQL = """
@@ -125,6 +155,18 @@ SELECT e.event_date, e.round_type, e.round_type_source, e.head_count, e.n_rounds
 FROM events e
 LEFT JOIN event_metrics m ON m.event_date = e.event_date
 LEFT JOIN event_weather w ON w.event_date = e.event_date
+WHERE e.kind = 'regular'
+ORDER BY e.event_date
+"""
+_CALENDAR_SQL = """
+SELECT e.event_date, e.round_type, e.round_type_source, e.head_count, e.n_rounds,
+       e.n_shooters, e.has_scores, e.has_stations, e.results_complete, m.n, m.median,
+       m.mean, m.stdev, m.top_score, m.difficulty, w.temp_f, w.apparent_f, w.precip_in,
+       w.wind_mph, w.gust_mph, w.wind_dir_deg, w.cloud_pct, w.humidity_pct,
+       w.pressure_hpa, w.condition, e.kind, e.label, e.target_total
+FROM events e
+LEFT JOIN event_metrics m ON m.event_date = e.event_date
+LEFT JOIN event_weather w ON w.event_date = e.event_date
 ORDER BY e.event_date
 """
 _STATION_HITS_SQL = """
@@ -133,7 +175,36 @@ SELECT h.event_date, h.station_no, h.station_label, l.target_count, h.sheet_id, 
 FROM station_hits h
 JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
 JOIN events e ON e.event_date = h.event_date
+WHERE e.kind = 'regular'
 ORDER BY h.event_date, h.entry_row, h.station_no, h.station_label
+"""
+_SPECIAL_STATION_HITS_SQL = """
+SELECT h.event_date, h.station_no, h.station_label, l.target_count, h.sheet_id, h.entry_row,
+       h.name_key, h.shooter_id, h.round_id, h.hits, e.round_type
+FROM station_hits h
+JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
+JOIN events e ON e.event_date = h.event_date
+WHERE e.kind = 'special'
+ORDER BY h.event_date, h.entry_row, h.station_no, h.station_label
+"""
+_APPEARANCES_SQL = """
+SELECT r.shooter_id, r.event_date, e.kind, e.round_type, p.display_name,
+       p.status AS shooter_status, min(r.name_key) AS name_key, e.results_complete AS held
+FROM rounds r
+JOIN events e ON e.event_date = r.event_date
+JOIN shooter_profiles p ON p.shooter_id = r.shooter_id
+GROUP BY r.shooter_id, r.event_date, e.kind, e.round_type, p.display_name, p.status,
+         e.results_complete
+ORDER BY r.event_date, r.shooter_id
+"""
+_SPECIAL_ROUNDS_SQL = """
+SELECT r.id AS round_id, r.event_date, r.shooter_id, r.name_key, p.display_name,
+       p.status AS shooter_status, r.ordinal, r.score, e.label, e.target_total
+FROM rounds r
+JOIN events e ON e.event_date = r.event_date
+JOIN shooter_profiles p ON p.shooter_id = r.shooter_id
+WHERE e.kind = 'special'
+ORDER BY r.event_date, r.score DESC, p.display_name, r.ordinal
 """
 _RATING_SQL = """
 SELECT shooter_id, event_date, mu, var FROM rating_history
@@ -171,7 +242,7 @@ def _frame(
 
 @cached_by_data_version
 def load_rounds(session: Session) -> pd.DataFrame:
-    """One row per live round with metrics, weather and derived `gauge`/`held`.
+    """One row per live round of a regular Sunday, with metrics, weather and derived gauge/held.
 
     Dates are `datetime.date` objects. Metric/weather columns are NaN until computed;
     `is_best_round` is False until s10 has run; `held` = the event's `results_complete`.
@@ -204,48 +275,137 @@ def load_rounds(session: Session) -> pd.DataFrame:
     return df[list(ROUND_COLUMNS)]
 
 
+_EVENT_FLOATS: tuple[str, ...] = (
+    "head_count",
+    "n",
+    "median",
+    "mean",
+    "stdev",
+    "top_score",
+    "difficulty",
+    "temp_f",
+    "apparent_f",
+    "precip_in",
+    "wind_mph",
+    "gust_mph",
+    "wind_dir_deg",
+    "cloud_pct",
+    "humidity_pct",
+    "pressure_hpa",
+)
+_EVENT_BOOLS: tuple[str, ...] = ("has_scores", "has_stations", "results_complete")
+
+
 @cached_by_data_version
 def load_events(session: Session) -> pd.DataFrame:
-    """Each `events` row plus event_metrics/event_weather columns (NaN if absent)."""
+    """Each regular `events` row plus event_metrics/event_weather columns (NaN if absent)."""
     return _frame(
         session,
         _EVENTS_SQL,
         EVENT_COLUMNS,
         ints=("n_rounds", "n_shooters"),
-        floats=(
-            "head_count",
-            "n",
-            "median",
-            "mean",
-            "stdev",
-            "top_score",
-            "difficulty",
-            "temp_f",
-            "apparent_f",
-            "precip_in",
-            "wind_mph",
-            "gust_mph",
-            "wind_dir_deg",
-            "cloud_pct",
-            "humidity_pct",
-            "pressure_hpa",
-        ),
-        bools=("has_scores", "has_stations", "results_complete"),
+        floats=_EVENT_FLOATS,
+        bools=_EVENT_BOOLS,
     )
 
 
 @cached_by_data_version
-def load_station_hits(session: Session) -> pd.DataFrame:
-    """station_hits rows with the station's target_count and the event round_type."""
+def load_calendar(session: Session) -> pd.DataFrame:
+    """Every Sunday, special ones included (Plan 17): load_events' columns plus kind, label and
+    target_total. For appearance consumers (turnout, calendars, streaks); a special row has no
+    metrics."""
     df = _frame(
         session,
-        _STATION_HITS_SQL,
+        _CALENDAR_SQL,
+        CALENDAR_COLUMNS,
+        ints=("n_rounds", "n_shooters", "target_total"),
+        floats=_EVENT_FLOATS,
+        bools=_EVENT_BOOLS,
+    )
+    # a regular Sunday has no label: None, whatever dtype pandas infers for the column
+    df["label"] = df["label"].astype(object).where(df["label"].notna(), None)
+    return df
+
+
+@cached_by_data_version
+def load_appearances(session: Session) -> pd.DataFrame:
+    """One row per shooter per Sunday shot, special Sundays included (Plan 17)."""
+    return _frame(
+        session, _APPEARANCES_SQL, APPEARANCE_COLUMNS, ints=("shooter_id",), bools=("held",)
+    )
+
+
+@cached_by_data_version
+def load_special_rounds(session: Session) -> pd.DataFrame:
+    """The rounds of special Sundays only (Plan 17), best first: for display, never for stats."""
+    return _frame(
+        session,
+        _SPECIAL_ROUNDS_SQL,
+        SPECIAL_ROUND_COLUMNS,
+        ints=("round_id", "shooter_id", "ordinal", "score", "target_total"),
+    )
+
+
+def _station_frame(session: Session, sql: str) -> pd.DataFrame:
+    df = _frame(
+        session,
+        sql,
         STATION_HIT_COLUMNS,
         ints=("station_no", "target_count", "sheet_id", "entry_row", "hits"),
         nullable_ints=("shooter_id", "round_id"),
     )
     df["station_label"] = df["station_label"].astype(str)  # text dtype, empty or not
     return df
+
+
+@cached_by_data_version
+def load_station_hits(session: Session) -> pd.DataFrame:
+    """Regular Sundays' station_hits with the station's target_count and the round_type."""
+    return _station_frame(session, _STATION_HITS_SQL)
+
+
+@cached_by_data_version
+def load_special_station_hits(session: Session) -> pd.DataFrame:
+    """Special Sundays' station grids (Plan 17): for the Sunday page only."""
+    return _station_frame(session, _SPECIAL_STATION_HITS_SQL)
+
+
+def appearances_from_rounds(rounds: pd.DataFrame) -> pd.DataFrame:
+    """The appearance frame a rounds frame implies: its Sundays shot, all regular (Plan 17).
+
+    Equal to load_appearances when no special Sunday exists; callers and unit-test worlds that
+    hold only rounds use it.
+    """
+    if rounds.empty:
+        return pd.DataFrame(
+            {
+                c: pd.Series(
+                    dtype="int64" if c == "shooter_id" else "bool" if c == "held" else object
+                )
+                for c in APPEARANCE_COLUMNS
+            }
+        )
+    days = rounds.groupby(["shooter_id", "event_date"], as_index=False, sort=False).agg(
+        round_type=("round_type", "first"),
+        display_name=("display_name", "first"),
+        shooter_status=("shooter_status", "first"),
+        name_key=("name_key", "min"),
+        held=("held", "first"),
+    )
+    days["kind"] = EVENT_KIND_REGULAR
+    days["shooter_id"] = days["shooter_id"].astype("int64")
+    days["held"] = days["held"].eq(True)
+    ordered = days.sort_values(["event_date", "shooter_id"], kind="mergesort")
+    return ordered.reset_index(drop=True)[list(APPEARANCE_COLUMNS)]
+
+
+def calendar_from_events(events: pd.DataFrame) -> pd.DataFrame:
+    """The calendar an events frame implies: every Sunday regular, 50 targets (Plan 17)."""
+    out = events.copy()
+    out["kind"] = EVENT_KIND_REGULAR
+    out["label"] = None
+    out["target_total"] = REGULAR_TARGETS
+    return out
 
 
 @cached_by_data_version

@@ -1,4 +1,4 @@
-"""Workbook ingest: pure parsers for the two Sunday Clays workbooks (Contract C3).
+"""Workbook ingest: pure parsers for the Sunday Clays workbooks (Contract C3, Plan 17).
 
 ``parse_upload`` is the only entry point the domain layer uses.
 """
@@ -6,9 +6,10 @@
 from dataclasses import replace
 
 from sunday_clays.ingest.scores import parse_scores
+from sunday_clays.ingest.special import parse_special
 from sunday_clays.ingest.stations import parse_stations
 from sunday_clays.ingest.types import FileKind, ParsedUpload, ParseError
-from sunday_clays.ingest.validate import validate_scores, validate_stations
+from sunday_clays.ingest.validate import validate_scores, validate_special, validate_stations
 from sunday_clays.ingest.workbook import detect_kind, load_workbook_bytes
 
 __all__ = ["parse_upload"]
@@ -32,8 +33,12 @@ def parse_upload(data: bytes) -> ParsedUpload:
 
 def _parse(data: bytes) -> ParsedUpload:
     lw = load_workbook_bytes(data)
-    if detect_kind(lw) is FileKind.SCORES:
+    kind = detect_kind(lw)
+    if kind is FileKind.SCORES:
         scores = parse_scores(lw)
         return replace(scores, findings=scores.findings + validate_scores(scores))
+    if kind is FileKind.SPECIAL:
+        special = parse_special(lw)
+        return replace(special, findings=special.findings + validate_special(special))
     stations = parse_stations(lw)
     return replace(stations, findings=stations.findings + validate_stations(stations))

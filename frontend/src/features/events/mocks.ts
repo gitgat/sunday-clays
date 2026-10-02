@@ -34,6 +34,9 @@ const stationWeek = {
 
 export const eventSummaries: EventSummary[] = [
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scored,
     event_date: '2026-09-27',
     round_type: 'sporting',
@@ -49,6 +52,9 @@ export const eventSummaries: EventSummary[] = [
     ],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...stationWeek,
     event_date: '2026-09-13',
     round_type: 'super_sporting',
@@ -61,6 +67,9 @@ export const eventSummaries: EventSummary[] = [
     winners: [{ shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 }],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...stationWeek,
     event_date: '2026-09-06',
     round_type: 'super_sporting',
@@ -73,6 +82,9 @@ export const eventSummaries: EventSummary[] = [
     winners: [{ shooter_id: 32, display_name: 'Grimsby, Gregor', score: 48 }],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scored,
     event_date: '2026-08-30',
     round_type: 'sporting',
@@ -89,6 +101,9 @@ export const eventSummaries: EventSummary[] = [
     ],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scored,
     event_date: '2025-11-16',
     round_type: 'sporting',
@@ -103,6 +118,9 @@ export const eventSummaries: EventSummary[] = [
     winners: [],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scored,
     event_date: '2025-11-09',
     round_type: 'sporting',
@@ -129,6 +147,9 @@ function cells(hits: number[]): StationMatrix['entries'][number]['hits'] {
 }
 
 export const eventDetail: EventDetail = {
+  kind: 'regular',
+  label: null,
+  target_total: 50,
   event_date: '2026-09-13',
   round_type: 'super_sporting',
   round_type_source: 'stations',
@@ -286,6 +307,9 @@ export const eventDetail: EventDetail = {
 };
 
 export const attendanceOnlyDetail: EventDetail = {
+  kind: 'regular',
+  label: null,
+  target_total: 50,
   event_date: '2018-12-30',
   round_type: 'sporting',
   round_type_source: 'none',
@@ -305,6 +329,122 @@ export const attendanceOnlyDetail: EventDetail = {
   stations: null,
   notables: [],
   vs_prev: null,
+};
+
+/** Plan 17: the special Sunday (invented names, as everywhere in tests). */
+export const specialSummary: EventSummary = {
+  ...stationWeek,
+  round_type_source: 'none',
+  event_date: '2026-09-20',
+  round_type: 'sporting',
+  head_count: null,
+  n_rounds: 5,
+  n_shooters: 5,
+  median: null,
+  top_score: null,
+  difficulty: null,
+  winners: [],
+  kind: 'special',
+  label: '3-Bird Shoot',
+  target_total: 60,
+};
+
+const asEntered = {
+  ...noModel,
+  ordinal: 1,
+  adjusted: null,
+  event_rank: null,
+  is_best_round: true,
+  percentile: null,
+  mu_before: null,
+  mu_after: null,
+  rating_delta: null,
+} as const;
+
+/** One hit count per station 1..10 (6 targets each) → the API's cells. */
+function specialCells(hits: number[]): StationMatrix['entries'][number]['hits'] {
+  return hits.map((h, i) => ({ label: String(i + 1), station_no: i + 1, hits: h }));
+}
+
+const SPECIAL_SHOOTERS = [
+  {
+    round_id: 9001,
+    shooter_id: 3,
+    display_name: 'Hadley, Ike',
+    name_key: 'hadley ike',
+    hits: [6, 5, 6, 4, 6, 5, 6, 6, 5, 6],
+  },
+  {
+    round_id: 9002,
+    shooter_id: 18,
+    display_name: 'Kaplan, Noel',
+    name_key: 'kaplan noel',
+    hits: [6, 5, 5, 5, 6, 5, 5, 5, 4, 5],
+  },
+  {
+    round_id: 9003,
+    shooter_id: 340,
+    display_name: 'Kim, Pat',
+    name_key: 'kim pat',
+    hits: [4, 4, 3, 4, 4, 4, 4, 4, 4, 4],
+  },
+] as const;
+
+export const specialDetail: EventDetail = {
+  event_date: '2026-09-20',
+  round_type: 'sporting',
+  round_type_source: 'none',
+  head_count: null,
+  has_scores: true,
+  has_stations: true,
+  results_complete: true,
+  n_rounds: 3,
+  n_shooters: 3,
+  median: null,
+  mean: null,
+  stdev: null,
+  top_score: null,
+  difficulty: null,
+  // The server sends them best first; the table sorts anyway, so list them out of order here.
+  results: [SPECIAL_SHOOTERS[2], SPECIAL_SHOOTERS[0], SPECIAL_SHOOTERS[1]].map((s) => ({
+    ...asEntered,
+    round_id: s.round_id,
+    shooter_id: s.shooter_id,
+    display_name: s.display_name,
+    name_key: s.name_key,
+    score: s.hits.reduce((a, b) => a + b, 0),
+  })),
+  weather: null,
+  stations: {
+    layout: Array.from({ length: 10 }, (_, i) => ({
+      label: String(i + 1),
+      station_no: i + 1,
+      target_count: 6,
+    })),
+    entries: SPECIAL_SHOOTERS.map((s, i) => ({
+      entry_row: i + 5,
+      name_key: s.name_key,
+      shooter_id: s.shooter_id,
+      display_name: s.display_name,
+      round_id: s.round_id,
+      hits: specialCells([...s.hits]),
+      total: s.hits.reduce((a, b) => a + b, 0),
+    })),
+  },
+  // The server lists first-timers; the page leaves them to insights (NotablesCard).
+  notables: [
+    {
+      kind: 'first_timer',
+      shooter_id: 340,
+      display_name: 'Kim, Pat',
+      detail: 'First Sunday',
+      value: null,
+    },
+  ],
+  vs_prev: null,
+  kind: 'special',
+  label: '3-Bird Shoot',
+  target_total: 60,
 };
 
 // Default handlers are branch-free (every line runs in routes.test.tsx); tests needing other data use server.use.

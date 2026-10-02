@@ -314,7 +314,7 @@ def win_streaks(fr: InsightFrames, as_of: date) -> dict[int, tuple[int, int]]:
 
 
 def _streak_chase(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    table = streaks(fr.rounds, fr.events, scope.as_of)
+    table = streaks(fr.appearances, fr.calendar, scope.as_of)  # special Sundays extend runs
     record = int(table["longest_streak"].max()) if len(table) else 0
     running = sorted(
         int(sid)

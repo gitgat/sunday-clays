@@ -319,3 +319,30 @@ def test_record_watch_new_and_tie_headlines(make_world, sun, run, headline, vari
     (fact,) = run("ev.record-watch", fr, [sun(1)])
     assert fact.variant == variant
     assert phrase in headline("ev.record-watch", fact, fr)
+
+
+# --- special-shoot debuts (Plan 17 final review) ---------------------------------------------
+
+
+def test_new_faces_ignores_a_shooter_whose_debut_was_a_special_shoot(make_world, sun, run):
+    world = make_world().round(200, sun(0), 30)
+    for i in range(1, 10):
+        world.round(200, sun(i), 30)
+    world.special(1, sun(20))
+    world.round(1, sun(21), 30).round(2, sun(21), 30).crowd(sun(21), [31])
+    (fact,) = run("ev.new-faces", world.frames(), [sun(21)])
+    assert fact.params["n"] == 2  # shooter 2 and the filler; shooter 1 debuted a week earlier
+
+
+def test_new_faces_is_silent_on_the_regular_sunday_after_a_special_debut(make_world, sun, run):
+    world = make_world().series(200, 0, [30] * 12)
+    world.special(1, sun(10)).round(1, sun(11), 30)
+    assert run("ev.new-faces", world.frames(), [sun(11)]) == []
+
+
+def test_second_visit_counts_the_special_shoot_as_the_first_visit(make_world, sun, run):
+    world = make_world().series(200, 0, [30] * 12)
+    world.special(1, sun(8)).round(1, sun(9), 30).round(1, sun(10), 30)
+    fr = world.frames()
+    (fact,) = run("ev.second-visit", fr, [sun(9), sun(10)])
+    assert (fact.anchor_date, fact.params["names"]) == (sun(9), [1])

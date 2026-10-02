@@ -80,8 +80,8 @@ const explainers = {
     what: 'Your lifetime totals at Sunday Clays.',
     read: ['Current streak counts Sundays in a row that you shot.'],
     computed: [
-      'Clays broken: every score you have shot, added up, second rounds included.',
-      'Sundays: Sundays with at least one round from you.',
+      'Clays broken: every regular Sunday score you have shot, added up, second rounds included; special shoots are left out.',
+      'Sundays: Sundays with at least one round from you, special shoots included.',
       'Current streak: Sundays in a row, counting back from the latest Sunday with full results (0 if you missed it). Partial Sundays neither add nor break it.',
       'All round types count; the round-type filter does not apply.',
     ],

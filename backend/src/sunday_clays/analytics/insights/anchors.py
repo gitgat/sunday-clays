@@ -182,7 +182,7 @@ def highest_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
 
 
 def streak_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
-    table = streaks(fr.rounds, fr.events, link.window.end)
+    table = streaks(fr.appearances, fr.calendar, link.window.end)
     return pd.DataFrame(
         {
             "shooter_id": table["shooter_id"].to_numpy(),

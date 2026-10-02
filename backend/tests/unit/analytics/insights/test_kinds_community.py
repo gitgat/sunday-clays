@@ -178,3 +178,34 @@ def test_old_sundays_and_pre_history_scopes(make_world, sun, run):
     assert fact.params["avg"] == 30.0
     before = Scope(sundays=frozenset(), as_of=sun(0) - timedelta(days=2000))
     assert list(registry.get("cl.originals").evaluate(fr, before)) == []
+
+
+def test_newcomers_count_a_first_sunday_at_a_special_shoot(make_world, run):
+    """Plan 17: cohorts follow Sundays shot, like the /club "new" chart the fact links to."""
+    days = sundays_of(2025, 3)
+    world = make_world()
+    for sid in range(1, 10):
+        world.round(sid, days[0], 30)
+    for sid in range(1, 4):
+        world.round(sid, days[2], 30)
+    assert run("cl.newcomers", world.frames()) == []  # 9 new: under NEWCOMERS_MIN
+    world.special(10, days[1])  # shooter 10's only Sunday is the special shoot
+    (fact,) = run("cl.newcomers", world.frames())
+    assert (fact.params["n"], fact.params["back"], fact.params["year"]) == (10, 3, 2025)
+
+
+def test_year_wrap_counts_a_special_sunday(make_world, run):
+    """Plan 17: the special Sunday is one of the year's Sundays, can be the busiest, and its new
+    shooters are first-timers; the round count stays the scored rounds."""
+    days = sundays_of(2024, 30)
+    world = make_world()
+    for day in days[:15] + days[16:]:
+        world.sunday(day, head_count=10).crowd(day, [30])
+    world.crowd(sundays_of(2025, 1)[0], [30])
+    assert run("cl.year-wrap", world.frames()) == []  # 29 regular Sundays: too few
+    for sid in range(1, 13):
+        world.special(sid, days[15])
+    (fact,) = run("cl.year-wrap", world.frames())
+    assert (fact.params["sundays"], fact.params["rounds"]) == (30, 29)
+    assert (fact.params["busiest"], fact.params["busiest_n"]) == (days[15], 12)
+    assert fact.params["firsts"] == 29 + 12

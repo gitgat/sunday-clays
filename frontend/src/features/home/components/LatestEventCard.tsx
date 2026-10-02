@@ -4,6 +4,7 @@ import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { Stat } from '../../../components/ui/Stat';
+import { isSpecial, specialLine, targetsOf } from '../../events/format';
 import { useRoundTypeLink } from '../../../lib/roundTypes';
 import { useEventDetail, useMeta } from '../api';
 import type { EventDetail } from '../api';
@@ -23,6 +24,32 @@ export function attendanceText(headCount: number | null): string {
     : `Attendance only — ${headCount} shooters, no scores recorded`;
 }
 
+/** A special shoot: its tag and label, the best score of its total; no Median or Top score (not ranked). */
+function SpecialLatest({ event }: { event: EventDetail }) {
+  const total = targetsOf(event);
+  const max = Math.max(...event.results.filter((r) => r.is_best_round).map((r) => r.score));
+  const names = event.results
+    .filter((r) => r.is_best_round && r.score === max)
+    .map((r) => r.display_name)
+    .sort((a, b) => a.localeCompare(b));
+  return (
+    <>
+      <p className="text-text-muted">{specialLine(event)}</p>
+      {names.length > 0 && <p>{`Top score: ${names.join(' & ')} — ${max} of ${total}`}</p>}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Stat
+          label="Shooters"
+          value={String(event.n_shooters)}
+          explainer={homeExplainers.latestShooters}
+        />
+      </div>
+      <p className="text-sm text-text-muted">
+        Special shoots are not ranked or rated, so there is no median here.
+      </p>
+    </>
+  );
+}
+
 function LatestEventBody({
   event,
   lastFull,
@@ -36,6 +63,7 @@ function LatestEventBody({
   lastFull: string | null;
 }) {
   const top = winners(event.results);
+  const special = isSpecial(event);
   const eventLink = useRoundTypeLink(`/events/${event.event_date}`);
   const fullLink = useRoundTypeLink(`/events/${lastFull ?? event.event_date}`);
   return (
@@ -46,7 +74,9 @@ function LatestEventBody({
       >
         {formatDay(event.event_date)}
       </Link>
-      {event.has_scores ? (
+      {special && event.has_scores ? (
+        <SpecialLatest event={event} />
+      ) : event.has_scores ? (
         <>
           {/* No rank-1 best round (metrics not computed yet): no names to show; Top score below. */}
           {top.length > 0 && (
