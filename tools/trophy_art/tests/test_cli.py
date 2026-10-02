@@ -187,18 +187,48 @@ def test_select_reuse_needs_an_existing_plain_selection(paths):
     assert run(paths, "select", "other", "-", "5", "--reuse", "doubleheader") == 2
 
 
-def test_build_gives_a_reused_key_its_sources_art(paths):
+def _select_doubleheader_and_bonus(paths):
     target = paths["out"] / "candidates" / "doubleheader"
     target.mkdir(parents=True)
     (target / "1.png").write_bytes(png_bytes())
     assert run(paths, "select", "doubleheader", "-", "1") == 0
     assert run(paths, "select", "bonus", "-", "--reuse", "doubleheader") == 0
+
+
+def _gen(paths) -> str:
+    return (paths["repo"] / "frontend" / "src" / "features" / "achievements" / "trophyArt.gen.ts").read_text()
+
+
+def test_build_points_a_reused_key_at_its_sources_files_without_new_art(paths):
+    _select_doubleheader_and_bonus(paths)
     assert run(paths, "build", "--repo-root", str(paths["repo"])) == 0
     public = paths["repo"] / "frontend" / "public" / "trophies"
-    assert (public / "bonus.webp").read_bytes() == (public / "doubleheader.webp").read_bytes()
-    assert (public / "bonus@128.webp").read_bytes() == (public / "doubleheader@128.webp").read_bytes()
-    generated = (paths["repo"] / "frontend" / "src" / "features" / "achievements" / "trophyArt.gen.ts").read_text()
-    assert "  bonus: {\n    src: '/trophies/bonus.webp'," in generated
+    assert not (public / "bonus.webp").exists()
+    assert not (public / "bonus@128.webp").exists()
+    assert (
+        "  bonus: {\n    src: '/trophies/doubleheader.webp',\n    src128: '/trophies/doubleheader@128.webp',\n  },\n"
+    ) in _gen(paths)
+
+
+def test_manifest_command_rebuilds_the_ts_from_built_files_without_candidates(paths):
+    _select_doubleheader_and_bonus(paths)
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 0
+    built = _gen(paths)
+    gen = paths["repo"] / "frontend" / "src" / "features" / "achievements" / "trophyArt.gen.ts"
+    gen.write_text("stale\n")
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 0
+    assert _gen(paths) == built
+
+
+def test_manifest_command_fails_when_a_referenced_file_is_missing(paths):
+    _select_doubleheader_and_bonus(paths)
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 1
+    public = paths["repo"] / "frontend" / "public" / "trophies"
+    public.mkdir(parents=True)
+    (public / "doubleheader.webp").write_bytes(b"x")
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 1
+    (public / "doubleheader@128.webp").write_bytes(b"x")
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 0
 
 
 def test_build_fails_when_a_reused_source_is_not_selected(paths):
