@@ -123,6 +123,9 @@ def _select(args: argparse.Namespace) -> int:
     selection = _read_selection(args.selection)
     if args.reuse is not None:
         source = selection.get(args.reuse)
+        if args.reuse == stem:
+            print(f"--reuse cannot point {stem} at itself", file=sys.stderr)
+            return 1
         if source is None or "seed" not in source:
             print(f"--reuse needs an existing picked selection, not {args.reuse}", file=sys.stderr)
             return 1
@@ -144,7 +147,7 @@ def _file_stems(selection: dict[str, dict[str, Any]]) -> dict[str, str] | None:
     files: dict[str, str] = {}
     for stem, pick in selection.items():
         source = pick.get("reuse", stem)
-        if source != stem and "seed" not in selection.get(source, {}):
+        if "reuse" in pick and (source == stem or "seed" not in selection.get(source, {})):
             print(f"{stem} reuses {source}, which has no picked candidate", file=sys.stderr)
             return None
         files[stem] = source
@@ -177,7 +180,8 @@ def _build(args: argparse.Namespace) -> int:
         (public / f"{stem}.webp").write_bytes(medallion(png, 256))
         (public / f"{stem}@128.webp").write_bytes(medallion(png, 128))
     _write_manifest(selection, files, args.repo_root)
-    print(f"built {len(selection)} trophies into {public}")
+    reused = sum("reuse" in pick for pick in selection.values())
+    print(f"built {len(selection) - reused} trophies into {public} ({reused} reused)")
     return 0
 
 

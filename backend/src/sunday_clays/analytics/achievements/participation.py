@@ -155,7 +155,7 @@ def _three_bird_shoot(ctx: AchContext) -> Iterator[Award]:
     cal = ctx.calendar
     special = cal[cal["kind"].eq(frames.EVENT_KIND_SPECIAL)]
     labels = {
-        day: str(label)
+        day: label
         for day, label in zip(special["event_date"], special["label"], strict=True)
         if isinstance(label, str) and normalize_label(label) in THREE_BIRD_LABELS
     }

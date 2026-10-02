@@ -363,3 +363,25 @@ def test_generate_prints_the_servers_validation_detail_on_422(paths, imagen_env,
     create.mock(return_value=httpx.Response(422, json={"detail": [{"msg": "steps: must be >= 1"}]}))
     assert run(paths, "generate") == 1
     assert "HTTP 422: [{'msg': 'steps: must be >= 1'}]" in capsys.readouterr().err
+
+
+def test_select_rejects_a_reuse_of_its_own_stem_and_keeps_the_pick(paths):
+    pick = {"doubleheader": {"art_key": "doubleheader", "metal": None, "seed": 1}}
+    paths["selection"].write_text(json.dumps(pick))
+    assert run(paths, "select", "doubleheader", "-", "--reuse", "doubleheader") == 1
+    assert json.loads(paths["selection"].read_text()) == pick
+
+
+def test_build_and_manifest_reject_a_hand_edited_self_reuse(paths, capsys):
+    paths["selection"].write_text(json.dumps({"rain": {"art_key": "rain", "metal": None, "seed": 5, "reuse": "rain"}}))
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 1
+    assert run(paths, "manifest", "--repo-root", str(paths["repo"])) == 1
+    assert "rain reuses rain" in capsys.readouterr().err
+
+
+def test_build_counts_only_the_trophies_it_built(paths, capsys):
+    _select_doubleheader_and_bonus(paths)
+    assert run(paths, "build", "--repo-root", str(paths["repo"])) == 0
+    out = capsys.readouterr().out
+    assert "built 1 trophies" in out
+    assert "1 reused" in out

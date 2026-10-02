@@ -605,9 +605,18 @@ def test_three_bird_labels_are_normalised(label, ctx_builder):
     ]
 
 
-def test_another_special_shoot_or_a_regular_sunday_does_not_award(ctx_builder):
+def test_another_special_shoot_does_not_award(ctx_builder):
     ctx = ctx_builder().round(1, sun(0), 30).special(1, sun(1), "Fun Shoot").build()
 
+    assert three_bird_awards(ctx) == []
+
+
+def test_a_regular_sunday_does_not_award_even_with_a_three_bird_label(ctx_builder):
+    ctx = ctx_builder().round(1, sun(0), 30).build()
+    regular = ctx.calendar["event_date"] == sun(0)
+    ctx.calendar.loc[regular, "label"] = "3-Bird Shoot"
+
+    assert ctx.calendar.loc[regular, "kind"].tolist() == ["regular"]
     assert three_bird_awards(ctx) == []
 
 
