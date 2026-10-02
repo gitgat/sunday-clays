@@ -99,8 +99,9 @@ export function useHeldSundays(year: number) {
   });
 }
 
+/** A special Sunday is never "missed" (Plan 17 Decision 19): it is drawn from the shooter's own list. */
 const heldDates = (events: EventSummary[]) =>
-  events.filter((e) => e.results_complete).map((e) => e.event_date);
+  events.filter((e) => e.results_complete && e.kind !== 'special').map((e) => e.event_date);
 
 /** The held Sundays of one year, for the calendar's all-years fullscreen and CSV. Reuses the page's cached year (same key as useHeldSundays). */
 export async function fetchHeldSundays(
@@ -114,6 +115,21 @@ export async function fetchHeldSundays(
       unwrap(api.GET('/api/events', { params: { query: { year, round_type: roundTypes } } })),
   });
   return heldDates(events);
+}
+
+export type SpecialRound = JsonOf<paths['/api/shooters/{id}/special']['get']>[number];
+
+/**
+ * Plan 17: the shooter's special shoots, oldest first. They are appearances only, so they are kept
+ * apart from the score charts' rounds. No round-type filter: the endpoint takes none.
+ */
+export function useShooterSpecials(id: number) {
+  return useQuery({
+    queryKey: ['/api/shooters/{id}/special', id],
+    queryFn: () => unwrap(api.GET('/api/shooters/{id}/special', { params: { path: { id } } })),
+    // The calendar and card degrade without them, so a failing request must not hold either up.
+    retry: false,
+  });
 }
 
 export function useShooterRating(id: number) {

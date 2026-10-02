@@ -4,8 +4,12 @@ import {
   formatDay,
   formatScore,
   formatSigned,
+  isSpecial,
   neighbourSundays,
   roundTypeLabel,
+  specialName,
+  specialTag,
+  targetsOf,
 } from './format';
 
 describe('formatDay', () => {
@@ -92,5 +96,27 @@ describe('neighbourSundays', () => {
       prev: '2026-09-06',
       next: '2026-09-20',
     });
+  });
+});
+
+describe('special Sundays (Plan 17)', () => {
+  it('knows a special Sunday by its kind; an older payload without one is regular', () => {
+    expect(isSpecial({ kind: 'special' })).toBe(true);
+    expect(isSpecial({ kind: 'regular' })).toBe(false);
+    expect(isSpecial({})).toBe(false);
+  });
+
+  it('tags a special Sunday with its own target total, 50 when none is sent', () => {
+    expect(targetsOf({ target_total: 60 })).toBe(60);
+    expect(targetsOf({})).toBe(50);
+    expect(specialTag({ target_total: 60 })).toBe('Special · 60');
+    expect(specialTag({})).toBe('Special · 50');
+  });
+
+  it('names a special Sunday by its label, or not at all', () => {
+    expect(specialName({ label: '3-Bird Shoot' })).toBe('3-Bird Shoot');
+    expect(specialName({ label: '  ' })).toBeNull();
+    expect(specialName({ label: null })).toBeNull();
+    expect(specialName({})).toBeNull();
   });
 });

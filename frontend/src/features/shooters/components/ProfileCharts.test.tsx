@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
+import { QueryClient } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { http, HttpResponse } from 'msw';
@@ -22,6 +23,7 @@ import {
   hadleyInsights,
   hadleyRating,
   hadleyRounds,
+  hadleySpecials,
   hadleySplitsByGauge,
   hadleySplitsByYear,
 } from '../mocks';
@@ -355,8 +357,9 @@ describe('ProfileCharts', () => {
     );
     renderWithProviders(<ProfileCharts shooterId={3} />, { route: '/shooters/3' });
     expect(await screen.findByText('No rating yet')).toBeInTheDocument();
-    // Scores over time, the calendar, the distribution and tough days.
-    expect(await screen.findAllByText('No rounds yet')).toHaveLength(4);
+    // Scores over time, the distribution and tough days; the calendar counts Sundays shot.
+    expect(await screen.findAllByText('No rounds yet')).toHaveLength(3);
+    expect(screen.getByText('No Sundays shot yet')).toBeInTheDocument();
     expect(screen.getByText('Not enough Sundays for a learning curve')).toBeInTheDocument();
     expect(
       screen.getByText(/No rounds in the last 8 weeks \(Aug 3 – Sep 27\)\. Pick 12M or All/),
@@ -495,6 +498,119 @@ describe('ProfileCharts', () => {
       );
       renderWithProviders(<ProfileCharts shooterId={3} />, { route: '/shooters/3' });
       expect(await screen.findByText("Couldn't load attendance calendar 2026")).toBeInTheDocument();
+    });
+
+    const special = (event_date: string) => ({
+      ...eventSummaries[0],
+      event_date,
+      results_complete: true,
+      kind: 'special' as const,
+      label: '3-Bird Shoot',
+      target_total: 60,
+    });
+
+    async function calendarRows(user: ReturnType<typeof userEvent.setup>) {
+      const table = await openTable(user, 'Attendance calendar 2026');
+      return within(table)
+        .getAllByRole('row')
+        .slice(1)
+        .map((r) =>
+          within(r)
+            .getAllByRole('cell')
+            .map((c) => c.textContent)
+            .slice(0, 2),
+        );
+    }
+
+    it('shows a special shoot the shooter came to as special, not missed', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('*/api/events', () =>
+          HttpResponse.json([...held(['2026-09-13', '2026-09-27']), special('2026-09-20')]),
+        ),
+        http.get('*/api/shooters/:id/special', () => HttpResponse.json(hadleySpecials)),
+      );
+      renderWithProviders(<ProfileCharts shooterId={3} />, { route: '/shooters/3' });
+      const rows = await calendarRows(user);
+      expect(rows).toContainEqual(['2026-09-20', 'special']);
+      expect(rows).not.toContainEqual(['2026-09-20', 'missed']);
+    });
+
+    it('never counts a special shoot the shooter skipped as missed', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('*/api/events', () =>
+          HttpResponse.json([...held(['2026-09-13']), special('2026-09-20')]),
+        ),
+      );
+      renderWithProviders(<ProfileCharts shooterId={3} />, { route: '/shooters/3' });
+      const rows = await calendarRows(user);
+      expect(rows.map(([date]) => date)).not.toContain('2026-09-20');
+    });
+
+    it('a shooter with only a special shoot still gets a calendar', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('*/api/shooters/:id/rounds', () => HttpResponse.json([])),
+        http.get('*/api/events', () => HttpResponse.json([special('2026-09-20')])),
+        http.get('*/api/shooters/:id/special', () => HttpResponse.json(hadleySpecials)),
+      );
+      renderWithProviders(<ProfileCharts shooterId={340} />, { route: '/shooters/340' });
+      expect(await calendarRows(user)).toEqual([['2026-09-20', 'special']]);
+      expect(screen.queryByText('No Sundays shot yet')).not.toBeInTheDocument();
+    });
+
+    it('counts a special shoot in Sundays shot per month', async () => {
+      const user = userEvent.setup();
+      server.use(http.get('*/api/shooters/:id/special', () => HttpResponse.json(hadleySpecials)));
+      renderWithProviders(<ProfileCharts shooterId={3} />, {
+        route: '/shooters/3?cal.view=month',
+      });
+      const table = await openTable(user, 'Sundays shot per month');
+      const september = within(table).getByRole('row', { name: /2026-09/ });
+      expect(
+        within(september)
+          .getAllByRole('cell')
+          .map((c) => c.textContent),
+      ).toEqual(['2026-09', '4']);
+    });
+
+    it('still draws the calendar when the special shoots cannot load', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('*/api/shooters/:id/special', () =>
+          HttpResponse.json({ error: { code: 'x', message: 'nope' } }, { status: 500 }),
+        ),
+      );
+      // The app retries a failing request; the special shoots must not hold the calendar for that.
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: 2, retryDelay: 60_000, gcTime: Infinity } },
+      });
+      renderWithProviders(<ProfileCharts shooterId={3} />, { route: '/shooters/3', queryClient });
+      const rows = await calendarRows(user);
+      expect(rows).toContainEqual(['2026-08-16', 'shot']);
+    });
+
+    it('opens a clicked special shoot', async () => {
+      server.use(
+        http.get('*/api/events', () =>
+          HttpResponse.json([...held(['2026-09-13']), special('2026-09-20')]),
+        ),
+        http.get('*/api/shooters/:id/special', () => HttpResponse.json(hadleySpecials)),
+      );
+      const { router } = renderWithProviders(<ProfileCharts shooterId={3} />, {
+        route: '/shooters/3',
+      });
+      const el = await screen.findByRole(
+        'img',
+        { name: 'Attendance calendar for 2026' },
+        LAZY_CHART,
+      );
+      getInstanceByDom(el)?.trigger('click', {
+        seriesName: 'Special',
+        data: { date: '2026-09-20' },
+      } as never);
+      await waitFor(() => expect(router.state.location.pathname).toBe('/events/2026-09-20'));
     });
   });
 
@@ -702,6 +818,35 @@ describe('ProfileCharts', () => {
           );
           expect(within(dialog).getByText(/Every year you shot/)).toBeVisible();
           expect(csv.names).toHaveLength(1);
+        },
+        LAZY_TEST_TIMEOUT,
+      );
+
+      it(
+        'puts a special shoot of another year in the CSV as special',
+        async () => {
+          stubViewport('desktop');
+          const csv = captureCsv();
+          const user = userEvent.setup();
+          server.use(
+            http.get('*/api/shooters/:id/special', () =>
+              HttpResponse.json([
+                {
+                  round_id: 8001,
+                  event_date: '2025-11-16',
+                  label: 'Flurry',
+                  target_total: 75,
+                  score: 61,
+                },
+              ]),
+            ),
+          );
+          renderWithProviders(<ProfileCharts shooterId={3} />, { route: '/shooters/3?cal=table' });
+          await screen.findByRole('table', { name: 'Attendance calendar 2026' }, LAZY_CHART);
+          const region = screen.getByRole('region', { name: 'Attendance calendar 2026' });
+          await user.click(within(region).getByRole('button', { name: 'CSV' }));
+          await waitFor(() => expect(csv.names).toHaveLength(1));
+          expect(await csv.text()).toMatch(/2025-11-16,special/);
         },
         LAZY_TEST_TIMEOUT,
       );
