@@ -321,3 +321,9 @@ def test_the_sunday_milestone_club_count_includes_a_milestone_reached_on_a_speci
     ]
     assert fact.params["club"] == 2
     assert fact.variant != "first"
+
+
+def test_back_strong_measures_the_gap_from_the_last_appearance(make_world, sun, run):
+    world = make_world().series(1, 0, [30] * 5)
+    world.special(1, sun(38)).round(1, sun(40), 31)  # a special shoot two weeks before
+    assert [f for f in run("pf.back-strong", world.frames()) if f.subject_id == "1"] == []

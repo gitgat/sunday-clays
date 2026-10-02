@@ -676,15 +676,19 @@ BACK_DAYS = 180
 def _back_strong(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for i, days in anchor_days(fr, scope):
         d = days[i]
-        if d.prev_date is None or (d.date - d.prev_date).days < BACK_DAYS:
+        if d.prev_date is None:
             continue
-        gap = (d.date - d.prev_date).days
+        # The gap runs from the last appearance, so a special shoot in between ends it.
+        last = max(a for a in fr.appearance_dates[d.shooter_id] if a < d.date)
+        gap = (d.date - last).days
+        if gap < BACK_DAYS:
+            continue
         usual = d.prior_mean
         show_score = usual is not None and d.score >= usual
         params: dict[str, object] = {
             "s": d.shooter_id,
             "months": max(6, round(gap / 30.44)),
-            "prev": d.prev_date,
+            "prev": last,
             "day": d.date,
         }
         if show_score:
