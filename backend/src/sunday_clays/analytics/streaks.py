@@ -5,6 +5,8 @@ from datetime import date
 
 import pandas as pd
 
+from sunday_clays.analytics.frames import EVENT_KIND_SPECIAL
+
 STREAK_COLUMNS: tuple[str, ...] = ("shooter_id", "current_streak", "longest_streak")
 
 
@@ -18,7 +20,7 @@ def _special_dates(events: pd.DataFrame) -> set[date]:
     """Dates of special Sundays (Plan 17); none when the frame has no `kind` column."""
     if "kind" not in events.columns:
         return set()
-    return set(events.loc[events["kind"].eq("special"), "event_date"])
+    return set(events.loc[events["kind"].eq(EVENT_KIND_SPECIAL), "event_date"])
 
 
 def streaks(rounds: pd.DataFrame, events: pd.DataFrame, as_of: date | None) -> pd.DataFrame:

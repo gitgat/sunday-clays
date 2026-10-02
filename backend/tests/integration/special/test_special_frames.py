@@ -11,7 +11,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics import frames, predictions, weather_effects
@@ -49,14 +49,13 @@ SCORE_FRAMES = [
     (frames.load_rating_history, ["shooter_id", "event_date"]),
     (load_station_frame, ["event_date", "entry_row", "station_label"]),
     (load_station_entries, ["event_date", "entry_row", "station_label"]),
-    (weather_effects.load_weather_events, ["event_date"]),
 ]
 
 
 @pytest.mark.parametrize(
     ("loader", "keys"),
     SCORE_FRAMES,
-    ids=["rounds", "events", "station_hits", "ratings", "stations_page", "ach_stations", "weather"],
+    ids=["rounds", "events", "station_hits", "ratings", "stations_page", "ach_stations"],
 )
 def test_special_world_frames_match_the_regular_world(
     loader: Callable[[Session], pd.DataFrame],
@@ -141,9 +140,42 @@ def test_the_station_readiness_count_skips_the_special_sunday(
     assert special.station_sundays == base.station_sundays
 
 
-def test_predictions_and_the_club_weather_model_are_unchanged(
+def _give_the_special_sunday_weather(session: Session) -> None:
+    """Copy 2026-09-13's weather row onto SPECIAL, so only the kind filter can exclude it."""
+    cols = [
+        c["name"]
+        for c in inspect(session.connection()).get_columns("event_weather")
+        if c["name"] != "event_date"
+    ]
+    names = ", ".join(cols)
+    session.execute(
+        text(
+            f"INSERT INTO event_weather (event_date, {names}) "  # noqa: S608 - schema names
+            f"SELECT :special, {names} FROM event_weather WHERE event_date = :src"
+        ),
+        {"special": SPECIAL, "src": date(2026, 9, 13)},
+    )
+    clear_cache()
+
+
+def test_the_weather_frame_and_club_model_skip_a_special_sunday_that_has_weather(
     fx_session: Session, fx_special_session: Session
 ) -> None:
+    _give_the_special_sunday_weather(fx_special_session)
+
+    base, special = _both(weather_effects.load_weather_events, fx_session, fx_special_session)
+    assert SPECIAL not in set(special["event_date"])
+    assert len(special) == len(base)
+    pd.testing.assert_frame_equal(base.reset_index(drop=True), special.reset_index(drop=True))
+    base_model, special_model = _both(
+        lambda s: weather_effects.club_regression(s, (), weather_effects.COVARIATES),
+        fx_session,
+        fx_special_session,
+    )
+    assert special_model == base_model
+
+
+def test_predictions_are_unchanged(fx_session: Session, fx_special_session: Session) -> None:
     target = date(2026, 10, 4)
     base, special = _both(
         lambda s: predictions.next_predictions(s, target, None, None),
@@ -151,12 +183,6 @@ def test_predictions_and_the_club_weather_model_are_unchanged(
         fx_special_session,
     )
     assert special == base
-    base_model, special_model = _both(
-        lambda s: weather_effects.club_regression(s, (), weather_effects.COVARIATES),
-        fx_session,
-        fx_special_session,
-    )
-    assert special_model == base_model
 
 
 def test_a_dropped_repeats_station_hits_never_reach_a_station_frame(
