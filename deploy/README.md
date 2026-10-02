@@ -22,10 +22,14 @@ ports and never join `traefik_public`.
 - Images are published to GHCR by the CI `publish` job only from CI-green `main` commits. Set the
   repository variable `PUBLISH_ON_PUSH=true` before the first deploy, or run the `ci` workflow on
   `main` with "Run workflow" (workflow_dispatch). Tags are `sha-<7>` and `latest`; deploy `sha-<7>`.
-- Every `sha-<7>` image is multi-arch (`linux/amd64` + `linux/arm64`), so `caddy`, `api` and `worker`
-  run on any node, Raspberry Pi or Proxmox VM, and Swarm moves them when a node goes away. Only `db`
-  and `backup` are pinned, by hostname, to the database node (`autopirate`). The worker is limited
-  to 1 GiB of memory.
+- Every `sha-<7>` image is multi-arch (`linux/amd64` + `linux/arm64`). Placement: `api` and `worker`
+  run on the x86 nodes (`autopirate` or `pico-relief`, constraint `node.platform.arch==x86_64`),
+  because a 4-core arm64 Pi measured slow against the database; if both x86 nodes are down the app
+  stops. `db` and `backup` are pinned, by hostname, to `autopirate`. `caddy` and the `deployer` can
+  go anywhere. `scripts/check_stack.py` allows an architecture constraint only on `api` and
+  `worker`, and only that one. The worker is limited to 1 GiB of memory. This is a `compose*.yaml`
+  change, so it takes effect only after a hand `docker stack deploy`: follow "Deploy or upgrade"
+  (`dep` pause, deploy the live tag, `dep` resume); the deployer never applies compose changes.
 - On each Raspberry Pi node, `docker info 2>&1 | grep -i 'memory limit'` must print nothing. A
   `No memory limit support` warning means the kernel's memory cgroup is off and the limits are
   ignored: add `cgroup_enable=memory cgroup_memory=1` to the kernel command line and reboot.

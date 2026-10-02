@@ -4,12 +4,20 @@
 # Every app image is pulled from the fleet registry, registry.thehalf.io (SC_REGISTRY overrides
 # it): the deployer mirrors each release's multi-arch index from GHCR into it, so only the
 # deployer's manager needs a ghcr.io login (deploy/README.md "Automatic deploys").
-# Images are multi-arch (linux/amd64 + linux/arm64), so the stateless services carry no
-# architecture constraint and run on any node, Pi or VM. Only the single-writer data services are
-# pinned, by hostname, to the database node (scripts/check_stack.py enforces both).
+# Images are multi-arch (linux/amd64 + linux/arm64), so caddy and the deployer carry no
+# architecture constraint and run on any node, Pi or VM. The single-writer data services are
+# pinned, by hostname, to the database node. api and worker are the one exception: they run on the
+# x86 nodes only (x-x86 below). scripts/check_stack.py enforces all of this.
 x-db-node: &db-node
   constraints:
     - node.hostname==${SC_DB_NODE:-autopirate}
+
+# api and worker run on x86 only (autopirate or pico-relief): measured slow on a 4-core arm64 Pi
+# while the database lives on x86 (autopirate). Swarm has no soft "prefer", so this is a hard
+# constraint; check_stack.py allows exactly this one architecture constraint, on these two services.
+x-x86: &x86
+  constraints:
+    - node.platform.arch==x86_64
 
 # Automatic rollback (Plan 13): a task that never turns healthy, or fails within `monitor`,
 # rolls its service back to the previous image. Every app service updates stop-first.
@@ -58,6 +66,7 @@ services:
   api:
     image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     deploy:
+      placement: *x86
       update_config: *update-rollback
       rollback_config: *rollback-stop-first
       restart_policy:
@@ -67,6 +76,7 @@ services:
     image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     deploy:
       replicas: 1
+      placement: *x86
       update_config: *update-rollback
       rollback_config: *rollback-stop-first
       # A full rebuild + skill calibration of the fixture history peaks at 224 MiB RSS (Plan 13

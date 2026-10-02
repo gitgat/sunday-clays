@@ -43,9 +43,11 @@ def test_ci_e2e_stack_cannot_hit_the_login_rate_limit_mid_run() -> None:
 
 
 def test_only_the_data_services_are_pinned_and_only_by_hostname() -> None:
-    """Plan 13: images are multi-arch, so caddy, api and worker may run on any node, Pi or VM."""
-    for name in ("caddy", "api", "worker"):
-        assert "placement" not in service("compose.swarm.yaml", name)["deploy"], name
+    """Images are multi-arch, so caddy may run on any node; api and worker are x86-only (2026-10-02)."""
+    assert "placement" not in service("compose.swarm.yaml", "caddy")["deploy"]
+    for name in ("api", "worker"):
+        placement = service("compose.swarm.yaml", name)["deploy"]["placement"]
+        assert placement == {"constraints": ["node.platform.arch==x86_64"]}, name
     for name in ("db", "backup"):
         placement = service("compose.swarm.yaml", name)["deploy"]["placement"]
         assert placement == {"constraints": ["node.hostname==${SC_DB_NODE:-autopirate}"]}, name
