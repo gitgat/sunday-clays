@@ -169,22 +169,33 @@ STREAK_PROFILE = 5
 STREAK_HOME_STEP = 10
 
 
+def _attended(fr: InsightFrames, days: Sequence[Day]) -> list[date]:
+    """Dates that count toward a run of Sundays in a row: the held Sundays shot, plus the special
+    Sundays shot up to the last day (C7 streaks: a special Sunday extends a run, never breaks
+    one)."""
+    regular = [d.date for d in held_only(days)]
+    special = fr.specials_through(days[-1].shooter_id, days[-1].date)
+    return sorted({*regular, *special})
+
+
 def held_run(fr: InsightFrames, days: Sequence[Day]) -> tuple[int, date | None]:
-    """(held Sundays in a row ending at the last day, the run's first Sunday); C7 `streaks`."""
-    positions = [fr.sunday_index[d.date] for d in held_only(days)]
-    if not positions or positions[-1] != fr.sunday_index.get(days[-1].date):
+    """(Sundays in a row ending at the last day, the run's first Sunday); C7 `streaks`."""
+    if not days or not days[-1].held:
         return 0, None
-    k = 1
-    while k < len(positions) and positions[-k - 1] == positions[-k] - 1:
-        k += 1
-    return k, fr.sundays[positions[-k]].date
+    dates = _attended(fr, days)
+    i = len(dates) - 1
+    while i > 0 and fr.no_held_between(dates[i - 1], dates[i]):
+        i -= 1
+    return len(dates) - i, dates[i]
 
 
 def longest_before(fr: InsightFrames, days: Sequence[Day]) -> int:
-    positions = [fr.sunday_index[d.date] for d in held_only(days)]
+    if not days:
+        return 0
+    dates = _attended(fr, days)
     longest = run = 0
-    for j, pos in enumerate(positions):
-        run = run + 1 if j and pos == positions[j - 1] + 1 else 1
+    for j, day in enumerate(dates):
+        run = run + 1 if j and fr.no_held_between(dates[j - 1], day) else 1
         longest = max(longest, run)
     return longest
 

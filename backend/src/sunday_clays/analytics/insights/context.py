@@ -15,7 +15,7 @@ import datetime as dt
 import hashlib
 import math
 import random
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -67,7 +67,7 @@ class Day:
     expected: float | None
     rank: int | None  # min-rank among best rounds (held days only)
     field_n: int  # shooters with a round that day
-    k: int  # Sundays shot through this date (shooter_profiles.n_events as of this date)
+    k: int  # Sundays shot through this date, special ones included (Plan 17)
     prior_rounds: int  # rounds on earlier dates
     prior_best: int | None  # best round on earlier dates
     prior_sum: int  # sum of every round's score on earlier dates
@@ -134,12 +134,16 @@ class InsightFrames:
     rating: pd.DataFrame  # frames.RATING_COLUMNS
     stations: pd.DataFrame  # frames.STATION_HIT_COLUMNS
     awards: pd.DataFrame  # AWARD_COLUMNS
-    as_of: date | None  # latest held Sunday in these frames
+    appearances: pd.DataFrame  # frames.APPEARANCE_COLUMNS: special Sundays included (Plan 17)
+    calendar: pd.DataFrame  # frames.CALENDAR_COLUMNS: special Sundays included (Plan 17)
+    as_of: date | None  # latest held (regular) Sunday in these frames
     histories: Mapping[int, tuple[Day, ...]] = field(repr=False)
     sundays: tuple[Sunday, ...] = field(repr=False)
     sunday_index: Mapping[date, int] = field(repr=False)
     profiles: Mapping[int, Profile] = field(repr=False)
     ratings: Mapping[int, tuple[tuple[date, float], ...]] = field(repr=False)
+    appearance_dates: Mapping[int, tuple[date, ...]] = field(repr=False)
+    special_days: Mapping[int, tuple[date, ...]] = field(repr=False)
 
     @classmethod
     def from_frames(
@@ -151,11 +155,17 @@ class InsightFrames:
         rating: pd.DataFrame,
         stations: pd.DataFrame | None = None,
         awards: pd.DataFrame | None = None,
+        appearances: pd.DataFrame | None = None,
+        calendar: pd.DataFrame | None = None,
     ) -> InsightFrames:
+        """Without appearances/calendar, the rounds and events imply them (all regular)."""
         stations = (
             stations if stations is not None else pd.DataFrame(columns=list(fr.STATION_HIT_COLUMNS))
         )
         awards = awards if awards is not None else pd.DataFrame(columns=list(AWARD_COLUMNS))
+        appearances = fr.appearances_from_rounds(rounds) if appearances is None else appearances
+        calendar = fr.calendar_from_events(events) if calendar is None else calendar
+        dates = _dates_by_shooter(appearances)
         sundays = _build_sundays(rounds, events)
         return cls(
             rounds=rounds,
@@ -164,12 +174,16 @@ class InsightFrames:
             rating=rating,
             stations=stations,
             awards=awards,
+            appearances=appearances,
+            calendar=calendar,
             as_of=sundays[-1].date if sundays else None,
-            histories=_build_histories(rounds, events),
+            histories=_build_histories(rounds, events, dates),
             sundays=sundays,
             sunday_index={s.date: s.i for s in sundays},
             profiles=_build_profiles(shooters),
             ratings=_build_ratings(rating),
+            appearance_dates=dates,
+            special_days=_dates_by_shooter(appearances, special_only=True),
         )
 
     def until(self, day: date) -> InsightFrames:
@@ -185,7 +199,27 @@ class InsightFrames:
             rating=cut(self.rating),
             stations=cut(self.stations),
             awards=cut(self.awards),
+            appearances=cut(self.appearances),
+            calendar=cut(self.calendar),
         )
+
+    def appearances_through(self, shooter_id: int, day: date) -> int:
+        """Sundays the shooter shot up to `day`, special ones included (Plan 17)."""
+        return bisect_right(self.appearance_dates.get(shooter_id, ()), day)
+
+    def specials_through(self, shooter_id: int, day: date) -> tuple[date, ...]:
+        """The special Sundays the shooter shot up to `day`, oldest first."""
+        days = self.special_days.get(shooter_id, ())
+        return days[: bisect_right(days, day)]
+
+    @cached_property
+    def _held_sorted(self) -> list[date]:
+        return self.held_dates()
+
+    def no_held_between(self, earlier: date, later: date) -> bool:
+        """No regular held Sunday strictly between the two dates (C7 streaks, Plan 17)."""
+        held = self._held_sorted
+        return bisect_left(held, later) == bisect_right(held, earlier)
 
     @property
     def names(self) -> dict[int, str]:
@@ -223,6 +257,20 @@ class InsightFrames:
     def history_until(self, shooter_id: int, day: date) -> tuple[Day, ...]:
         days = self.histories.get(shooter_id, ())
         return days[: bisect_right([d.date for d in days], day)]
+
+
+def _dates_by_shooter(
+    appearances: pd.DataFrame, *, special_only: bool = False
+) -> dict[int, tuple[date, ...]]:
+    frame = (
+        appearances.loc[appearances["kind"].eq(fr.EVENT_KIND_SPECIAL)]
+        if special_only
+        else appearances
+    )
+    out: dict[int, set[date]] = defaultdict(set)
+    for sid, day in zip(frame["shooter_id"], frame["event_date"], strict=True):
+        out[int(sid)].add(day)
+    return {sid: tuple(sorted(days)) for sid, days in out.items()}
 
 
 def _build_sundays(rounds: pd.DataFrame, events: pd.DataFrame) -> tuple[Sunday, ...]:
@@ -264,7 +312,12 @@ def _build_sundays(rounds: pd.DataFrame, events: pd.DataFrame) -> tuple[Sunday, 
     return tuple(out)
 
 
-def _build_histories(rounds: pd.DataFrame, events: pd.DataFrame) -> dict[int, tuple[Day, ...]]:
+def _build_histories(
+    rounds: pd.DataFrame,
+    events: pd.DataFrame,
+    appearance_dates: Mapping[int, tuple[date, ...]] | None = None,
+) -> dict[int, tuple[Day, ...]]:
+    dates = appearance_dates or {}
     weather: dict[date, dict[str, Any]] = {row["event_date"]: row for row in _records(events)}
     field_n: dict[date, set[int]] = defaultdict(set)
     by_day: dict[tuple[int, date], list[dict[str, Any]]] = defaultdict(list)
@@ -305,7 +358,8 @@ def _build_histories(rounds: pd.DataFrame, events: pd.DataFrame) -> dict[int, tu
                 expected=_opt_float(top["expected"]),
                 rank=_opt_int(top["event_rank"]),
                 field_n=len(field_n[day]),
-                k=len(days) + 1,
+                # Sundays shot through this date, special ones included (Plan 17)
+                k=bisect_right(dates[sid], day) if sid in dates else len(days) + 1,
                 prior_rounds=prior_rounds,
                 prior_best=prior_best,
                 prior_sum=prior_sum,
