@@ -77,6 +77,9 @@ const unmodelled = {
 
 /** 2026-09-13 (fixture scores); Nickerson's second round is illustrative, hence 14 rounds by 13 shooters. */
 export const pickerEvent: EventDetail = {
+  kind: 'regular',
+  label: null,
+  target_total: 50,
   event_date: '2026-09-13',
   round_type: 'super_sporting',
   round_type_source: 'stations',

@@ -2,7 +2,7 @@
 
 import math
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import date
 from enum import StrEnum
 from typing import Annotated, Any, Literal
@@ -149,6 +149,14 @@ class RatingOut(BaseModel):
     peak_date: date | None
 
 
+class SpecialRoundOut(BaseModel):
+    round_id: int
+    event_date: date
+    label: str
+    target_total: int
+    score: int
+
+
 class SplitOut(BaseModel):
     key: str
     n_rounds: int
@@ -196,11 +204,17 @@ def shooter_stats(rounds: pd.DataFrame) -> ShooterStatsOut:
     )
 
 
-def odometer(rounds: pd.DataFrame, streak_row: dict[str, Any] | None, trophies: int) -> OdometerOut:
-    """Lifetime counters over all of one shooter's rounds (C12 odometer)."""
+def odometer(
+    rounds: pd.DataFrame,
+    streak_row: dict[str, Any] | None,
+    trophies: int,
+    sundays: Collection[date] | None = None,
+) -> OdometerOut:
+    """Lifetime counters (C12 odometer): clays from the scored rounds; Sundays, years and the
+    favourite month from `sundays` (every Sunday shot, special ones included, Plan 17)."""
     thrown = len(rounds) * TARGETS_PER_ROUND
     broken = int(rounds["score"].sum())
-    dates = sorted(set(rounds["event_date"]))
+    dates = sorted(set(rounds["event_date"]) if sundays is None else set(sundays))
     months = Counter(d.month for d in dates)
     top = max(months.values(), default=0)
     favorite = min((m for m, n in months.items() if n == top), default=None)
@@ -360,9 +374,11 @@ def get_shooter(
     all_rounds = frames.load_rounds(session)
     lifetime = all_rounds.loc[all_rounds["shooter_id"] == shooter_id]
     filtered = frames.apply_round_type_filter(lifetime, round_types)
-    # Streaks are per shooter, so this shooter's lifetime rounds give the same row as
-    # streaks(all_rounds, ...) at a fraction of the work.
-    streak_rows = rows(streaks(lifetime, frames.load_events(session), today))
+    # Streaks are per shooter, so this shooter's Sundays give the same row as streaks over
+    # everyone at a fraction of the work. Special Sundays extend runs (Plan 17).
+    appearances = frames.load_appearances(session)
+    my_sundays = appearances.loc[appearances["shooter_id"] == shooter_id]
+    streak_rows = rows(streaks(my_sundays, frames.load_calendar(session), today))
     trophies = int(
         session.execute(
             text("SELECT count(*) FROM achievements_awarded WHERE shooter_id = :s"),
@@ -382,7 +398,12 @@ def get_shooter(
         current_mu=float(mine[0]["mu"]) if mine else None,
         current_var=float(mine[0]["var"]) if mine else None,
         stats=shooter_stats(filtered),
-        odometer=odometer(lifetime, streak_rows[0] if streak_rows else None, trophies),
+        odometer=odometer(
+            lifetime,
+            streak_rows[0] if streak_rows else None,
+            trophies,
+            set(my_sundays["event_date"]),
+        ),
         pbs=personal_bests(filtered),
         window_stats=(
             None
@@ -421,6 +442,26 @@ def get_shooter_rounds(
             condition=opt_str(r["condition"]),
         )
         for r in rows(mine.sort_values(["event_date", "ordinal"]))
+    ]
+
+
+@router.get("/api/shooters/{id}/special")
+def get_shooter_special(shooter_id: ShooterId, session: SessionDep) -> list[SpecialRoundOut]:
+    """The shooter's special Sundays (Plan 17), oldest first: appearances, never score stats."""
+    _profile(session, shooter_id)
+    special = frames.load_special_rounds(session)
+    mine = special.loc[special["shooter_id"] == shooter_id].sort_values(
+        ["event_date", "ordinal"], kind="mergesort"
+    )
+    return [
+        SpecialRoundOut(
+            round_id=int(r["round_id"]),
+            event_date=r["event_date"],
+            label=str(r["label"]),
+            target_total=int(r["target_total"]),
+            score=int(r["score"]),
+        )
+        for r in rows(mine)
     ]
 
 
