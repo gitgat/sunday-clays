@@ -40,7 +40,7 @@ export function UploadForm() {
         onChange={(e) => setFile(e.currentTarget.files?.item(0) ?? null)}
       />
       <p className="text-xs text-text-muted">
-        The kind (scores or stations) is detected from the workbook itself.
+        The kind (scores, stations or a special shoot) is detected from the workbook itself.
       </p>
       <Button type="submit" disabled={file === null || upload.isPending}>
         {upload.isPending ? 'Uploading…' : 'Upload and preview'}

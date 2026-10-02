@@ -19,6 +19,7 @@ const STATUS_LABELS: Record<string, string> = {
 const KIND_LABELS: Record<string, string> = {
   scores: 'Scores workbook',
   stations: 'Station workbook',
+  special: 'Special shoot workbook',
 };
 
 /** timestamptz (UTC) → club wall-clock time. */
