@@ -42,4 +42,4 @@ ENV PATH=/app/.venv/bin:$PATH \
     APP_VERSION=$APP_VERSION
 USER 10001:10001
 EXPOSE 8000
-CMD ["uvicorn", "sunday_clays.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
+CMD ["uvicorn", "sunday_clays.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers", "--no-access-log"]

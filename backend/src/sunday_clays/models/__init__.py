@@ -7,6 +7,7 @@ from sunday_clays.models.analytics import (
     RoundMetric,
 )
 from sunday_clays.models.base import Base
+from sunday_clays.models.bumps import BumpAttempt, FistBump
 from sunday_clays.models.identity import AuditLog, LoginAttempt, Rule, Shooter, ShooterAlias
 from sunday_clays.models.insights import Insight, InsightPick
 from sunday_clays.models.live import (
@@ -18,6 +19,12 @@ from sunday_clays.models.live import (
     StationLayout,
 )
 from sunday_clays.models.ops import AppState, Job
+from sunday_clays.models.page_views import (
+    PageKindRollup,
+    PageView,
+    PageViewAttempt,
+    PageViewRollup,
+)
 from sunday_clays.models.staging import (
     Import,
     ImportAttendanceRow,
@@ -33,10 +40,12 @@ __all__ = [
     "AppState",
     "AuditLog",
     "Base",
+    "BumpAttempt",
     "DataIssue",
     "Event",
     "EventMetric",
     "EventWeather",
+    "FistBump",
     "ForecastCache",
     "Import",
     "ImportAttendanceRow",
@@ -48,6 +57,10 @@ __all__ = [
     "InsightPick",
     "Job",
     "LoginAttempt",
+    "PageKindRollup",
+    "PageView",
+    "PageViewAttempt",
+    "PageViewRollup",
     "RatingHistory",
     "Round",
     "RoundMetric",

@@ -10,6 +10,7 @@ from sunday_clays.auth.deps import (
     NotAuthenticatedError,
     TooManyRequestsError,
     client_ip,
+    ip_fingerprint,
     record_audit,
     require_viewer,
 )
@@ -42,8 +43,9 @@ def login(
     session: SessionDep,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RoleOut:
-    ip = client_ip(request)
-    if is_limited(session, ip):
+    ip = client_ip(request)  # raw only for audit_log; rate-limit rows get the fingerprint
+    bucket = ip_fingerprint(request)
+    if is_limited(session, bucket):
         raise TooManyRequestsError("rate_limited", "Too many failed logins. Try again later.")
     # End the SELECT's transaction so no pooled connection is held through the slot wait and
     # the argon2 verify (up to seconds); record_attempt starts a fresh one.
@@ -54,7 +56,7 @@ def login(
         role = match_role(settings, body.password)
     finally:
         _VERIFY_SLOTS.release()
-    record_attempt(session, ip, role is not None)
+    record_attempt(session, bucket, role is not None)
     if role is None:
         session.commit()  # get_session rolls back on any exception; keep the failure row
         raise NotAuthenticatedError("invalid_password", "Wrong password")

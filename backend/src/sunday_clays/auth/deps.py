@@ -1,5 +1,7 @@
 """Role dependencies, client-IP bucketing and the audit helper (C8)."""
 
+import hashlib
+import hmac
 import ipaddress
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -49,6 +51,22 @@ def client_ip(request: Request) -> str:
     return _bucket(request.headers.get("x-real-ip")) or _bucket(peer) or peer or "unknown"
 
 
+def fingerprint(ip: str) -> str:
+    """First 32 hex chars of HMAC-SHA256(session_secret, ip): a stable per-client bucket key."""
+    key = get_settings().session_secret.get_secret_value().encode()
+    return hmac.new(key, ip.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def ip_fingerprint(request: Request) -> str:
+    """The value the rate-limit tables store in their ``ip`` column instead of the address.
+
+    Keyed over ``client_ip`` (so IPv6 still buckets per /64), which keeps limits per client while
+    a reader of the database cannot read an address or tie a row to one. ``audit_log.ip`` is the
+    exception: it records admin actions only, is the owner's own trail, and stays raw.
+    """
+    return fingerprint(client_ip(request))
+
+
 def current_role(
     request: Request, settings: Annotated[Settings, Depends(get_settings)]
 ) -> Role | None:
@@ -75,6 +93,8 @@ class Actor:
 
 
 def admin_actor(request: Request, role: Annotated[Role, Depends(require_admin)]) -> Actor:
+    # Raw on purpose: audit_log is the owner's own admin trail (admin actions only), outside the
+    # About-page claims that cover visitors. Rate-limit tables use ip_fingerprint instead.
     return Actor(role=role, ip=client_ip(request))
 
 

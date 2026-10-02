@@ -1,11 +1,18 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { http, HttpResponse, type JsonBodyType } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resetMeForTests, skipMe } from '../../../lib/me';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import { expectExplainer } from '../../../test/charts';
 import { NEXT_PREDICTIONS } from '../mocks';
 import { NextSundayCard } from './NextSundayCard';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  resetMeForTests();
+  localStorage.clear();
+});
 
 function serve(body: JsonBodyType, status = 200) {
   server.use(http.get('*/api/predictions/next', () => HttpResponse.json(body, { status })));
@@ -45,12 +52,73 @@ describe('NextSundayCard', () => {
     expect(screen.getByText('Your expected score:')).toBeInTheDocument();
   });
 
-  it('points to Shooters when nobody is picked, with a link that keeps the filters', async () => {
+  it('points to Which one are you? and Shooters when nobody is picked', async () => {
     serve(NEXT_PREDICTIONS);
     renderWithProviders(<NextSundayCard meId={null} />, { route: '/?rt=sporting' });
     const link = await screen.findByRole('link', { name: 'Go to Shooters' });
     expect(link).toHaveAttribute('href', '/shooters?rt=sporting');
-    expect(screen.getByText(/Choose “That’s me”/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'To see your own expected score here, pick your name in “Which one are you?” or choose “That’s me” on your Shooters profile.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^Choose “That’s me”/)).toBeNull();
+  });
+
+  it('names only the Shooters route once the question has been skipped', async () => {
+    skipMe();
+    serve(NEXT_PREDICTIONS);
+    renderWithProviders(<NextSundayCard meId={null} />, { route: '/?rt=sporting' });
+    const link = await screen.findByRole('link', { name: 'Go to Shooters' });
+    expect(link).toHaveAttribute('href', '/shooters?rt=sporting');
+    expect(
+      screen.getByText(
+        'Choose “That’s me” on your Shooters profile to see your own expected score here.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Which one are you/)).toBeNull();
+  });
+
+  it('switches to the Shooters-only copy the moment the question is skipped', async () => {
+    serve(NEXT_PREDICTIONS);
+    renderWithProviders(<NextSundayCard meId={null} />);
+    expect(await screen.findByText(/pick your name in “Which one are you\?”/)).toBeInTheDocument();
+    act(() => {
+      skipMe();
+    });
+    expect(screen.getByText(/^Choose “That’s me”/)).toBeInTheDocument();
+    expect(screen.queryByText(/Which one are you/)).toBeNull();
+  });
+
+  it('follows a skip even when this browser cannot keep it', async () => {
+    serve(NEXT_PREDICTIONS);
+    renderWithProviders(<NextSundayCard meId={null} />);
+    expect(await screen.findByText(/pick your name in “Which one are you\?”/)).toBeInTheDocument();
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    act(() => {
+      skipMe();
+    });
+    expect(screen.getByText(/^Choose “That’s me”/)).toBeInTheDocument();
+    set.mockRestore();
+    get.mockRestore();
+  });
+
+  it('follows a skip that could not be written when reads still work', async () => {
+    serve(NEXT_PREDICTIONS);
+    renderWithProviders(<NextSundayCard meId={null} />);
+    expect(await screen.findByText(/pick your name in “Which one are you\?”/)).toBeInTheDocument();
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    act(() => {
+      skipMe();
+    });
+    expect(screen.getByText(/^Choose “That’s me”/)).toBeInTheDocument();
   });
 
   it('says so when the viewer has no expectation yet', async () => {

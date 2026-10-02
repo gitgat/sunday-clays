@@ -74,6 +74,7 @@ const EXPECTED: Record<string, PageFilters> = {
   '/race': BOTH_FILTERS,
   '/records': BOTH_FILTERS,
   '/club': BOTH_FILTERS,
+  '/about': NO_FILTERS,
   '/explorer': BOTH_FILTERS,
   '/stations': BOTH_FILTERS,
   '/weather': BOTH_FILTERS,
@@ -86,6 +87,7 @@ const EXPECTED: Record<string, PageFilters> = {
   '/admin/imports/:id': NO_FILTERS,
   '/admin/identity': NO_FILTERS,
   '/admin/ops': NO_FILTERS,
+  '/admin/analytics': { roundType: false, window: true },
   '/login': NO_FILTERS,
 };
 

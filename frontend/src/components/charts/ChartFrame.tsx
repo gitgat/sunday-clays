@@ -74,6 +74,11 @@ export interface ChartFrameProps {
   windowKey?: string | undefined;
   /** Wording for an empty window: "No rounds in the last 8 weeks. Last shot Aug 2, 2026." */
   emptyWindow?: { none: string; last: string } | undefined;
+  /**
+   * Shown in place of the inline chart or Table when the inline data has nothing to draw, while
+   * the toolbar (Table, CSV, Fullscreen) stays so fullscreen and the CSV still reach `fullQuery`.
+   */
+  emptyInline?: ReactNode;
   /** Static full data for fullscreen and the CSV, when it is already loaded. */
   full?: ChartFull | undefined;
   /**
@@ -117,6 +122,7 @@ export function ChartFrame({
   window: initialWindow,
   windowKey,
   emptyWindow = NO_ROWS_WORDS,
+  emptyInline,
   full,
   fullQuery,
   fullscreen: canFullscreen = true,
@@ -239,13 +245,15 @@ export function ChartFrame({
 
   // An insight link's own dates win over the window: only the page's own window can come up empty.
   const emptyInWindow = trimBy !== null && inlineRows.length === 0 && target.window === null;
-  const emptyMessage = emptyInWindow && (
-    <EmptyState
-      title={`${emptyWindow.none} in ${windowPhrase(choice, initialWindow ?? null)}.`}
-      description={lastRow === null ? undefined : `${emptyWindow.last} ${formatDate(lastRow)}.`}
-      action={<WidenWindowButtons />}
-    />
-  );
+  const emptyMessage =
+    emptyInline ??
+    (emptyInWindow && (
+      <EmptyState
+        title={`${emptyWindow.none} in ${windowPhrase(choice, initialWindow ?? null)}.`}
+        description={lastRow === null ? undefined : `${emptyWindow.last} ${formatDate(lastRow)}.`}
+        action={<WidenWindowButtons />}
+      />
+    ));
   const trimmedNote = trimBy !== null && inlineRows.length < rows.length;
 
   const body = (inFullscreen: boolean) =>

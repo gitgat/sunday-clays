@@ -11,6 +11,7 @@ from sunday_clays.models import Job
 
 WEATHER_SYNC_LOCAL_HOUR = 14
 FORECAST_INTERVAL = timedelta(hours=6)
+ROLLUP_LOCAL_HOUR = 3  # Plan 16: page_view_rollup, once a local day, weather or not
 
 
 def _created_since(session: Session, kind: str, since: datetime) -> bool:
@@ -25,12 +26,16 @@ def schedule_due(
     weather_enabled: bool,
     timezone: str = "America/Los_Angeles",
 ) -> list[int]:
-    """Enqueue weather_sync (daily after 14:00 local) and forecast_refresh (every 6 h) when due."""
-    if not weather_enabled:
-        return []
+    """Enqueue page_view_rollup (daily after 03:00 local), and with weather on, weather_sync
+    (daily after 14:00 local) and forecast_refresh (every 6 h), when due."""
     local_now = now.astimezone(ZoneInfo(timezone))
-    slot_start = local_now.replace(hour=WEATHER_SYNC_LOCAL_HOUR, minute=0, second=0, microsecond=0)
     job_ids: list[int] = []
+    rollup_slot = local_now.replace(hour=ROLLUP_LOCAL_HOUR, minute=0, second=0, microsecond=0)
+    if local_now >= rollup_slot and not _created_since(session, "page_view_rollup", rollup_slot):
+        job_ids.append(enqueue(session, "page_view_rollup", dedupe_key="page_view_rollup"))
+    if not weather_enabled:
+        return job_ids
+    slot_start = local_now.replace(hour=WEATHER_SYNC_LOCAL_HOUR, minute=0, second=0, microsecond=0)
     if local_now >= slot_start and not _created_since(session, "weather_sync", slot_start):
         job_ids.append(enqueue(session, "weather_sync", dedupe_key="weather_sync"))
     if not _created_since(session, "forecast_refresh", now - FORECAST_INTERVAL):
