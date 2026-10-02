@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { expectExplainer } from '../../../test/charts';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
+import type { EventDetail } from '../../events/api';
 import { specialDetail } from '../../events/mocks';
 import { homeMeta, latestEvent } from '../mocks';
 import { attendanceText, LatestEventCard, winners } from './LatestEventCard';
@@ -13,6 +14,31 @@ const fail = () =>
     { error: { code: 'internal', message: 'Internal server error' } },
     { status: 500 },
   );
+
+/** Seven special results whose score order differs from alphabetical order (invented names). */
+function sevenSpecial(scores: number[]): EventDetail {
+  const names = [
+    'Abbott, Ann',
+    'Bishop, Bo',
+    'Cole, Cy',
+    'Dunn, Di',
+    'Egan, Ed',
+    'Fox, Flo',
+    'Gray, Gus',
+  ];
+  return {
+    ...specialDetail,
+    label: 'Flurry',
+    target_total: 75,
+    n_shooters: 7,
+    results: names.map((n, i) => ({
+      ...(specialDetail.results[0] as EventDetail['results'][number]),
+      round_id: 100 + i,
+      display_name: n,
+      score: scores[i] as number,
+    })),
+  };
+}
 
 describe('winners', () => {
   it('lists every best round ranked first, alphabetically', () => {
@@ -53,17 +79,30 @@ describe('LatestEventCard', () => {
     server.use(
       http.get('*/api/meta', () => HttpResponse.json(homeMeta)),
       http.get('*/api/events/:date', () =>
-        HttpResponse.json({ ...specialDetail, label: 'Flurry', target_total: 75 }),
+        HttpResponse.json(sevenSpecial([40, 70, 55, 72, 30, 71, 55])),
       ),
     );
     renderWithProviders(<LatestEventCard />);
     expect(await screen.findByText('Flurry · Special · 75 targets')).toBeInTheDocument();
-    expect(screen.getByText(/Top score: Hadley, Ike — \d+ of 75/)).toBeInTheDocument();
+    expect(screen.getByText('Top score: Dunn, Di — 72 of 75')).toBeInTheDocument();
     expect(screen.getByText('Shooters')).toBeInTheDocument();
     expect(screen.queryByText('Median')).not.toBeInTheDocument();
     expect(screen.queryByText('Top score')).not.toBeInTheDocument();
     expect(screen.getByText(/Special shoots are not ranked or rated/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Full results' })).toBeInTheDocument();
+  });
+
+  it('names every tied top shooter on a special latest Sunday', async () => {
+    server.use(
+      http.get('*/api/meta', () => HttpResponse.json(homeMeta)),
+      http.get('*/api/events/:date', () =>
+        HttpResponse.json(sevenSpecial([40, 70, 55, 72, 30, 72, 55])),
+      ),
+    );
+    renderWithProviders(<LatestEventCard />);
+    expect(
+      await screen.findByText('Top score: Dunn, Di & Fox, Flo — 72 of 75'),
+    ).toBeInTheDocument();
   });
 
   it('is titled Latest Sunday and explains each number', async () => {

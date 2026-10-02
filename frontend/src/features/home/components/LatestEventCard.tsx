@@ -27,13 +27,15 @@ export function attendanceText(headCount: number | null): string {
 /** A special shoot: its tag and label, the best score of its total; no Median or Top score (not ranked). */
 function SpecialLatest({ event }: { event: EventDetail }) {
   const total = targetsOf(event);
-  const best = [...event.results]
-    .filter((r) => r.is_best_round)
-    .sort((a, b) => b.score - a.score || a.display_name.localeCompare(b.display_name))[0];
+  const max = Math.max(...event.results.filter((r) => r.is_best_round).map((r) => r.score));
+  const names = event.results
+    .filter((r) => r.is_best_round && r.score === max)
+    .map((r) => r.display_name)
+    .sort((a, b) => a.localeCompare(b));
   return (
     <>
       <p className="text-text-muted">{specialLine(event)}</p>
-      {best !== undefined && <p>{`Top score: ${best.display_name} — ${best.score} of ${total}`}</p>}
+      {names.length > 0 && <p>{`Top score: ${names.join(' & ')} — ${max} of ${total}`}</p>}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Stat
           label="Shooters"

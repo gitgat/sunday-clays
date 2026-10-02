@@ -9,13 +9,13 @@ export const TOP_RESULTS = 5;
  * inline colours come from theme tokens only; no external fonts or images (the CSP allows none).
  */
 export function EventShareCard({ event }: { event: EventDetail }) {
+  if (isSpecial(event)) return <SpecialShareCard event={event} />;
   const top = event.results
     .flatMap((r) =>
       r.is_best_round && r.event_rank !== null ? [{ ...r, rank: r.event_rank }] : [],
     )
     .sort((a, b) => a.rank - b.rank || a.display_name.localeCompare(b.display_name))
     .slice(0, TOP_RESULTS);
-  if (isSpecial(event)) return <SpecialShareCard event={event} />;
   return (
     <article className="flex flex-col gap-2 rounded-card bg-surface p-4 text-text">
       <p className="text-sm text-accent">Sunday Clays</p>
