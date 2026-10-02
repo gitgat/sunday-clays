@@ -25,6 +25,8 @@ TOP_SIZES = {
     "stations": 2,
 }
 MORE_CAP = 30
+MORE_CAP_BY_PAGE = {"stations": 8}  # pages whose More list is shorter than MORE_CAP
+STATION_BEST = "pf.station-best"
 PINNED_PROFILE = "pf.digest-line"
 PINNED_HOME = "home.sunday-recap"
 NEVER_NEW = frozenset({PINNED_PROFILE, PINNED_HOME})
@@ -255,6 +257,28 @@ def feed_home(
     )
 
 
+def _edge(row: InsightRow) -> float:
+    return float(row.params.get("mine", 0)) - float(row.params.get("field", 0))
+
+
+def one_specialist_per_station(rows: Sequence[InsightRow]) -> list[InsightRow]:
+    """Keep one `pf.station-best` row per station: the largest edge (mine - field), ties by
+    rank score then subject id. Every other kind passes through. Pure."""
+    best: dict[str, InsightRow] = {}
+    for r in rows:
+        if r.kind != STATION_BEST:
+            continue
+        station = str(r.params.get("station"))
+        cur = best.get(station)
+        if cur is None or _specialist_order(r) < _specialist_order(cur):
+            best[station] = r
+    return [r for r in rows if r.kind != STATION_BEST or best[str(r.params.get("station"))] is r]
+
+
+def _specialist_order(r: InsightRow) -> tuple[float, float, str]:
+    return (-_edge(r), -r.rank_score, r.subject_id)
+
+
 def feed_page(
     rows: Sequence[InsightRow],
     page: str,
@@ -264,9 +288,11 @@ def feed_page(
 ) -> Feed:
     """Club, leaderboards, records and stations: the page's own pool, top N, More."""
     pool = [r for r in rows if page in r.pages and not_expired(r, page, ref, held)]
+    if page == "stations":
+        pool = one_specialist_per_station(pool)
     candidates = ranked(supersede(pool, supersedes))
     top, rest = one_per_family(candidates, TOP_SIZES[page])
-    more, n_more = _more(rest)
+    more, n_more = _more(rest, MORE_CAP_BY_PAGE.get(page, MORE_CAP))
     return Feed(as_of=ref, top=tuple(top), more=more, n_more=n_more)
 
 
