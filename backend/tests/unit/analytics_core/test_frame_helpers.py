@@ -157,3 +157,34 @@ def test_db_records_maps_missing_values_to_none_and_numpy_to_python() -> None:
     assert type(records[1]["d"]) is bool
     boxed = pd.DataFrame({"n": pd.Series([np.int64(3), np.float64("nan")], dtype=object)})
     assert frames.db_records(boxed) == [{"n": 3}, {"n": None}]
+
+
+def test_appearances_from_rounds_is_one_regular_row_per_shooter_and_day(
+    make_rounds: Callable[..., pd.DataFrame],
+) -> None:
+    d1, d2 = date(2026, 9, 6), date(2026, 9, 13)
+    rounds = make_rounds([(d2, 1, 30), (d1, 1, 40), (d1, 1, 35), (d1, 2, 20)])
+
+    out = frames.appearances_from_rounds(rounds)
+
+    assert list(out.columns) == list(frames.APPEARANCE_COLUMNS)
+    assert [(r.event_date, r.shooter_id, r.kind) for r in out.itertuples()] == [
+        (d1, 1, "regular"),
+        (d1, 2, "regular"),
+        (d2, 1, "regular"),
+    ]
+    assert out["shooter_id"].dtype == "int64"
+    assert out["held"].tolist() == [True, True, True]
+    empty = frames.appearances_from_rounds(rounds.iloc[0:0])
+    assert list(empty.columns) == list(frames.APPEARANCE_COLUMNS)
+    assert empty.empty
+
+
+def test_calendar_from_events_marks_every_sunday_regular_with_fifty_targets(
+    make_events: Callable[..., pd.DataFrame],
+) -> None:
+    out = frames.calendar_from_events(make_events([date(2026, 9, 6), date(2026, 9, 13)]))
+
+    assert out["kind"].tolist() == ["regular", "regular"]
+    assert out["label"].tolist() == [None, None]
+    assert out["target_total"].tolist() == [50, 50]
