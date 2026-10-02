@@ -154,7 +154,84 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
 4. Off-site copies: add `/var/data/sunday-clays/*` to the fleet restic set (nightly at 03:30 to
    lakitu, then Backblaze). The app's own dump runs at 02:30 America/Los_Angeles, before restic.
 
+## Moving the deployer state to /var/data (one time)
+
+If your stack still has the `deployer-state` named volume (check with `docker volume ls | grep deployer-state`
+on the deployer's node), do this before the first `docker stack deploy` of the bind-mount version.
+Skip it on a fresh stack. Define `dep` and `dep_exec` first ("Automatic deploys" → "Talking to it").
+
+On an empty state directory the deployer does not just "record main": it rolls `main` out whenever
+the live release is not `main` (after a manual rollback, a failed `main`, or while it was paused
+and `main` moved), and it has no history, so `rollback` has nothing to go back to. That is why the
+state is carried over or seeded rather than started empty.
+
+1. Create the directory (Swarm will not create a bind source, and a `dep` call would create it 755):
+
+   ```bash
+   sudo install -d -m 700 /var/data/sunday-clays/deployer
+   ```
+
+2. **Preferred, when you can reach the node running the old deployer** (`docker service ps
+   sundayclays_deployer`): pause it, then copy its state across. This keeps the history that
+   `rollback` depends on, and any pause.
+
+   ```bash
+   dep_exec pause "move state"      # waits for a rollout in progress
+   sudo docker cp "$(docker ps -q -f name=sundayclays_deployer)":/state/state.json \
+     /var/data/sunday-clays/deployer/state.json
+   sudo chmod 600 /var/data/sunday-clays/deployer/state.json
+   ```
+
+3. **If that node cannot be reached:** confirm `curl -fsS https://sundayclays.claysmasher.com/api/health`
+   reports the version of the newest CI-green `main`, and that every app service has settled
+   (`docker service ls`, all replicas up, nothing updating). Then stop the old deployer with nothing
+   in flight and seed the state by hand:
+
+   ```bash
+   docker service scale sundayclays_deployer=0
+   sudo python3 - <<'PY'
+   import json, os
+   live = {"sha": "<full main sha>", "tag": "sha-<7>", "at": "<UTC ISO, e.g. 2026-10-01T12:00:00+00:00>", "how": "auto"}
+   prev = {"sha": "<full sha>", "tag": "sha-<7>", "at": "<UTC ISO>", "how": "auto"}   # if known, else omit
+   state = {"sha": live["sha"], "tag": live["tag"], "deployed_at": live["at"],
+            "paused": "move state", "history": [live, prev]}
+   fd = os.open("/var/data/sunday-clays/deployer/state.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+   with os.fdopen(fd, "w") as f:
+       f.write(json.dumps(state, indent=2, sort_keys=True) + "\n")
+   PY
+   ```
+
+   (These are the exact keys the deployer writes. Run it as root so the file is root-owned, mode 600.)
+
+4. Deploy, with `IMAGE_TAG` set to the live tag. Take it from the copied or seeded state
+   (`dep tag`; the new directory, not the old deployer) or from the API service:
+
+   ```bash
+   export GHCR_USER=<github-login>
+   export IMAGE_TAG=$(dep tag)     # or: docker service inspect sundayclays_api --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+   [[ $IMAGE_TAG =~ ^sha-[0-9a-f]{7}$ ]] && echo "deploy $IMAGE_TAG" || echo "STOP: bad tag '$IMAGE_TAG'"
+   docker stack deploy -c compose.yaml -c compose.swarm.yaml sundayclays
+   ```
+
+   Only the deployer's task is recreated (its mount changed); the app services keep running.
+
+5. Resume and check:
+
+   ```bash
+   dep status    # same sha, tag and history as before, paused
+   dep resume
+   curl -fsS https://sundayclays.claysmasher.com/api/health
+   ```
+
+   If `dep status` shows a pause from an earlier manual rollback, leave it paused instead.
+
+6. Optional, once the deployer runs on the bind: on the node(s) that have the old volume,
+   `docker volume rm sundayclays_deployer-state`.
+
 ## Deploy or upgrade
+
+If your stack still has the `deployer-state` volume, do "Moving the deployer state to /var/data (one
+time)" above first.
 
 Once the stack runs, the `deployer` service puts every CI-green `main` commit live by itself
 ("Automatic deploys" below). Run `docker stack deploy` by hand only for the first deploy ("Turn it
@@ -179,7 +256,7 @@ curl -fsS https://sundayclays.claysmasher.com/api/health   # {"status":"ok","ver
 
 - Do not run `docker stack deploy` if the check printed `STOP`. `deployer.py tag` fails with
   `no deploy recorded` only when the deployer's state is empty (a fresh `/var/data/sunday-clays/deployer`,
-  such as the first deploy after the state moved off the old named volume); then use the `version` that `/api/health` reports, which is the live
+  such as the deploy that moves the state off the old named volume); then use the `version` that `/api/health` reports, which is the live
   release because a failed rollout is always rolled back as a whole.
 - Never take `IMAGE_TAG` from an old command line or from a single service's image: an older tag
   makes the deployer see drift and put the recorded release straight back after `resume`.
@@ -313,7 +390,7 @@ images, is published for both `linux/arm64` and `linux/amd64`.
 
 Every automatic deploy restarts `worker` (it gets 5 minutes to finish its job), `caddy` (a few
 seconds of errors) and `backup` (which takes a fresh dump on start). Pause around club shoots:
-`deployer.py pause "club shoot"`, then `resume` afterwards.
+`dep pause "club shoot"`, then `dep resume` afterwards.
 
 ### Talking to it
 
@@ -324,7 +401,8 @@ Define these once per shell:
 
 ```bash
 # one-off: same image as the running deployer, same state directory (no socket or tokens needed)
-dep() { docker run --rm -v /var/data/sunday-clays/deployer:/state \
+dep() { [ -d /var/data/sunday-clays/deployer ] || { echo "run: sudo install -d -m 700 /var/data/sunday-clays/deployer first"; return 1; }
+  docker run --rm -v /var/data/sunday-clays/deployer:/state \
   "$(docker service inspect sundayclays_deployer --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')" "$@"; }
 # fallback, and for the commands that need the Docker socket and tokens (mirror, rollback): run on
 # the node that runs the task (`docker service ps sundayclays_deployer`)
@@ -350,11 +428,7 @@ Because the state is on shared storage, it survives the task moving to another m
 picks up the recorded SHA and a pause exactly where they were. (This replaces the old node-local
 `deployer-state` volume and its "pause again after a failover" caveat.)
 
-**One-time migration (the first deploy of this change).** Run
-`sudo install -d -m 700 /var/data/sunday-clays/deployer` first ("Turn it on"). The deployer then
-starts on an empty directory: it records `main` without updating anything that is already live, and
-forgets any pause set before the move, so pause again if you need to. The old named volume is no
-longer used; remove it on the node(s) that have it with `docker volume rm sundayclays_deployer-state`.
+The first deploy that moves the state onto the bind needs the one-time steps in "Moving the deployer state to /var/data (one time)" above.
 
 ### Rollback
 
