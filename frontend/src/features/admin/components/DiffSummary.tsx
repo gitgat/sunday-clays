@@ -145,7 +145,7 @@ function SpecialDiffView({ diff }: { diff: SpecialDiff }) {
         <Row label="Shooters" value={String(diff.n_shooters)} />
         <Row
           label="Replaces"
-          value={diff.replaces_import === null ? '—' : `Import #${diff.replaces_import}`}
+          value={diff.replaces_import === null ? 'None' : `Import #${diff.replaces_import}`}
         />
       </dl>
       <NameHints newNames={diff.new_names} duplicates={diff.possible_duplicates} />

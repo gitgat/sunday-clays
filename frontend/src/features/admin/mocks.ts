@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { ImportPreview, ImportSummary, Job, ShooterMatch } from './api';
+import type { ImportPreview, SpecialDiff, ImportSummary, Job, ShooterMatch } from './api';
 
 export const importsList: ImportSummary[] = [
   {
@@ -144,6 +144,19 @@ export const stationsPreview: ImportPreview = {
   requires_removal_confirmation: false,
 };
 
+/** Plan 17: the special-shoot diff on its own, typed so tests can spread and override fields. */
+export const specialDiff: SpecialDiff = {
+  event_date: '2026-09-20',
+  label: '3-Bird Shoot',
+  target_total: 60,
+  stations: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
+  n_shooters: 5,
+  replaces_import: null,
+  regular_rows_on_date: 0,
+  new_names: ['Kim, Pat'],
+  possible_duplicates: [['Kim, Pat', 'Kimm, Pat']],
+};
+
 /** Plan 17: a special-shoot workbook's preview (invented names). */
 export const specialPreview: ImportPreview = {
   import_id: 6,
@@ -161,17 +174,7 @@ export const specialPreview: ImportPreview = {
       name: 'Kaplan, Noel',
     },
   ],
-  diff: {
-    event_date: '2026-09-20',
-    label: '3-Bird Shoot',
-    target_total: 60,
-    stations: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
-    n_shooters: 5,
-    replaces_import: null,
-    regular_rows_on_date: 0,
-    new_names: ['Kim, Pat'],
-    possible_duplicates: [['Kim, Pat', 'Kimm, Pat']],
-  },
+  diff: specialDiff,
   requires_removal_confirmation: false,
 };
 
