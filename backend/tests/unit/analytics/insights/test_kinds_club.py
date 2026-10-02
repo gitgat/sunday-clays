@@ -320,3 +320,34 @@ def test_rain_scores_steady_quotes_a_small_gap_inside_the_noise(make_world, sun,
     (fact,) = run("cl.rain-scores", fr)
     assert (fact.variant, fact.params["gap"]) == ("steady", 0.2)
     assert "within 0.2 targets" in headline("cl.rain-scores", fact, fr)
+
+
+def test_turnout_trend_counts_a_special_sunday(make_world, run, sun):
+    """Plan 17: a special Sunday's turnout is its head count, else the shooters on its sheet."""
+
+    def frames_with(special):
+        world = make_world()
+        for i in [*range(8), *range(9, 16)]:  # sun(8) is left for the special Sunday
+            world.sunday(sun(i), head_count=20 if i < 8 else 26).crowd(sun(i), [30])
+        special(world)
+        return world.frames()
+
+    assert run("cl.turnout-trend", frames_with(lambda w: None)) == []  # 15 Sundays: too few
+    by_sheet = frames_with(lambda w: [w.special(sid, sun(8)) for sid in range(1, 27)])
+    (fact,) = run("cl.turnout-trend", by_sheet)
+    assert (fact.variant, fact.params["recent"], fact.params["before"]) == ("recent", 26, 20)
+    assert fact.params["start"] == sun(8)
+    by_heads = frames_with(lambda w: w.special(1, sun(8), heads=26))  # 1 on the sheet, 26 came
+    (fact,) = run("cl.turnout-trend", by_heads)
+    assert (fact.params["recent"], fact.params["start"]) == (26, sun(8))
+    assert club.special_turnout(by_heads, sun(0), sun(15)) == [(sun(8), 26.0)]
+
+
+def test_special_turnout_ignores_a_special_sunday_without_full_results(make_world, sun):
+    from dataclasses import replace
+
+    fr = make_world().special(1, sun(0), heads=12).special(2, sun(1), heads=9).frames()
+    unheld = fr.calendar["event_date"].eq(sun(1))
+    fr = replace(fr, calendar=fr.calendar.assign(results_complete=~unheld))
+
+    assert club.special_turnout(fr, sun(0), sun(2)) == [(sun(0), 12.0)]

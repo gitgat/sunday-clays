@@ -16,7 +16,14 @@ import pandas as pd
 import pytest
 
 from sunday_clays.analytics.achievements.context import AchContext, station_frame
-from sunday_clays.analytics.frames import EVENT_COLUMNS, ROUND_COLUMNS
+from sunday_clays.analytics.frames import (
+    APPEARANCE_COLUMNS,
+    CALENDAR_COLUMNS,
+    EVENT_COLUMNS,
+    ROUND_COLUMNS,
+    appearances_from_rounds,
+    calendar_from_events,
+)
 from sunday_clays.station_label import label_number, parse_label
 
 # Round columns that frames.load_rounds takes from the event's event_weather row.
@@ -49,7 +56,14 @@ class CtxBuilder:
         self._rounds: list[dict[str, Any]] = []
         self._events: dict[date, dict[str, Any]] = {}
         self._stations: list[dict[str, Any]] = []
+        self._stations: list[dict[str, Any]] = []
         self._history: list[dict[str, Any]] = []
+        self._specials: list[tuple[int, date]] = []
+
+    def special(self, shooter_id: int, event_date: date) -> CtxBuilder:
+        """A special Sunday shot (Plan 17): an appearance only, never a round or a regular event."""
+        self._specials.append((shooter_id, event_date))
+        return self
 
     def round(self, shooter_id: int, event_date: date, score: int, **cols: Any) -> CtxBuilder:
         self._rounds.append(
@@ -95,14 +109,69 @@ class CtxBuilder:
 
     def build(self) -> AchContext:
         events = self._events_frame()
+        rounds = self._rounds_frame(events)
         return AchContext.from_frames(
-            rounds=self._rounds_frame(events),
+            rounds=rounds,
             events=events,
             station_hits=self._stations_frame(),
             rating_history=pd.DataFrame(
                 self._history, columns=["shooter_id", "event_date", "mu", "var"]
             ),
+            appearances=self._appearances(rounds),
+            calendar=self._calendar(events),
         )
+
+    def _appearances(self, rounds: pd.DataFrame) -> pd.DataFrame:
+        regular = appearances_from_rounds(rounds)
+        if not self._specials:
+            return regular
+        special = pd.DataFrame(
+            [
+                {
+                    "shooter_id": sid,
+                    "event_date": day,
+                    "kind": "special",
+                    "round_type": "sporting",
+                    "display_name": f"Shooter {sid}",
+                    "shooter_status": "member",
+                    "name_key": f"shooter {sid}",
+                    "held": True,
+                }
+                for sid, day in self._specials
+            ],
+            columns=list(APPEARANCE_COLUMNS),
+        )
+        both = pd.concat([regular, special], ignore_index=True)
+        return both.sort_values(["event_date", "shooter_id"], kind="mergesort").reset_index(
+            drop=True
+        )
+
+    def _calendar(self, events: pd.DataFrame) -> pd.DataFrame:
+        calendar = calendar_from_events(events)
+        days = sorted({day for _, day in self._specials})
+        if not days:
+            return calendar
+        rows: list[dict[str, Any]] = []
+        for day in days:
+            row: dict[str, Any] = dict.fromkeys(CALENDAR_COLUMNS, np.nan)
+            n = sum(1 for _, d in self._specials if d == day)
+            row.update(
+                event_date=day,
+                round_type="sporting",
+                round_type_source="none",
+                n_rounds=n,
+                n_shooters=n,
+                has_scores=True,
+                has_stations=False,
+                results_complete=True,
+                condition=None,
+                kind="special",
+                label="Three Clay Shoot",
+                target_total=60,
+            )
+            rows.append(row)
+        both = pd.concat([calendar, pd.DataFrame(rows, columns=list(CALENDAR_COLUMNS))])
+        return both.sort_values("event_date", kind="mergesort").reset_index(drop=True)
 
     def _events_frame(self) -> pd.DataFrame:
         """Plan 06 EVENT_COLUMNS: event_metrics and event_weather columns start NaN."""

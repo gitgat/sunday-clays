@@ -7,6 +7,7 @@ test states scores and the numbers a kind quotes are derived the same way as in 
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from datetime import date, timedelta
 from typing import Any
@@ -55,6 +56,8 @@ class World:
         self._awards: list[dict[str, Any]] = []
         self._stations: list[dict[str, Any]] = []
         self._filler = FILLER
+        self._specials: list[tuple[int, date]] = []
+        self._special_heads: dict[date, int] = {}
 
     def shooter(
         self, sid: int, name: str | None = None, *, status: str = "member", censored: bool = False
@@ -100,6 +103,15 @@ class World:
 
     def award(self, sid: int, code: str, day: date) -> World:
         self._awards.append({"shooter_id": sid, "code": code, "event_date": day})
+        return self
+
+    def special(self, sid: int, day: date, *, heads: int | None = None) -> World:
+        """A special Sunday shot (Plan 17): an appearance only, never a round. `heads` is the
+        Sunday's head count (default: none, as when the weekly workbook has no row for it)."""
+        self._specials.append((sid, day))
+        self._shooters.setdefault(sid, {})
+        if heads is not None:
+            self._special_heads[day] = heads
         return self
 
     def station(
@@ -228,6 +240,58 @@ class World:
             events = events.drop(columns=["n", "median", "mean", "stdev", "top_score"]).merge(
                 em.drop(columns=["difficulty"]), on="event_date", how="left"
             )[list(frames.EVENT_COLUMNS)]
+        appearances = frames.appearances_from_rounds(rounds)
+        calendar = frames.calendar_from_events(events)
+        if self._specials:
+            names = self._names()
+            extra = pd.DataFrame(
+                [
+                    {
+                        "shooter_id": sid,
+                        "event_date": day,
+                        "kind": "special",
+                        "round_type": "sporting",
+                        "display_name": names[sid],
+                        "shooter_status": "member",
+                        "name_key": f"s{sid}",
+                        "held": True,
+                    }
+                    for sid, day in self._specials
+                ],
+                columns=list(frames.APPEARANCE_COLUMNS),
+            )
+            appearances = (
+                pd.concat([appearances, extra], ignore_index=True)
+                .sort_values(["event_date", "shooter_id"], kind="mergesort")
+                .reset_index(drop=True)
+            )
+            special_days = pd.DataFrame(
+                [
+                    {
+                        **dict.fromkeys(frames.CALENDAR_COLUMNS, np.nan),
+                        "event_date": day,
+                        "head_count": self._special_heads.get(day, np.nan),
+                        "round_type": "sporting",
+                        "round_type_source": "none",
+                        "n_rounds": n,
+                        "n_shooters": n,
+                        "has_scores": True,
+                        "has_stations": False,
+                        "results_complete": True,
+                        "condition": None,
+                        "kind": "special",
+                        "label": "Three Clay Shoot",
+                        "target_total": 60,
+                    }
+                    for day, n in sorted(Counter(day for _, day in self._specials).items())
+                ],
+                columns=list(frames.CALENDAR_COLUMNS),
+            )
+            calendar = (
+                pd.concat([calendar, special_days], ignore_index=True)
+                .sort_values("event_date", kind="mergesort")
+                .reset_index(drop=True)
+            )
         return InsightFrames.from_frames(
             rounds=rounds,
             events=events,
@@ -235,6 +299,8 @@ class World:
             rating=pd.DataFrame(self._ratings, columns=list(frames.RATING_COLUMNS)),
             stations=pd.DataFrame(self._stations, columns=list(frames.STATION_HIT_COLUMNS)),
             awards=pd.DataFrame(self._awards, columns=list(AWARD_COLUMNS)),
+            appearances=appearances,
+            calendar=calendar,
         )
 
 
