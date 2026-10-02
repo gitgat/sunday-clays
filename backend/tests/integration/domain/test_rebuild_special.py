@@ -68,7 +68,7 @@ def test_a_special_sunday_goes_live_with_its_label_rounds_and_stations(
 
     event = session.get(Event, SPECIAL)
     assert event is not None
-    assert (event.kind, event.label, event.target_total) == ("special", "Three Clay Shoot", 60)
+    assert (event.kind, event.label, event.target_total) == ("special", "3-Bird Shoot", 60)
     assert (event.round_type, event.round_type_source) == ("sporting", "none")
     assert (
         event.n_rounds,
@@ -158,21 +158,21 @@ def test_a_newer_special_import_replaces_the_older_one_and_rollback_restores_it(
 ) -> None:
     first = _live_special(session, scores_workbook, special_workbook)
     corrected = special_workbook(
-        [("Hadley, Ike", (6, 5, 6, 4, 6, 5, 6, 6, 5, 3))], label="Three Clay Shoot (corrected)"
+        [("Hadley, Ike", (6, 5, 6, 4, 6, 5, 6, 6, 5, 3))], label="3-Bird Shoot (corrected)"
     )
     second = _commit(session, corrected, "special-corrected.xlsx")
     rebuild_live(session)
 
     event = session.get(Event, SPECIAL)
     assert event is not None
-    assert (event.label, event.n_shooters) == ("Three Clay Shoot (corrected)", 1)
+    assert (event.label, event.n_shooters) == ("3-Bird Shoot (corrected)", 1)
     assert _scores_on(session, SPECIAL) == {"Hadley, Ike": 52}
 
     rollback_import(session, second)
     rebuild_live(session)
     event = session.get(Event, SPECIAL)
     assert event is not None
-    assert (event.label, event.n_shooters) == ("Three Clay Shoot", 5)
+    assert (event.label, event.n_shooters) == ("3-Bird Shoot", 5)
 
     rollback_import(session, first)
     rebuild_live(session)

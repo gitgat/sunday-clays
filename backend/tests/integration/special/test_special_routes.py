@@ -182,7 +182,7 @@ def test_the_sunday_payloads_mark_the_special_sunday(
     extra = [e for e in special if e["event_date"] == SPECIAL]
     assert [e for e in special if e["event_date"] != SPECIAL] == base
     (row,) = extra
-    assert (row["kind"], row["label"], row["target_total"]) == ("special", "Three Clay Shoot", 60)
+    assert (row["kind"], row["label"], row["target_total"]) == ("special", "3-Bird Shoot", 60)
     assert (row["n_shooters"], row["median"], row["top_score"], row["winners"]) == (
         5,
         None,
@@ -197,7 +197,7 @@ def test_the_sunday_payloads_mark_the_special_sunday(
     detail = _get(fx_special_viewer_client, f"/api/events/{SPECIAL}")
     assert (detail["kind"], detail["label"], detail["target_total"]) == (
         "special",
-        "Three Clay Shoot",
+        "3-Bird Shoot",
         60,
     )
     assert [(r["display_name"], r["score"]) for r in detail["results"]] == [
@@ -259,7 +259,7 @@ def test_odometer_counts_the_special_sunday(
         {
             "round_id": special_round_id(fx_special_viewer_client, hadley),
             "event_date": SPECIAL,
-            "label": "Three Clay Shoot",
+            "label": "3-Bird Shoot",
             "target_total": 60,
             "score": 55,
         }
@@ -385,7 +385,7 @@ def test_the_special_list_is_oldest_first(
 
     hadley = _id(fx_special_viewer_client, "Hadley, Ike")
     shoots = [  # a newer Sunday listed first, and two rounds on one Sunday
-        (3, date(2026, 9, 20), 1, 55, "Three Clay Shoot"),
+        (3, date(2026, 9, 20), 1, 55, "3-Bird Shoot"),
         (1, date(2026, 3, 1), 2, 40, "Four Bird Shoot"),
         (2, date(2026, 3, 1), 1, 44, "Four Bird Shoot"),
     ]

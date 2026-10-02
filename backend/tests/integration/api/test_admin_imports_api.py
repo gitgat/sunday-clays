@@ -342,7 +342,7 @@ def test_a_special_workbook_uploads_as_its_own_kind(
     preview = _upload(admin_client, special_workbook(), "three-clay.xlsx")
 
     assert preview["kind"] == "special"
-    assert preview["diff"]["label"] == "Three Clay Shoot"
+    assert preview["diff"]["label"] == "3-Bird Shoot"
     assert preview["diff"]["target_total"] == 60
     assert preview["diff"]["n_shooters"] == 5
     assert preview["requires_removal_confirmation"] is False

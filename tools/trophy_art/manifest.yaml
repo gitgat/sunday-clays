@@ -92,3 +92,5 @@ trophies:
     prompt: "a crosshair over a shooting station post with a star"
   - art_key: hardest_station_clean
     prompt: "a clean clay target on the summit of a jagged mountain peak"
+  - art_key: three_bird_shoot
+    prompt: "three orange clay targets in flight in a triangle against a blue sky"
