@@ -163,7 +163,9 @@ def skill_snapshot(session: Session) -> SkillSnapshot | None:
 
 
 def _scored_events(session: Session) -> pd.DataFrame:
-    rows = session.execute(text("SELECT event_date, has_scores FROM events")).all()
+    rows = session.execute(
+        text("SELECT event_date, has_scores FROM events WHERE kind = 'regular'")
+    ).all()
     return pd.DataFrame([tuple(r) for r in rows], columns=["event_date", "has_scores"])
 
 
