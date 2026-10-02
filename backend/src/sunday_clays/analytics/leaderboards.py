@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from sunday_clays.analytics.cache import cached_by_data_version
 from sunday_clays.analytics.frames import (
     apply_round_type_filter,
+    load_appearances,
     load_events,
     load_rating_history,
     load_rounds,
@@ -67,6 +68,10 @@ class LeaderboardFrames:
     # shooter_id, display_name, status, sort_key. sort_key spans all rounds, so boards
     # never order by it: they re-derive the D6 tie key from rounds on or before as_of.
     shooters: pd.DataFrame
+    # One row per shooter per Sunday shot, special Sundays included (Plan 17): the Sundays board
+    # reads it, and so does the D6 tie key of a shooter with no scored round (_tie_keys).
+    # Without special Sundays it is the rounds themselves.
+    appearances: pd.DataFrame
 
 
 def _with_dates(df: pd.DataFrame) -> pd.DataFrame:
@@ -85,16 +90,24 @@ def _normalized_rounds(rounds: pd.DataFrame) -> pd.DataFrame:
 
 
 def make_leaderboard_frames(
-    rounds: pd.DataFrame, events: pd.DataFrame, history: pd.DataFrame
+    rounds: pd.DataFrame,
+    events: pd.DataFrame,
+    history: pd.DataFrame,
+    appearances: pd.DataFrame | None = None,
 ) -> LeaderboardFrames:
     dated = _normalized_rounds(rounds)
-    shooters = dated.groupby("shooter_id", as_index=False).agg(
+    seen = dated if appearances is None else _with_dates(appearances)
+    names = seen.groupby("shooter_id", as_index=False).agg(
         display_name=("display_name", "first"),
         status=("shooter_status", "first"),
-        sort_key=("name_key", "min"),
     )
+    shooters = names.merge(_tie_keys(dated, seen), on="shooter_id", how="left")
     return LeaderboardFrames(
-        rounds=dated, events=_with_dates(events), history=_with_dates(history), shooters=shooters
+        rounds=dated,
+        events=_with_dates(events),
+        history=_with_dates(history),
+        shooters=shooters,
+        appearances=seen,
     )
 
 
@@ -318,14 +331,32 @@ ROUND_METRICS: dict[LeaderboardMetric, Callable[[pd.DataFrame], pd.DataFrame]] =
 }
 
 
+def _tie_keys(
+    rounds: pd.DataFrame, appearances: pd.DataFrame, as_of: date | None = None
+) -> pd.DataFrame:
+    """shooter_id, sort_key: the D6 tie key (smallest ``name_key``) from scored rounds; only a
+    shooter with no scored round (special Sundays only, Plan 17) takes it from appearances.
+
+    A special sheet's spelling (say an alias-ruled first name that sorts first) therefore never
+    reorders tied rows on a score board or on the Sundays board.
+    """
+    if as_of is not None:
+        rounds = rounds[rounds["event_date"] <= as_of]
+        appearances = appearances[appearances["event_date"] <= as_of]
+    scored = rounds.groupby("shooter_id", as_index=False).agg(sort_key=("name_key", "min"))
+    seen = appearances.groupby("shooter_id", as_index=False).agg(sort_key=("name_key", "min"))
+    only_seen = seen[~seen["shooter_id"].isin(scored["shooter_id"])]
+    return pd.concat([scored, only_seen], ignore_index=True)
+
+
 def _shooters_as_of(frames: LeaderboardFrames, as_of: date) -> pd.DataFrame:
-    """``frames.shooters`` with the D6 tie key taken from rounds on or before ``as_of`` only.
+    """``frames.shooters`` with the D6 tie key taken from rounds (appearances for a shooter with
+    none) on or before ``as_of`` only.
 
     C7 no-leak: a later round (say under an alias merged in afterwards, whose ``name_key``
     sorts first) must never reorder tied rows on a past board or move a top-N cut.
     """
-    past = frames.rounds[frames.rounds["event_date"] <= as_of]
-    keys = past.groupby("shooter_id", as_index=False).agg(sort_key=("name_key", "min"))
+    keys = _tie_keys(frames.rounds, frames.appearances, as_of)
     return frames.shooters.drop(columns="sort_key").merge(keys, on="shooter_id", how="left")
 
 
@@ -407,6 +438,11 @@ def leaderboard(
     if metric is LeaderboardMetric.RATING_GAIN:
         gains = _rating_gain(frames, period, as_of, since)
         body = gains[gains["value"] > 0]  # only gainers: a positive-only board
+    elif metric is LeaderboardMetric.EVENTS and filters.gauge is None:
+        # Sundays shot, special Sundays included (Plan 17); a gauge filter counts scored Sundays
+        start, end = period_bounds(period, as_of, since)
+        seen = _window(frames.appearances, start, end)
+        body = _events(apply_round_type_filter(seen, filters.round_types))
     else:
         start, end = period_bounds(period, as_of, since)
         body = ROUND_METRICS[metric](_round_filters(_window(frames.rounds, start, end), filters))
@@ -417,7 +453,10 @@ def leaderboard(
 @cached_by_data_version
 def load_leaderboard_frames(session: Session) -> LeaderboardFrames:
     return make_leaderboard_frames(
-        load_rounds(session), load_events(session), load_rating_history(session)
+        load_rounds(session),
+        load_events(session),
+        load_rating_history(session),
+        load_appearances(session),
     )
 
 
