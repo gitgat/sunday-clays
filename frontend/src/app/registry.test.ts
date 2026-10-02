@@ -74,6 +74,7 @@ const EXPECTED: Record<string, PageFilters> = {
   '/race': BOTH_FILTERS,
   '/records': BOTH_FILTERS,
   '/club': BOTH_FILTERS,
+  '/about': NO_FILTERS,
   '/explorer': BOTH_FILTERS,
   '/stations': BOTH_FILTERS,
   '/weather': BOTH_FILTERS,
