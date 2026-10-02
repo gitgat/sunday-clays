@@ -458,6 +458,15 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   `station_layouts` key, its joins count 7A twice, and a station reset rule for "7A" crashes its
   reset loader. So roll back that far only for a short fix, and do not import or rebuild until
   `main` is back. The migration's docstring has the details.
+
+  Rolling back past migration 0008 (special events) is limited once a special shoot has been
+  uploaded. The older release still starts, but its admin imports list fails on the `special`
+  kind, and its frames do not filter on event kind, so the 60-target scores leak into every
+  average, record and personal best until it rebuilds and drops that Sunday. So roll back that
+  far only before a special shoot is uploaded. Otherwise run
+  `DELETE FROM imports WHERE kind = 'special'` and a rebuild first, and upload the shoot again
+  once `main` is back. (`alembic downgrade 0007` itself does that clean-up for you, and removes
+  the special Sundays' live rows.) The migration's docstring has the details.
 - **Retry a failed SHA** without a new commit: `docker service update --force sundayclays_deployer`.
 - **Without the deployer** (if it is itself broken): stop it with
   `docker service scale sundayclays_deployer=0` (a later `docker stack deploy` sets it back to 1),

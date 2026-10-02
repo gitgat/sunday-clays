@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
+from sunday_clays.analytics.frames import EVENT_KIND_REGULAR
 from sunday_clays.analytics.insights import registry
 from sunday_clays.analytics.insights import select as sel
 from sunday_clays.analytics.insights.picks import picked
@@ -144,9 +145,13 @@ def _maybe(row: InsightRow | None, new_since: int | None) -> InsightOut | None:
 
 
 def held_dates(session: Session) -> list[date]:
+    """Regular held Sundays, oldest first: every feed's reference Sunday, the home window and
+    expiry. A special Sunday is left out, as in `InsightFrames.sundays` (Plan 17, Decision 12)."""
     events = Base.metadata.tables["events"]
     query = (
-        select(events.c.event_date).where(events.c.results_complete).order_by(events.c.event_date)
+        select(events.c.event_date)
+        .where(events.c.results_complete, events.c.kind == EVENT_KIND_REGULAR)
+        .order_by(events.c.event_date)
     )
     return list(session.scalars(query))
 

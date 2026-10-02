@@ -392,3 +392,79 @@ def test_since_ratings_use_peaks_inside_the_range_with_lifetime_round_counts() -
     ]
     mid = w.records(since=D[2], as_of=D[5])
     assert [(r.event_date, r.value) for r in mid.highest_ratings] == [(D[4], 35.0)]
+
+
+def _seen(day: date, sid: int, kind: str) -> dict[str, Any]:
+    return {
+        "shooter_id": sid,
+        "event_date": day,
+        "kind": kind,
+        "round_type": "sporting",
+        "display_name": NAMES[sid],
+        "shooter_status": "member",
+        "name_key": NAMES[sid].casefold().replace(",", ""),
+        "held": True,
+    }
+
+
+def test_most_sundays_and_longest_runs_count_special_sundays_but_scores_do_not() -> None:
+    w = World().shot(D[0], 1, 40).shot(D[2], 1, 41).shot(D[0], 2, 30).shot(D[2], 2, 31)
+    seen = pd.DataFrame(
+        [
+            _seen(D[0], 1, "regular"),
+            _seen(D[0], 2, "regular"),
+            _seen(D[1], 1, "special"),
+            _seen(D[1], 3, "special"),
+            _seen(D[2], 1, "regular"),
+            _seen(D[2], 2, "regular"),
+        ]
+    )
+    calendar = pd.DataFrame(
+        [
+            dict.fromkeys(EVENT_COLUMNS)
+            | {
+                "event_date": day,
+                "round_type": "sporting",
+                "has_scores": True,
+                "results_complete": True,
+                "kind": kind,
+            }
+            for day, kind in [(D[0], "regular"), (D[1], "special"), (D[2], "regular")]
+        ]
+    )
+    base = w.records(as_of=D[2])
+
+    records = w.records(as_of=D[2], appearances=seen, calendar=calendar)
+
+    assert {(r.shooter_id, r.value) for r in records.most_events} == {(1, 3.0), (2, 2.0), (3, 1.0)}
+    assert {(r.shooter_id, r.value) for r in records.longest_streaks} == {
+        (1, 3.0),
+        (2, 2.0),
+        (3, 1.0),
+    }
+    assert records.highest_scores == base.highest_scores
+    assert records.biggest_jumps == base.biggest_jumps
+    assert records.perfect_rounds == base.perfect_rounds
+
+
+def test_most_sundays_ties_use_the_scored_tie_key_not_a_special_sheet_spelling() -> None:
+    """The D6 tie key comes from scored rounds; a special-only shooter's own spelling is used."""
+    w = World().shot(D[0], 1, 40).shot(D[0], 2, 30)
+    seen = pd.DataFrame(
+        [
+            _seen(D[0], 1, "regular"),
+            _seen(D[0], 2, "regular"),
+            _seen(D[1], 1, "special"),
+            # 2's sheet spelling sorts before "ace amy"; it must not move the tied row
+            _seen(D[1], 2, "special") | {"name_key": "aardvark bob"},
+            _seen(D[1], 3, "special"),
+        ]
+    )
+
+    records = w.records(as_of=D[2], appearances=seen)
+
+    assert [(r.display_name, r.value) for r in records.most_events] == [
+        ("Ace, Amy", 2.0),
+        ("Bee, Bob", 2.0),
+        ("Cy, Cal", 1.0),
+    ]

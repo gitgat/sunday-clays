@@ -22,7 +22,7 @@ ON_THIS_DAY_YEARS: Final[tuple[int, ...]] = (1, 2, 3)
 ON_THIS_DAY_WINDOW_DAYS: Final = 3
 _EVENTS_SQL: Final = """
 SELECT e.event_date, e.round_type, e.has_scores, e.results_complete, e.head_count, e.n_shooters,
-       m.median, m.top_score, m.difficulty
+       m.median, m.top_score, m.difficulty, e.kind
 FROM events AS e
 LEFT JOIN event_metrics AS m ON m.event_date = e.event_date
 ORDER BY e.event_date
@@ -37,16 +37,29 @@ _EVENT_COLUMNS: Final = (
     "median",
     "top_score",
     "difficulty",
+    "kind",
 )
 
 
 @dataclass(frozen=True)
 class YirFrames:
-    rounds: pd.DataFrame  # event_date, round_type, shooter_id, display_name, score, ...
-    events: pd.DataFrame  # _EVENT_COLUMNS
+    rounds: pd.DataFrame  # event_date, round_type, shooter_id, display_name, score, ... (regular)
+    events: pd.DataFrame  # _EVENT_COLUMNS: every Sunday, special ones included (kind)
     profiles: pd.DataFrame  # shooter_id, display_name, left_censored
     trophies: pd.DataFrame  # shooter_id, code, event_date
     history: pd.DataFrame  # shooter_id, event_date, mu
+    # event_date, round_type, shooter_id per Sunday shot, special included (Plan 17)
+    appearances: pd.DataFrame | None = None
+
+    @property
+    def sundays_shot(self) -> pd.DataFrame:
+        """Who shot which Sunday, special Sundays included; the rounds when not given."""
+        return self.rounds if self.appearances is None else self.appearances
+
+
+def _regular(events: pd.DataFrame) -> pd.DataFrame:
+    """Regular Sundays only; a frame without `kind` is all regular."""
+    return events if "kind" not in events.columns else events[events["kind"].eq("regular")]
 
 
 @dataclass(frozen=True)
@@ -185,12 +198,13 @@ def _mean(values: pd.Series) -> float | None:
 def year_totals(data: YirFrames, year: int) -> YearTotals:
     rounds = data.rounds[_in_year(data.rounds["event_date"], year)]
     events = data.events[_in_year(data.events["event_date"], year)]
+    seen = data.sundays_shot[_in_year(data.sundays_shot["event_date"], year)]
     return YearTotals(
         year=year,
-        scored_events=int(events["has_scores"].sum()),
+        scored_events=int(_regular(events)["has_scores"].sum()),
         held_events=int(events["results_complete"].sum()),
         rounds=len(rounds),
-        shooters=int(rounds["shooter_id"].nunique()),
+        shooters=int(seen["shooter_id"].nunique()),
         clays_thrown=TARGETS_PER_ROUND * len(rounds),
         clays_broken=int(rounds["score"].sum()),
         avg_score=_mean(rounds["score"]),
@@ -216,7 +230,8 @@ def club_year(data: YirFrames, year: int) -> ClubYear:
     """The club's calendar year; only data dated on or before Dec 31 of `year` is read."""
     rounds = data.rounds[_in_year(data.rounds["event_date"], year)]
     events = data.events[_in_year(data.events["event_date"], year)]
-    firsts = data.rounds.groupby("shooter_id")["event_date"].min()
+    firsts = data.sundays_shot.groupby("shooter_id")["event_date"].min()
+    seen_months = _months(data.sundays_shot[_in_year(data.sundays_shot["event_date"], year)])
     censored = set(data.profiles.loc[data.profiles["left_censored"], "shooter_id"])
     newcomers = [s for s, d in firsts.items() if d.year == year and s not in censored]
     top = rounds[rounds["score"] == rounds["score"].max()].sort_values(
@@ -227,7 +242,7 @@ def club_year(data: YirFrames, year: int) -> ClubYear:
     months = tuple(
         MonthStat(
             month=m,
-            events=int(group["event_date"].nunique()),
+            events=int(seen_months[m]["event_date"].nunique()),
             rounds=len(group),
             avg_score=_mean(group["score"]),
         )
@@ -266,11 +281,14 @@ def pb_days(rounds: pd.DataFrame) -> tuple[PbDay, ...]:
     return tuple(out)
 
 
-def _shooter_totals(rounds: pd.DataFrame, year: int) -> ShooterTotals:
+def _shooter_totals(
+    rounds: pd.DataFrame, year: int, sundays: pd.DataFrame | None = None
+) -> ShooterTotals:
     mine = rounds[_in_year(rounds["event_date"], year)]
+    seen = mine if sundays is None else sundays[_in_year(sundays["event_date"], year)]
     return ShooterTotals(
         year=year,
-        events=int(mine["event_date"].nunique()),
+        events=int(seen["event_date"].nunique()),
         rounds=len(mine),
         clays_thrown=TARGETS_PER_ROUND * len(mine),
         clays_broken=int(mine["score"].sum()),
@@ -290,20 +308,23 @@ def shooter_year(data: YirFrames, shooter_id: int, year: int) -> ShooterYear:
     mine = all_mine[_in_year(all_mine["event_date"], year)]
     best_rounds = mine[mine["is_best_round"]]
     top = mine.sort_values(["score", "event_date"], ascending=[False, True])
-    events_by_shooter = year_rounds.groupby("shooter_id")["event_date"].nunique()
-    my_events = int(mine["event_date"].nunique())
+    seen = data.sundays_shot
+    my_sundays = seen[seen["shooter_id"] == shooter_id]
+    year_seen = seen[_in_year(seen["event_date"], year)]
+    events_by_shooter = year_seen.groupby("shooter_id")["event_date"].nunique()
+    my_events = int(my_sundays[_in_year(my_sundays["event_date"], year)]["event_date"].nunique())
     history = data.history[data.history["shooter_id"] == shooter_id]
     club_months, my_months = _months(year_rounds), _months(mine)
     trophies = data.trophies[
         (data.trophies["shooter_id"] == shooter_id) & _in_year(data.trophies["event_date"], year)
     ]
-    previous = _shooter_totals(all_mine, year - 1)
+    previous = _shooter_totals(all_mine, year - 1, my_sundays)
     names = data.profiles.set_index("shooter_id")["display_name"]
     return ShooterYear(
         year=year,
         shooter_id=shooter_id,
         display_name=str(names[shooter_id]),
-        totals=_shooter_totals(all_mine, year),
+        totals=_shooter_totals(all_mine, year, my_sundays),
         best=None
         if top.empty
         else TopRound(
@@ -340,7 +361,7 @@ def _years_back(on: date, years: int) -> date:
 
 def on_this_day(data: YirFrames, on: date) -> tuple[OnThisDayItem, ...]:
     """The event closest to the same date 1, 2 and 3 years back (within 3 days; ties -> earlier)."""
-    events = data.events
+    events = _regular(data.events)  # quotes scores: regular Sundays only
     best = data.rounds[data.rounds["is_best_round"]]
     items: list[OnThisDayItem] = []
     for years in ON_THIS_DAY_YEARS:
@@ -388,11 +409,14 @@ def filter_round_types(data: YirFrames, round_types: Sequence[RoundType]) -> Yir
         rounds=frames.apply_round_type_filter(data.rounds, round_types),
         events=events,
         trophies=data.trophies[data.trophies["event_date"].isin(kept)],
+        appearances=None
+        if data.appearances is None
+        else frames.apply_round_type_filter(data.appearances, round_types),
     )
 
 
 def scored_years(data: YirFrames) -> list[int]:
-    scored = data.events[data.events["has_scores"]]
+    scored = _regular(data.events)[lambda e: e["has_scores"]]
     return sorted({d.year for d in scored["event_date"]})
 
 
@@ -421,6 +445,10 @@ def load_yir_frames(session: Session) -> YirFrames:
     rounds["event_date"] = _as_dates(rounds["event_date"])
     rounds["is_best_round"] = rounds["is_best_round"].astype("boolean").fillna(False).astype(bool)
     rounds["event_rank"] = pd.to_numeric(rounds["event_rank"], errors="coerce").astype(float)
+    appearances = frames.load_appearances(session)[
+        ["event_date", "round_type", "shooter_id"]
+    ].copy()
+    appearances["event_date"] = _as_dates(appearances["event_date"])
     events = _frame(session, _EVENTS_SQL, _EVENT_COLUMNS)
     events["event_date"] = _as_dates(events["event_date"])
     for name in ("head_count", "n_shooters", "median", "top_score", "difficulty"):
@@ -442,5 +470,10 @@ def load_yir_frames(session: Session) -> YirFrames:
     history = frames.load_rating_history(session)[["shooter_id", "event_date", "mu"]].copy()
     history["event_date"] = _as_dates(history["event_date"])
     return YirFrames(
-        rounds=rounds, events=events, profiles=profiles, trophies=trophies, history=history
+        rounds=rounds,
+        events=events,
+        profiles=profiles,
+        trophies=trophies,
+        history=history,
+        appearances=appearances,
     )

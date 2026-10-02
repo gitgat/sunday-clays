@@ -66,6 +66,7 @@ SELECT e.event_date, e.round_type, e.head_count, e.has_scores, e.results_complet
 FROM events AS e
 JOIN event_weather AS w ON w.event_date = e.event_date
 LEFT JOIN event_metrics AS m ON m.event_date = e.event_date
+WHERE e.kind = 'regular'
 ORDER BY e.event_date
 """
 _EVENT_COLUMNS: Final[tuple[str, ...]] = (

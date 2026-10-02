@@ -26,6 +26,9 @@ const unmodelled = {
 
 /** 2026-09-27: a tie at 49 for first, then 48. */
 export const latestEvent: EventDetail = {
+  kind: 'regular',
+  label: null,
+  target_total: 50,
   event_date: '2026-09-27',
   round_type: 'sporting',
   round_type_source: 'none',
@@ -101,6 +104,9 @@ const scoredWeek = { has_scores: true, results_complete: true, condition: null }
 /** 2026 season sample. 2026-09-27's head count is blanked on purpose (its 23 shooters stand in for turnout). */
 export const seasonEvents: EventSummary[] = [
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scoredWeek,
     event_date: '2026-09-13',
     round_type: 'super_sporting',
@@ -115,6 +121,9 @@ export const seasonEvents: EventSummary[] = [
     winners: [{ shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 }],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scoredWeek,
     event_date: '2026-09-27',
     round_type: 'sporting',
@@ -132,6 +141,9 @@ export const seasonEvents: EventSummary[] = [
     ],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     ...scoredWeek,
     event_date: '2026-09-06',
     round_type: 'super_sporting',
@@ -146,6 +158,9 @@ export const seasonEvents: EventSummary[] = [
     winners: [{ shooter_id: 32, display_name: 'Grimsby, Gregor', score: 48 }],
   },
   {
+    kind: 'regular',
+    label: null,
+    target_total: 50,
     event_date: '2026-01-04',
     round_type: 'sporting',
     round_type_source: 'none',

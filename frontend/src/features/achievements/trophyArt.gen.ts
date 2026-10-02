@@ -216,6 +216,10 @@ export const trophyArt: Record<string, { src: string; src128: string }> = {
     src: '/trophies/sub_gauge.webp',
     src128: '/trophies/sub_gauge@128.webp',
   },
+  three_bird_shoot: {
+    src: '/trophies/clays_thrown-gold.webp',
+    src128: '/trophies/clays_thrown-gold@128.webp',
+  },
   welcome_back: {
     src: '/trophies/welcome_back.webp',
     src128: '/trophies/welcome_back@128.webp',

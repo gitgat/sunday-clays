@@ -8,7 +8,7 @@ export interface SundayCalendarOpts {
   date: string;
   /** Best score that day; empty for a missed Sunday. */
   value: string;
-  /** 'shot' (the shooter shot that Sunday) or 'missed' (the club held a shoot and they did not). */
+  /** 'shot', 'missed' (the club held a shoot and they did not) or 'special' (a special shoot they came to). */
   state: string;
   year: number;
   min?: number;
@@ -25,6 +25,9 @@ export function sundayOfMonth(date: string): number {
 
 /** A missed cell's value: below any score, so the colour scale leaves it uncoloured (outOfRange). */
 const MISSED = -1;
+
+/** A special shoot's value: off the score scale, with its own uncoloured map (Plan 17). */
+const SPECIAL = -3;
 
 /** ECharts gives a heatmap item back as `data`; the date rides on it for tooltips and clicks. */
 interface CellItem {
@@ -48,6 +51,7 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
   const prefix = `${opts.year}-`;
   const shot: CellItem[] = [];
   const missed: CellItem[] = [];
+  const special: CellItem[] = [];
   for (const row of data.rows) {
     const date = row[dateKey];
     if (typeof date !== 'string' || !date.startsWith(prefix)) continue;
@@ -55,6 +59,7 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
     const score = numeric(row[valueKey]);
     if (state === 'shot' && score !== null) shot.push(cell(date, score));
     else if (state === 'missed') missed.push(cell(date, MISSED));
+    else if (state === 'special') special.push(cell(date, SPECIAL));
   }
   const scores = shot.map((c) => c.value[2]);
   return {
@@ -64,9 +69,9 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
       formatter: (params: unknown) => {
         const { seriesName, data: item } = params as { seriesName: string; data: CellItem };
         const head = `Sunday ${escapeHtml(item.date)}`;
-        return seriesName === 'Shot'
-          ? `${head}<br/>Best score: ${escapeHtml(item.value[2])}`
-          : `${head}<br/>Held, not shot`;
+        if (seriesName === 'Shot') return `${head}<br/>Best score: ${escapeHtml(item.value[2])}`;
+        if (seriesName === 'Special') return `${head}<br/>Special shoot, counts as a Sunday shot`;
+        return `${head}<br/>Held, not shot`;
       },
     },
     xAxis: {
@@ -100,6 +105,16 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
         max: MISSED,
         inRange: { color: ['transparent', 'transparent'] },
       },
+      // A special shoot is not on the 50-target scale: an uncoloured cell under its own map.
+      {
+        type: 'continuous',
+        seriesIndex: 2,
+        dimension: 2,
+        show: false,
+        min: SPECIAL - 1,
+        max: SPECIAL,
+        inRange: { color: ['transparent', 'transparent'] },
+      },
     ],
     series: [
       {
@@ -120,13 +135,21 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
         itemStyle: { color: 'transparent', borderColor: colors.textMuted, borderWidth: 2 },
         emphasis: { itemStyle: { borderColor: colors.text, borderWidth: 2 } },
       },
+      {
+        type: 'heatmap',
+        name: 'Special',
+        data: special,
+        itemStyle: { color: 'transparent', borderColor: colors.accent, borderWidth: 3 },
+        label: { show: true, formatter: () => '★' },
+        emphasis: { itemStyle: { borderColor: colors.text, borderWidth: 3 } },
+      },
     ],
   };
 }
 
-/** The date of a clicked shot cell, or null for a missed cell or anything else. */
+/** The date of a clicked shot or special-shoot cell, or null for a missed cell or anything else. */
 export function shotDateOf(params: { seriesName?: string; data?: unknown }): string | null {
-  if (params.seriesName !== 'Shot') return null;
+  if (params.seriesName !== 'Shot' && params.seriesName !== 'Special') return null;
   const date = (params.data as { date?: unknown } | undefined)?.date;
   return typeof date === 'string' ? date : null;
 }

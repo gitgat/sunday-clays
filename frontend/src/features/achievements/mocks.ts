@@ -150,7 +150,7 @@ export const shooterAchievementsFixture: Schemas['ShooterAchievementsOut'] = {
     {
       code: 'years_active',
       name: 'Years Active',
-      description: 'Distinct calendar years with at least one round.',
+      description: 'Calendar years with at least one Sunday shot.',
       category: 'milestone',
       art_key: 'years_active',
       value: 7,
@@ -166,7 +166,7 @@ export const shooterAchievementsFixture: Schemas['ShooterAchievementsOut'] = {
     {
       code: 'events',
       name: 'Events Attended',
-      description: 'Sundays with at least one recorded round.',
+      description: 'Sundays shot.',
       category: 'milestone',
       art_key: 'events',
       value: 48,

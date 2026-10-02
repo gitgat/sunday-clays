@@ -6,6 +6,7 @@ import type {
   ShooterInsights,
   ShooterListItem,
   ShooterRound,
+  SpecialRound,
   SplitRow,
 } from './api';
 
@@ -168,6 +169,11 @@ const unrated = {
   round_type: 'sporting',
   condition: null,
 } as const;
+
+/** Plan 17: Hadley's one special shoot (invented name). */
+export const hadleySpecials: SpecialRound[] = [
+  { round_id: 9001, event_date: '2026-09-20', label: '3-Bird Shoot', target_total: 60, score: 55 },
+];
 
 /** Hadley's last six rounds (fixture scores and field medians; ranks/ratings illustrative). */
 export const hadleyRounds: ShooterRound[] = [
@@ -340,6 +346,7 @@ export const handlers = [
     HttpResponse.json({ ...hadleyInsights, shooter_id: Number(params.id) }),
   ),
   http.get('*/api/shooters/:id/rounds', () => HttpResponse.json(hadleyRounds)),
+  http.get('*/api/shooters/:id/special', () => HttpResponse.json([])),
   http.get('*/api/shooters/:id/rating', () => HttpResponse.json(hadleyRating)),
   http.get('*/api/shooters/:id/splits', () => HttpResponse.json(hadleySplitsByYear)),
 ];

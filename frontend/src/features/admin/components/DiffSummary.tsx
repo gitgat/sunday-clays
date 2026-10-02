@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { Card } from '../../../components/ui/Card';
-import type { ImportPreview, ScoresDiff, StationsDiff } from '../api';
+import type { ImportPreview, ScoresDiff, SpecialDiff, StationsDiff } from '../api';
 import { dateList, formatDay } from '../format';
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -56,6 +56,43 @@ function Removals({ diff }: { diff: ScoresDiff }) {
   );
 }
 
+/** New names and possible duplicates, shared by the scores and special-shoot previews. */
+function NameHints({
+  newNames,
+  duplicates,
+}: {
+  newNames: string[];
+  duplicates: ScoresDiff['possible_duplicates'];
+}) {
+  return (
+    <>
+      {newNames.length > 0 && (
+        <details>
+          <summary className="min-h-11 cursor-pointer py-2.5">{`New names (${newNames.length})`}</summary>
+          <ul className="flex flex-col">
+            {newNames.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {duplicates.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <h3 className="font-medium">Possible duplicates</h3>
+          <ul className="flex flex-col">
+            {duplicates.map(([a, b]) => (
+              <li key={`${a}|${b}`}>{`${a} ↔ ${b}`}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-text-muted">
+            New names are new shooters; merge real duplicates later under Identity.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
 function ScoresDiffView({ diff }: { diff: ScoresDiff }) {
   return (
     <div className="flex flex-col gap-3">
@@ -67,29 +104,7 @@ function ScoresDiffView({ diff }: { diff: ScoresDiff }) {
         <Row label="Rows removed" value={String(diff.rows_removed)} />
         <Row label="Head counts changed" value={String(diff.attendance_changed)} />
       </dl>
-      {diff.new_names.length > 0 && (
-        <details>
-          <summary className="min-h-11 cursor-pointer py-2.5">{`New names (${diff.new_names.length})`}</summary>
-          <ul className="flex flex-col">
-            {diff.new_names.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {diff.possible_duplicates.length > 0 && (
-        <div className="flex flex-col gap-1">
-          <h3 className="font-medium">Possible duplicates</h3>
-          <ul className="flex flex-col">
-            {diff.possible_duplicates.map(([a, b]) => (
-              <li key={`${a}|${b}`}>{`${a} ↔ ${b}`}</li>
-            ))}
-          </ul>
-          <p className="text-xs text-text-muted">
-            New names are new shooters; merge real duplicates later under Identity.
-          </p>
-        </div>
-      )}
+      <NameHints newNames={diff.new_names} duplicates={diff.possible_duplicates} />
     </div>
   );
 }
@@ -109,10 +124,45 @@ function StationsDiffView({ diff }: { diff: StationsDiff }) {
   );
 }
 
+/** Decision 13: weekly-workbook rows on the special Sunday are left out while it is live. */
+function weeklyRowsNote(diff: SpecialDiff): string {
+  const rows = diff.regular_rows_on_date === 1 ? '1 row' : `${diff.regular_rows_on_date} rows`;
+  return `The scores workbook has ${rows} on ${formatDay(diff.event_date)}. While this special shoot is live they are left out, and rolling it back brings them back.`;
+}
+
+function SpecialDiffView({ diff }: { diff: SpecialDiff }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {diff.regular_rows_on_date > 0 && (
+        <p role="note" className="rounded-card border-2 border-error-container p-3">
+          {weeklyRowsNote(diff)}
+        </p>
+      )}
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <Row label="Sunday" value={formatDay(diff.event_date)} />
+        <Row label="Special shoot" value={diff.label} />
+        <Row label="Targets" value={`${diff.target_total} (${diff.stations.length} stations)`} />
+        <Row label="Shooters" value={String(diff.n_shooters)} />
+        <Row
+          label="Replaces"
+          value={diff.replaces_import === null ? 'None' : `Import #${diff.replaces_import}`}
+        />
+      </dl>
+      <NameHints newNames={diff.new_names} duplicates={diff.possible_duplicates} />
+    </div>
+  );
+}
+
 export function DiffSummary({ diff }: { diff: ImportPreview['diff'] }) {
   return (
     <Card title="Changes">
-      {'rows_added' in diff ? <ScoresDiffView diff={diff} /> : <StationsDiffView diff={diff} />}
+      {'rows_added' in diff ? (
+        <ScoresDiffView diff={diff} />
+      ) : 'events_replaced' in diff ? (
+        <StationsDiffView diff={diff} />
+      ) : (
+        <SpecialDiffView diff={diff} />
+      )}
     </Card>
   );
 }

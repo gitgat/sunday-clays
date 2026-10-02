@@ -305,3 +305,12 @@ def test_station_rows_list_a_lettered_station_after_its_number(make_world, sun):
     rows = anchors.station_rows(fr, link("/stations", "sthit", sun(0), sun(20)))
     assert rows["station"].tolist() == ["7", "7A", "8", "10"]
     assert rows["value"].tolist() == [50.0, 75.0, 100.0, 100.0]
+
+
+def test_streak_rows_count_a_special_sunday(make_world, sun):
+    w = make_world()
+    for i in (0, 1, 3):
+        w.round(1, sun(i), 30).round(2, sun(i), 30)
+    w.special(1, sun(2))
+    rows = anchors.streak_rows(w.frames(), link("/records", "rec-streaks", sun(0), sun(3)))
+    assert dict(zip(rows["shooter_id"], rows["value"], strict=True)) == {1: 4, 2: 3}

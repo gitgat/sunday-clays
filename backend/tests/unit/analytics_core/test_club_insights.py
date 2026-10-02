@@ -444,3 +444,23 @@ def test_event_trends_skip_held_events_without_metrics(
         (date(2026, 1, 4), 40.0, None),
         (date(2026, 1, 18), 42.0, None),
     ]
+
+
+def test_yearly_trends_count_special_sundays_as_held_sundays_and_shooters(
+    make_rounds: Callable[..., pd.DataFrame], make_events: Callable[..., pd.DataFrame]
+) -> None:
+    from sunday_clays.analytics import frames
+
+    d1, d2, d3 = date(2026, 3, 1), date(2026, 3, 8), date(2026, 3, 15)
+    rounds = make_rounds([(d1, 1, 30), (d3, 1, 31), (d1, 2, 30)])
+    calendar = frames.calendar_from_events(make_events([d1, d2, d3]))
+    calendar.loc[calendar["event_date"] == d2, "kind"] = "special"
+    special = frames.appearances_from_rounds(make_rounds([(d2, 3, 40)])).assign(kind="special")
+    seen = pd.concat([frames.appearances_from_rounds(rounds), special], ignore_index=True)
+
+    (year,) = ci.yearly_trends(rounds, calendar, d3, seen)
+    (base,) = ci.yearly_trends(rounds, make_events([d1, d3]), d3)
+
+    assert (year.events_held, year.unique_shooters, year.ytd_unique_shooters) == (3, 3, 3)
+    assert (base.events_held, base.unique_shooters, base.ytd_unique_shooters) == (2, 2, 2)
+    assert year.ytd_rounds == base.ytd_rounds == 3

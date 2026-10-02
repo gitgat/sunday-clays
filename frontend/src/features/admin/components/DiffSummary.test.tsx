@@ -1,7 +1,13 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
-import { scoresPreview, stalePreview, stationsPreview } from '../mocks';
+import {
+  scoresPreview,
+  specialDiff,
+  specialPreview,
+  stalePreview,
+  stationsPreview,
+} from '../mocks';
 import { DiffSummary } from './DiffSummary';
 
 describe('DiffSummary', () => {
@@ -46,5 +52,49 @@ describe('DiffSummary', () => {
       'missing 0 events and 3 rows',
     );
     expect(screen.queryByRole('list', { name: 'Removed events' })).not.toBeInTheDocument();
+  });
+
+  describe('a special-shoot workbook (Plan 17)', () => {
+    function row(label: string) {
+      return screen.getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
+    }
+
+    it('shows the Sunday, its name, targets and stations, shooters and what it replaces', () => {
+      renderWithProviders(<DiffSummary diff={specialPreview.diff} />);
+      expect(row('Sunday')).toBe('Sep 20, 2026');
+      expect(row('Special shoot')).toBe('3-Bird Shoot');
+      expect(row('Targets')).toBe('60 (10 stations)');
+      expect(row('Shooters')).toBe('5');
+      expect(row('Replaces')).toBe('None');
+      expect(screen.queryByRole('note')).not.toBeInTheDocument();
+      expect(screen.queryByText('Rows added')).not.toBeInTheDocument();
+    });
+
+    it('lists new names and possible duplicates as the scores preview does', () => {
+      renderWithProviders(<DiffSummary diff={specialPreview.diff} />);
+      expect(screen.getByText('New names (1)')).toHaveClass('min-h-11');
+      expect(screen.getByRole('heading', { name: 'Possible duplicates' })).toBeInTheDocument();
+      expect(screen.getByText('Kim, Pat ↔ Kimm, Pat')).toBeInTheDocument();
+    });
+
+    it('shows the special shoot name from the data', () => {
+      renderWithProviders(<DiffSummary diff={{ ...specialDiff, label: 'Autumn Flurry' }} />);
+      expect(row('Special shoot')).toBe('Autumn Flurry');
+    });
+
+    it('names the live import it replaces and warns about weekly rows on that Sunday', () => {
+      renderWithProviders(
+        <DiffSummary diff={{ ...specialDiff, replaces_import: 12, regular_rows_on_date: 3 }} />,
+      );
+      expect(row('Replaces')).toBe('Import #12');
+      expect(screen.getByRole('note')).toHaveTextContent(
+        'The scores workbook has 3 rows on Sep 20, 2026. While this special shoot is live they are left out, and rolling it back brings them back.',
+      );
+    });
+
+    it('says one row in the singular', () => {
+      renderWithProviders(<DiffSummary diff={{ ...specialDiff, regular_rows_on_date: 1 }} />);
+      expect(screen.getByRole('note')).toHaveTextContent('has 1 row on Sep 20, 2026.');
+    });
   });
 });

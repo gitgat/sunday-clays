@@ -7,11 +7,11 @@ from typing import Annotated, Literal
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from sunday_clays.analytics import frames
 from sunday_clays.analytics.cohorts import cohort_tables, first_round_scores
-from sunday_clays.api.routes._convert import opt_float, opt_int, rows
+from sunday_clays.api.routes._convert import opt_float, opt_int, opt_str, rows
 from sunday_clays.api.routes._filters import check_window, in_window, round_type_param
 from sunday_clays.db import SessionDep
 from sunday_clays.domain.round_type import RoundType
@@ -50,12 +50,18 @@ class ClubSummaryOut(BaseModel):
 
 
 class AttendanceOut(BaseModel):
+    # Plan 17: kind, label and target_total are always sent, so the schema requires them
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     event_date: date
     head_count: int | None
     n_rounds: int
     n_shooters: int
     has_scores: bool
     results_complete: bool
+    kind: Literal["regular", "special"] = "regular"  # Plan 17
+    label: str | None = None
+    target_total: int = frames.REGULAR_TARGETS
 
 
 class RetentionOut(BaseModel):
@@ -147,20 +153,26 @@ def club_summary(
     """
     check_window(since, as_of)
     every_round = frames.apply_round_type_filter(frames.load_rounds(session), round_types)
-    events = in_window(
-        frames.apply_round_type_filter(frames.load_events(session), round_types), since, as_of
+    # Sundays, held Sundays, shooters and head counts include special Sundays (Plan 17); every
+    # score number, n_scored_events and first/last_event are regular Sundays only.
+    calendar = in_window(
+        frames.apply_round_type_filter(frames.load_calendar(session), round_types), since, as_of
+    )
+    seen = in_window(
+        frames.apply_round_type_filter(frames.load_appearances(session), round_types), since, as_of
     )
     rounds = in_window(every_round, since, as_of)
-    scored = events.loc[events["has_scores"]]
-    shooters = rounds.drop_duplicates("shooter_id")
+    regular = calendar.loc[calendar["kind"] == frames.EVENT_KIND_REGULAR]
+    scored = regular.loc[regular["has_scores"]]
+    shooters = seen.drop_duplicates("shooter_id")
     by_status = shooters["shooter_status"].value_counts()
     scores = rounds["score"]
     return ClubSummaryOut(
         first_event=None if scored.empty else scored["event_date"].min(),
         last_event=None if scored.empty else scored["event_date"].max(),
-        n_events=len(events),
+        n_events=len(calendar),
         n_scored_events=len(scored),
-        n_held_events=int(events["results_complete"].sum()),
+        n_held_events=int(calendar["results_complete"].sum()),
         n_rounds=len(rounds),
         n_shooters=len(shooters),
         avg_score=None if rounds.empty else float(scores.mean()),
@@ -169,7 +181,7 @@ def club_summary(
         n_perfect=int((scores == TARGETS_PER_ROUND).sum()),
         clays_thrown=len(rounds) * TARGETS_PER_ROUND,
         clays_broken=int(scores.sum()),
-        avg_head_count=opt_float(events["head_count"].mean()),
+        avg_head_count=opt_float(calendar["head_count"].mean()),
         shooters_by_status={str(k): int(v) for k, v in by_status.items()},
         status_by_year=status_by_year(every_round),
     )
@@ -177,7 +189,7 @@ def club_summary(
 
 @router.get("/api/club/attendance")
 def club_attendance(session: SessionDep) -> list[AttendanceOut]:
-    """Every event (attendance-only included), date ascending."""
+    """Every Sunday (attendance-only and special ones included), date ascending."""
     return [
         AttendanceOut(
             event_date=r["event_date"],
@@ -186,15 +198,19 @@ def club_attendance(session: SessionDep) -> list[AttendanceOut]:
             n_shooters=int(r["n_shooters"]),
             has_scores=bool(r["has_scores"]),
             results_complete=bool(r["results_complete"]),
+            kind="special" if r["kind"] == frames.EVENT_KIND_SPECIAL else "regular",
+            label=opt_str(r["label"]),
+            target_total=int(r["target_total"]),
         )
-        for r in rows(frames.load_events(session))
+        for r in rows(frames.load_calendar(session))
     ]
 
 
 @router.get("/api/club/cohorts")
 def club_cohorts(session: SessionDep) -> list[CohortOut]:
     """Newcomer cohorts by first-round year with retention per year offset (C4 exclusions)."""
-    table, returns = cohort_tables(frames.load_rounds(session), frames.load_shooters(session))
+    # cohorts follow Sundays shot, so a first Sunday at a special shoot starts a cohort (Plan 17)
+    table, returns = cohort_tables(frames.load_appearances(session), frames.load_shooters(session))
     retention: dict[int, list[RetentionOut]] = defaultdict(list)
     for r in rows(table):
         retention[int(r["cohort_year"])].append(

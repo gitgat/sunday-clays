@@ -40,6 +40,7 @@ ONE_OFFS = (
     "joined_club",
     "both_disciplines",
     "four_seasons",
+    "three_bird_shoot",
     "perfect_month",
     "sub_gauge",
     "rain",
@@ -127,7 +128,7 @@ def test_real_manifest_covers_every_c12_art_target():
     manifest = Path(__file__).resolve().parents[1] / "manifest.yaml"
     targets = load_manifest(manifest)
     expected = {(k, m) for k, metals in FAMILY_METALS.items() for m in metals} | {(k, None) for k in ONE_OFFS}
-    assert len(expected) == 60
+    assert len(expected) == 61
     assert {(t.art_key, t.metal) for t in targets} == expected
     # Re-rolled after the user rejected every first-round candidate (2026-09-29): new prompts, six fresh seeds.
     rerolled = {"clays_thrown", "sub_gauge", "rain"}

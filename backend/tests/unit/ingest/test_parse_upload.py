@@ -18,6 +18,8 @@ from sunday_clays.ingest.types import (
 
 from .builders import SheetRows, workbook_bytes
 from .builders_scores import NEXT_SUNDAY, SUNDAY, scores_sheets
+from .builders_special import HADLEY as S_HADLEY
+from .builders_special import special_sheet
 from .builders_stations import DEVLIN, HADLEY, station_sheet
 
 MONDAY = date(2026, 9, 14)
@@ -128,7 +130,7 @@ def test_attendance_date_formulas_evaluated_through_parse_upload(
         ),
         (
             workbook_bytes({"Name List (2)": [["Name"], ["Hadley, Ike"]]}),
-            "This doesn't look like a Sunday Clays scores or station workbook",
+            "This doesn't look like a Sunday Clays scores, station or special shoot workbook",
         ),
         (
             workbook_bytes({"ALL SCORE DETAIL": [["Name"]]}),
@@ -158,6 +160,12 @@ def test_unexpected_failure_is_wrapped_without_its_text(
 
     assert str(excinfo.value) == "This workbook could not be processed"
     assert isinstance(excinfo.value.__cause__, RuntimeError)
+
+
+def _kind_id(sheets: Mapping[str, SheetRows]) -> str:
+    if "ALL SCORE DETAIL" in sheets:
+        return "scores"
+    return "special" if "Special Event" in sheets else "stations"
 
 
 FINDING_CASES: list[tuple[str, Severity, Mapping[str, SheetRows]]] = [
@@ -310,6 +318,22 @@ FINDING_CASES: list[tuple[str, Severity, Mapping[str, SheetRows]]] = [
         Severity.WARNING,
         {"9 13 26": station_sheet(SUNDAY, [HADLEY, HADLEY])},
     ),
+    # validate_special and the special parser (Plan 17)
+    (
+        "special_total_mismatch",
+        Severity.WARNING,
+        {"Special Event": special_sheet([[*S_HADLEY, 1]])},
+    ),
+    (
+        "special_hits_invalid",
+        Severity.ERROR,
+        {"Special Event": special_sheet([S_HADLEY, ["Devlin, Sid", 9, 5, 4, 5, 5, 4, 5, 5, 5, 5]])},
+    ),
+    (
+        "special_row_without_name",
+        Severity.WARNING,
+        {"Special Event": special_sheet([S_HADLEY, [None, 5]])},
+    ),
 ]
 
 
@@ -318,7 +342,7 @@ FINDING_CASES: list[tuple[str, Severity, Mapping[str, SheetRows]]] = [
     FINDING_CASES,
     ids=[
         # the severity is in the id because one code can have two severities
-        f"{code}-{severity}-{'stations' if 'ALL SCORE DETAIL' not in sheets else 'scores'}"
+        f"{code}-{severity}-{_kind_id(sheets)}"
         for code, severity, sheets in FINDING_CASES
     ],
 )

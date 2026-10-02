@@ -56,4 +56,10 @@ describe('shooter explainers', () => {
       'The fullscreen table and the CSV download cover every year you shot.',
     );
   });
+
+  it('says the round-type filter covers special shoots, which no longer always show', () => {
+    const text = explainers.cal.computed.join(' ');
+    expect(text).not.toMatch(/special shoots always show/i);
+    expect(text).toContain('special shoots included');
+  });
 });

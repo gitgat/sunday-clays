@@ -146,7 +146,8 @@ def _shooter_anniversary(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         if fr.profiles[sid].left_censored or d.rounds_through < ANNIVERSARY_ROUNDS:
             continue
         for years in ANNIVERSARY_YEARS:
-            due = anniversary(days[0].date, years)
+            first = fr.appearance_dates[sid][0]  # a special shoot debut counts
+            due = anniversary(first, years)
             first_on_or_after = next((h for h in held if h >= due), None)
             if first_on_or_after != d.date:
                 continue
@@ -155,7 +156,7 @@ def _shooter_anniversary(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
                 anchor_date=d.date,
                 variant="",
                 pages=frozenset({P.PROFILE, P.SUNDAY, P.HOME}),
-                params={"s": sid, "years": years, "k": d.k, "first": days[0].date, "day": d.date},
+                params={"s": sid, "years": years, "k": d.k, "first": first, "day": d.date},
                 strength=ANNIVERSARY_STRENGTH[years],
                 named_shooter_ids=(sid,),
             )

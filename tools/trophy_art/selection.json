@@ -269,6 +269,11 @@
     "metal": null,
     "seed": 909
   },
+  "three_bird_shoot": {
+    "art_key": "three_bird_shoot",
+    "metal": null,
+    "reuse": "clays_thrown-gold"
+  },
   "welcome_back": {
     "art_key": "welcome_back",
     "metal": null,

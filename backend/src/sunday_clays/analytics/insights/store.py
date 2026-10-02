@@ -215,7 +215,7 @@ def load_picks(session: Session, sunday: date | None = None) -> list[Pick]:
 _STATION_SUNDAYS_SQL = text(
     "SELECT count(DISTINCT h.event_date) FROM station_hits h "
     "JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label "
-    "JOIN events e ON e.event_date = h.event_date"
+    "JOIN events e ON e.event_date = h.event_date WHERE e.kind = 'regular'"
 )
 
 
