@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { Sheet } from '../../../components/ui/Sheet';
+import { InsightBump } from '../../bumps/BumpsProvider';
 import { useIsDesktop } from '../../../lib/useMediaQuery';
 import type { InsightKudos } from '../api';
 import { Segments } from '../segments';
@@ -64,6 +65,7 @@ export function KudosStrip({
 }) {
   const [all, setAll] = useState(false);
   const [chosen, setChosen] = useState<InsightKudos | null>(null);
+  const rowId = useId();
   const isDesktop = useIsDesktop();
   if (kudos.length === 0) return null;
   const shown = kudos.slice(0, KUDOS_CAP);
@@ -105,18 +107,26 @@ export function KudosStrip({
           {kudos.map((chip) => {
             const you = meId === chip.shooter_id && chip.insight.headline_you !== null;
             return (
-              <li key={chip.shooter_id} className="flex flex-col gap-1">
+              <li
+                key={chip.shooter_id}
+                data-insight-key={chip.insight.key}
+                className="flex flex-col gap-1"
+              >
                 <Link
                   to={`/shooters/${String(chip.shooter_id)}`}
                   className="inline-flex min-h-11 items-center self-start font-medium text-text underline-offset-2 hover:underline"
                 >
                   {naturalName(chip.display_name)}
                 </Link>
-                <p className="text-sm text-text-muted">
+                <p id={`${rowId}-${String(chip.shooter_id)}`} className="text-sm text-text-muted">
                   <Segments
                     segments={you ? (chip.insight.headline_you ?? []) : chip.insight.headline}
                   />
                 </p>
+                <InsightBump
+                  insightKey={chip.insight.key}
+                  describedBy={`${rowId}-${String(chip.shooter_id)}`}
+                />
               </li>
             );
           })}

@@ -17,6 +17,9 @@ services:
       # Every e2e login comes from one IP: the default 10 failures / 15 min would turn a re-run
       # against a long-lived stack into 429s. Backend unit tests cover the limiter itself.
       LOGIN_MAX_FAILURES: "1000"
+      # Every page-view beacon comes from that one IP too (about 190 page loads x 2 projects, plus
+      # in-app navigation): the default 600 / 10 min would 429 late in a full run (Plan 16).
+      PAGE_VIEW_LIMIT: "100000"
     depends_on:
       db:
         condition: service_healthy

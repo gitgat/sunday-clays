@@ -36,7 +36,8 @@ test('home shows the Next Sunday card without a forecast', async ({ page }) => {
   ).toBeVisible();
   await expect(card.getByText('Predicted field median')).toBeVisible();
   await expect(card.getByText('Expected turnout')).toBeVisible();
-  await expect(card.getByText(/Choose “That’s me”/)).toBeVisible();
+  await expect(card.getByText(/pick your name in “Which one are you\?”/)).toBeVisible();
+  await expect(card.getByRole('link', { name: 'Go to Shooters' })).toBeVisible();
   await card.getByRole('button', { name: 'About these predictions' }).click();
   await expect(card.getByRole('heading', { name: 'What this shows' })).toBeVisible();
   await expect(card.getByRole('heading', { name: "How it's worked out" })).toBeVisible();

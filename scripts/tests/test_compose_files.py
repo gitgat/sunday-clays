@@ -135,3 +135,22 @@ def test_caddy_joins_the_public_edge_and_the_internal_router_strips_the_cloudfla
         in labels
     )
     assert "traefik.http.routers.sundayclays.middlewares=sundayclays-strip-cf" in labels
+
+
+def test_api_runs_without_proxy_headers_and_without_an_access_log() -> None:
+    """The access log holds URLs (device id, shooter id) and peer addresses; the About page
+    promises neither is tied to a name, so uvicorn must not write it."""
+    compose_command = " ".join(service("compose.yaml", "api")["command"])
+    dockerfile = (ROOT / "backend" / "Dockerfile").read_text()
+    cmd_line = next(line for line in dockerfile.splitlines() if line.startswith("CMD "))
+
+    for command in (compose_command, cmd_line):
+        assert "--no-access-log" in command
+        assert "--no-proxy-headers" in command
+
+
+def test_caddy_writes_no_access_log() -> None:
+    caddyfile = (ROOT / "deploy" / "caddy" / "Caddyfile").read_text()
+    directives = [line.strip().split()[0] for line in caddyfile.splitlines() if line.strip()]
+
+    assert "log" not in directives

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -188,6 +188,18 @@ def load_rows(session: Session, *where: ColumnElement[bool]) -> list[InsightRow]
 
 def insights_table() -> Table:
     return _tables()[0]
+
+
+def existing_keys(session: Session, keys: Collection[str]) -> set[str]:
+    """The asked keys that are stored insights now, in one query (Plan 15 bumps)."""
+    wanted = sorted(set(keys))
+    if not wanted:
+        return set()
+    insights = insights_table()
+    found: list[str] = list(
+        session.scalars(select(insights.c.key).where(insights.c.key.in_(wanted)))
+    )
+    return set(found)
 
 
 def load_picks(session: Session, sunday: date | None = None) -> list[Pick]:

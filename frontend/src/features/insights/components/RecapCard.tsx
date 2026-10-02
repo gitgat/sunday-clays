@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { useExplicitWindow } from '../../../lib/timeWindowChoice';
 import { formatDay } from '../../shooters/format';
 import { Card } from '../../../components/ui/Card';
+import { BumpsOffNote, InsightBump } from '../../bumps/BumpsProvider';
 import type { Insight } from '../api';
 import { chartHref } from '../chartLink';
 import { Segments } from '../segments';
@@ -15,15 +16,20 @@ export function latestSubtitle(date: string | null): string {
 }
 
 /** The pinned line about the latest Sunday, clamped to 3 lines until "Show all" (spec §3.8). */
-export function RecapCard({ insight }: { insight: Insight }) {
+export function RecapCard({ insight, withNote = false }: { insight: Insight; withNote?: boolean }) {
   const [all, setAll] = useState(false);
+  const headlineId = useId();
   const viewerWindow = useExplicitWindow();
   return (
     <Card title="Last Sunday" subtitle={latestSubtitle(insight.anchor_date)}>
-      <p className={all ? 'text-base text-text' : 'line-clamp-3 text-base text-text'}>
+      {withNote && <BumpsOffNote />}
+      <p
+        id={headlineId}
+        className={all ? 'text-base text-text' : 'line-clamp-3 text-base text-text'}
+      >
         <Segments segments={insight.headline} />
       </p>
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-insight-key={insight.key} className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           aria-expanded={all}
@@ -38,6 +44,7 @@ export function RecapCard({ insight }: { insight: Insight }) {
         >
           See the results
         </Link>
+        <InsightBump insightKey={insight.key} describedBy={headlineId} />
       </div>
     </Card>
   );
