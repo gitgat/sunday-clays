@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from sunday_clays.analytics import frames
 from sunday_clays.analytics.streaks import held_event_dates, streaks
 
 W = [date(2026, 1, 4) + timedelta(days=7 * k) for k in range(8)]
@@ -94,3 +95,47 @@ def test_no_rounds_gives_empty_frame(
     empty = streaks(make_rounds([(W[0], 1, 30)]).iloc[0:0], make_events([W[0]]), None)
     assert empty.empty
     assert list(empty.columns) == ["shooter_id", "current_streak", "longest_streak"]
+
+
+def _with_special(events: pd.DataFrame, *days: date) -> pd.DataFrame:
+    calendar = frames.calendar_from_events(events)
+    calendar.loc[calendar["event_date"].isin(days), "kind"] = frames.EVENT_KIND_SPECIAL
+    return calendar
+
+
+def test_a_special_sunday_extends_the_run_of_everyone_who_came(
+    make_rounds: Callable[..., pd.DataFrame], make_events: Callable[..., pd.DataFrame]
+) -> None:
+    events = _with_special(make_events(W[:4]), W[2])
+    rounds = make_rounds([(W[0], 1, 30), (W[1], 1, 30), (W[2], 1, 55), (W[3], 1, 30)])
+
+    assert _by_shooter(streaks(rounds, events, None)) == {1: (4, 4)}
+
+
+def test_a_special_sunday_never_breaks_the_run_of_anyone_who_skipped_it(
+    make_rounds: Callable[..., pd.DataFrame], make_events: Callable[..., pd.DataFrame]
+) -> None:
+    events = _with_special(make_events(W[:4]), W[2])
+    rounds = make_rounds([(W[0], 2, 30), (W[1], 2, 30), (W[3], 2, 30), (W[2], 1, 40)])
+
+    assert _by_shooter(streaks(rounds, events, None)) == {1: (0, 1), 2: (3, 3)}
+
+
+def test_a_special_latest_sunday_does_not_end_a_current_run(
+    make_rounds: Callable[..., pd.DataFrame], make_events: Callable[..., pd.DataFrame]
+) -> None:
+    events = _with_special(make_events(W[:4]), W[3])
+    rounds = make_rounds(
+        [(W[1], 1, 30), (W[2], 1, 30), (W[1], 2, 30), (W[2], 2, 30), (W[3], 2, 50)]
+    )
+
+    assert _by_shooter(streaks(rounds, events, None)) == {1: (2, 2), 2: (3, 3)}
+
+
+def test_a_missed_regular_sunday_still_breaks_a_run_through_a_special_one(
+    make_rounds: Callable[..., pd.DataFrame], make_events: Callable[..., pd.DataFrame]
+) -> None:
+    events = _with_special(make_events(W[:5]), W[1])
+    rounds = make_rounds([(W[0], 1, 30), (W[1], 1, 50), (W[3], 1, 30), (W[4], 1, 30)])
+
+    assert _by_shooter(streaks(rounds, events, None)) == {1: (2, 2)}
