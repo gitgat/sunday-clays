@@ -1,9 +1,22 @@
 import { Link } from 'react-router';
 import { useRoundTypeHref } from '../../../lib/roundTypes';
 import type { EventSummary } from '../api';
-import { formatDay, formatScore, roundTypeLabel } from '../format';
+import {
+  formatDay,
+  formatScore,
+  isSpecial,
+  roundTypeLabel,
+  specialName,
+  specialTag,
+} from '../format';
 
 export function summaryLine(e: EventSummary): string {
+  if (isSpecial(e)) {
+    const name = specialName(e);
+    return [...(name === null ? [] : [name]), specialTag(e), `${e.n_shooters} shooters`].join(
+      ' · ',
+    );
+  }
   if (!e.has_scores) {
     return e.head_count === null
       ? 'No scores recorded'

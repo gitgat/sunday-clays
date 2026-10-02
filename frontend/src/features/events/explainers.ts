@@ -109,6 +109,20 @@ const explainers = {
     read: ['Each line names the shooter and what happened.'],
     computed: ['All round types count together.'],
   },
+  stations: {
+    what: 'How many stations were shot on this Sunday.',
+    computed: ['Counted from the station sheet; "—" when there is none.'],
+  },
+  special: {
+    what: 'A special shoot is a Sunday with its own format and number of targets, such as a 60-target 3-bird shoot.',
+    read: [
+      "Scores are targets broken out of that shoot's own total, best first. Nobody is ranked or rated.",
+    ],
+    computed: [
+      'It counts as a Sunday shot for everyone who came: Sundays shot, streaks and attendance trophies include it.',
+      'Its scores stay out of averages, best scores, records, ratings and leaderboards, which are all out of 50.',
+    ],
+  },
 } satisfies Record<string, Explainer>;
 
 /** Typed by key, so a wired-in lookup is never undefined. */
