@@ -34,6 +34,7 @@ class Event(Base):
             "round_type_source IN ('stations', 'override', 'none')",
             name=conv("ck_events_round_type_source"),
         ),
+        CheckConstraint("kind IN ('regular', 'special')", name=conv("ck_events_kind")),
     )
 
     event_date: Mapped[date] = mapped_column(Date, primary_key=True)
@@ -45,6 +46,12 @@ class Event(Base):
     has_scores: Mapped[bool] = mapped_column(Boolean, nullable=False)
     has_stations: Mapped[bool] = mapped_column(Boolean, nullable=False)
     results_complete: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Plan 17: a special Sunday counts only as an appearance (frames.load_* filter on it)
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'regular'"))
+    label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_total: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("50")
+    )
 
 
 class Round(Base):

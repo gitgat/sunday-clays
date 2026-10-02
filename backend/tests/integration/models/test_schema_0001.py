@@ -132,10 +132,12 @@ C4_TABLES = {
     "page_view_attempts",  # 0007 (Plan 16)
     "page_view_rollups",  # 0007 (Plan 16)
     "page_kind_rollups",  # 0007 (Plan 16)
+    "import_special_events",  # 0008 (Plan 17)
 }
 TABLES_0003 = {"insights", "insight_picks"}
 TABLES_0006 = {"fist_bumps", "bump_attempts"}
 TABLES_0007 = {"page_views", "page_view_attempts", "page_view_rollups", "page_kind_rollups"}
+TABLES_0008 = {"import_special_events"}
 
 
 def _alembic(eng: Engine, action: str, target: str) -> None:
@@ -259,9 +261,11 @@ def test_upgrade_downgrade_roundtrip(scratch_engine: Engine) -> None:
     _alembic(scratch_engine, "upgrade", "head")
     assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
     assert _round_id_index(scratch_engine) == ROUND_ID_INDEX_DEF
+    _alembic(scratch_engine, "downgrade", "0007")  # 0008 drops its table and the event kind
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0008) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0006")  # 0007 drops only its four tables
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0007) | {"alembic_version"}
-    later = TABLES_0006 | TABLES_0007
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0007 - TABLES_0008) | {"alembic_version"}
+    later = TABLES_0006 | TABLES_0007 | TABLES_0008
     _alembic(scratch_engine, "downgrade", "0005")  # 0006 drops only its two tables
     assert _tables(scratch_engine) == (C4_TABLES - later) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0004")  # 0005 drops the station labels
@@ -571,3 +575,118 @@ def test_event_weather_measurements_read_back_exactly(session: Session) -> None:
     assert session.scalar(rainy) == 1
     for name, value in EVENT_WEATHER_MEASUREMENTS.items():
         assert session.scalar(select(func.avg(getattr(EventWeather, name)))) == value, name
+
+
+EVENT_INSERT = (
+    "INSERT INTO events (event_date, round_type, round_type_source, n_rounds, n_shooters,"
+    " has_scores, has_stations, results_complete"
+)
+
+
+def test_0008_defaults_events_to_regular_and_stores_a_special_sunday(
+    scratch_engine: Engine,
+) -> None:
+    _alembic(scratch_engine, "upgrade", "0007")
+    with scratch_engine.begin() as conn:
+        conn.execute(
+            text(
+                f"{EVENT_INSERT}) VALUES ('2026-09-13', 'sporting', 'none', 0, 0,"
+                " false, false, false)"
+            )
+        )
+    _alembic(scratch_engine, "upgrade", "head")
+    with scratch_engine.begin() as conn:
+        # the previous release writes no kind, label or target total
+        conn.execute(
+            text(
+                f"{EVENT_INSERT}) VALUES ('2026-09-27', 'sporting', 'none', 0, 0,"
+                " false, false, false)"
+            )
+        )
+        conn.execute(
+            text(
+                f"{EVENT_INSERT}, kind, label, target_total) VALUES ('2026-09-20',"
+                " 'sporting', 'none', 0, 0, false, false, false, 'special',"
+                " 'Three Clay Shoot', 60)"
+            )
+        )
+        rows = conn.execute(
+            text("SELECT event_date::text, kind, label, target_total FROM events ORDER BY 1")
+        ).all()
+    assert [tuple(r) for r in rows] == [
+        ("2026-09-13", "regular", None, 50),
+        ("2026-09-20", "special", "Three Clay Shoot", 60),
+        ("2026-09-27", "regular", None, 50),
+    ]
+    with pytest.raises(IntegrityError, match="ck_events_kind"), scratch_engine.begin() as conn:
+        conn.execute(
+            text(
+                f"{EVENT_INSERT}, kind) VALUES ('2026-10-04', 'sporting', 'none', 0,"
+                " 0, false, false, false, 'party')"
+            )
+        )
+
+
+def test_0008_downgrade_removes_special_imports_and_special_sundays(
+    scratch_engine: Engine,
+) -> None:
+    _alembic(scratch_engine, "upgrade", "head")
+    with scratch_engine.begin() as conn:
+        conn.execute(text("INSERT INTO shooters (id, display_name) VALUES (1, 'Hadley, Ike')"))
+        conn.execute(
+            text(
+                "INSERT INTO imports (id, kind, filename, sha256, file_bytes, status)"
+                " VALUES (7, 'special', 's.xlsx', 'abc', 'x', 'committed')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO import_special_events VALUES (7, '2026-09-20', 'Three Clay Shoot', 60)"
+            )
+        )
+        conn.execute(
+            text(
+                f"{EVENT_INSERT}, kind, label, target_total) VALUES ('2026-09-20',"
+                " 'sporting', 'none', 1, 1, true, false, true, 'special',"
+                " 'Three Clay Shoot', 60)"
+            )
+        )
+        conn.execute(
+            text(
+                f"{EVENT_INSERT}) VALUES ('2026-09-27', 'sporting', 'none', 1, 1,"
+                " true, false, true)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO rounds (event_date, shooter_id, name_key, ordinal, score,"
+                " source_row) VALUES ('2026-09-20', 1, 'hadley ike', 1, 55, 5),"
+                " ('2026-09-27', 1, 'hadley ike', 1, 41, 9)"
+            )
+        )
+    _alembic(scratch_engine, "downgrade", "0007")
+    with scratch_engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM imports")).scalar_one() == 0
+        assert conn.execute(text("SELECT event_date::text FROM events")).scalars().all() == [
+            "2026-09-27"
+        ]
+        assert conn.execute(text("SELECT score FROM rounds")).scalars().all() == [41]
+        columns = conn.execute(
+            text(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_name = 'events' AND column_name IN ('kind', 'label', 'target_total')"
+            )
+        ).all()
+        assert columns == []
+    with pytest.raises(IntegrityError, match="ck_imports_kind"), scratch_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO imports (kind, filename, sha256, file_bytes)"
+                " VALUES ('special', 's.xlsx', 'def', 'x')"
+            )
+        )
+
+
+def test_import_kind_check_accepts_a_special_import(session: Session) -> None:
+    session.add(Import(kind="special", filename="s.xlsx", sha256="c" * 64, file_bytes=b"x"))
+    session.flush()

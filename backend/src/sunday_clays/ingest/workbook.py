@@ -16,9 +16,12 @@ from sunday_clays.ingest.names import name_key
 from sunday_clays.ingest.types import FileKind, ParseError
 
 SCORES_SHEET = "ALL SCORE DETAIL"
+SPECIAL_SHEET = "Special Event"  # Plan 17: a special-event workbook's one sheet
 UNREADABLE_MESSAGE = "This file could not be read as an Excel workbook"
 TOO_LARGE_MESSAGE = "File is too large to process"
-UNKNOWN_KIND_MESSAGE = "This doesn't look like a Sunday Clays scores or station workbook"
+UNKNOWN_KIND_MESSAGE = (
+    "This doesn't look like a Sunday Clays scores, station or special shoot workbook"
+)
 # Archive limits (inclusive). The two openpyxl loads peak at ~29x the
 # uncompressed size (measured: a 3.8 MB upload with 20.8 MB of sheet XML and
 # 701k numeric cells took RSS from 111 MB to 716 MB), so 10 MiB in total bounds
@@ -192,8 +195,11 @@ def is_station_sheet(sheet: Worksheet) -> bool:
 
 
 def detect_kind(lw: LoadedWorkbook) -> FileKind:
+    """Scores sheet first, then the special-event sheet, then station tabs."""
     if find_sheet(lw.values, SCORES_SHEET) is not None:
         return FileKind.SCORES
+    if find_sheet(lw.values, SPECIAL_SHEET) is not None:
+        return FileKind.SPECIAL
     if any(is_station_sheet(sheet) for sheet in worksheets(lw.values)):
         return FileKind.STATIONS
     raise ParseError(UNKNOWN_KIND_MESSAGE)
