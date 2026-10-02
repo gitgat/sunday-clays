@@ -22,8 +22,9 @@ NO_ETAG_PREFIXES: tuple[str, ...] = (
     "/api/auth/",
     "/api/admin/",
     "/api/predictions/",
+    "/api/features",  # Plan 19 D3: switches change without a data_version bump
 )
-NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/")
+NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/", "/api/features")
 # Plan 15: fist-bump counts change without a data_version bump, so a data_version ETag would
 # answer 304 with stale counts. They are never tagged and never stored.
 NO_STORE_SUFFIXES: tuple[str, ...] = ("/bumps",)
