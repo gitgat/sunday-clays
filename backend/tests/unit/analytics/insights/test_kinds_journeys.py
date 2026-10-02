@@ -76,3 +76,14 @@ def test_anniversary_is_silent_when_the_shooter_misses_that_sunday(make_world, s
             world.round(1, day, 30)
     facts = [f for f in run("pf.shooter-anniversary", world.frames()) if f.subject_id == "1"]
     assert all(f.params["years"] != 1 for f in facts)
+
+
+def test_anniversary_dates_from_a_special_shoot_debut(make_world, sun, run):
+    world = make_world().series(9, 0, [30] * 70)
+    world.special(1, sun(3))
+    for j in range(4, 62):
+        world.round(1, sun(j), 30)
+    fr = world.frames()
+    (fact,) = [f for f in run("pf.shooter-anniversary", fr) if f.subject_id == "1"]
+    expected = next(d for d in fr.held_dates() if d >= anniversary(sun(3), 1))
+    assert (fact.anchor_date, fact.params["first"]) == (expected, sun(3))

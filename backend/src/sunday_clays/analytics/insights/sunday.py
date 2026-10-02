@@ -887,7 +887,7 @@ def _new_faces(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         firsts = [
             fr.histories[r.shooter_id][0]
             for r in sunday.results
-            if fr.histories[r.shooter_id][0].date == sunday.date
+            if fr.appearance_dates[r.shooter_id][0] == sunday.date  # a special debut is a first
             and not fr.profiles[r.shooter_id].deceased
         ]
         if not firsts:
@@ -1003,11 +1003,12 @@ def _second_visit(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     cutoff = new_cutoff(fr)
     for i, days in anchor_days(fr, scope):
         d = days[i]
-        if i != 1 or d.prior_rounds != 1 or d.prev_date is None:
+        if fr.appearances_through(d.shooter_id, d.date) != 2:  # the real second Sunday
             continue
-        if cutoff is None or d.prev_date < cutoff:
+        first = fr.appearance_dates[d.shooter_id][0]
+        if cutoff is None or first < cutoff:
             continue
-        if d.date - d.prev_date <= timedelta(weeks=SECOND_WEEKS):
+        if d.date - first <= timedelta(weeks=SECOND_WEEKS):
             found.setdefault(d.date, []).append(d.shooter_id)
     for day, ids in sorted(found.items()):
         ids = sorted(ids, key=lambda sid: fr.names.get(sid, ""))
