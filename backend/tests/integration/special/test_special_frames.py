@@ -87,7 +87,7 @@ def test_the_calendar_is_the_events_plus_the_special_sunday(
     (row,) = calendar[calendar["kind"] == "special"].to_dict("records")
     assert (row["event_date"], row["label"], row["target_total"]) == (
         SPECIAL,
-        "Three Clay Shoot",
+        "3-Bird Shoot",
         60,
     )
     assert (row["n_shooters"], row["has_scores"], row["results_complete"]) == (5, True, True)
@@ -124,7 +124,7 @@ def test_special_rounds_and_station_hits_are_the_special_sunday_only(
     assert list(rounds.columns) == list(frames.SPECIAL_ROUND_COLUMNS)
     assert dict(zip(rounds["display_name"], rounds["score"], strict=True)) == SCORES
     assert list(rounds["score"]) == sorted(SCORES.values(), reverse=True)
-    assert set(rounds["label"]) == {"Three Clay Shoot"}
+    assert set(rounds["label"]) == {"3-Bird Shoot"}
     assert set(rounds["target_total"]) == {60}
     hits = frames.load_special_station_hits(fx_special_session)
     assert list(hits.columns) == list(frames.STATION_HIT_COLUMNS)

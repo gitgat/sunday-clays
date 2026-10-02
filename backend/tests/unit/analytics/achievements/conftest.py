@@ -59,10 +59,15 @@ class CtxBuilder:
         self._stations: list[dict[str, Any]] = []
         self._history: list[dict[str, Any]] = []
         self._specials: list[tuple[int, date]] = []
+        self._labels: dict[date, str] = {}
 
-    def special(self, shooter_id: int, event_date: date) -> CtxBuilder:
-        """A special Sunday shot (Plan 17): an appearance only, never a round or a regular event."""
+    def special(
+        self, shooter_id: int, event_date: date, label: str = "Three Clay Shoot"
+    ) -> CtxBuilder:
+        """A special Sunday shot (Plan 17): an appearance only, never a round or a regular event.
+        The Sunday's calendar label is the last one given for that date."""
         self._specials.append((shooter_id, event_date))
+        self._labels[event_date] = label
         return self
 
     def round(self, shooter_id: int, event_date: date, score: int, **cols: Any) -> CtxBuilder:
@@ -166,7 +171,7 @@ class CtxBuilder:
                 results_complete=True,
                 condition=None,
                 kind="special",
-                label="Three Clay Shoot",
+                label=self._labels[day],
                 target_total=60,
             )
             rows.append(row)

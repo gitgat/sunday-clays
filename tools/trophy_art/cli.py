@@ -7,7 +7,7 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -26,13 +26,15 @@ def _ts_key(stem: str) -> str:
     return stem if stem.isidentifier() else f"'{stem}'"
 
 
-def render_manifest_ts(stems: Sequence[str]) -> str:
+def render_manifest_ts(stems: Sequence[str], files: Mapping[str, str] | None = None) -> str:
     """The file in the form the frontend's `prettier --check` accepts (quoteProps as-needed, printWidth 100):
     keys are quoted only when they are not identifiers (a `-metal` stem), and every entry is expanded."""
     if not stems:
         return _HEADER + _DECL + "{};\n"
+    shown = files or {}
     entries = [
-        f"  {_ts_key(s)}: {{\n    src: '/trophies/{s}.webp',\n    src128: '/trophies/{s}@128.webp',\n  }},\n"
+        f"  {_ts_key(s)}: {{\n    src: '/trophies/{shown.get(s, s)}.webp',\n"
+        f"    src128: '/trophies/{shown.get(s, s)}@128.webp',\n  }},\n"
         for s in sorted(stems)
     ]
     return _HEADER + _DECL + "{\n" + "".join(entries) + "};\n"
@@ -114,23 +116,62 @@ def _select(args: argparse.Namespace) -> int:
     if metal is not None and metal not in METALS:
         print(f"metal must be one of {', '.join(METALS)} or '-'", file=sys.stderr)
         return 2
+    if (args.candidate is None) == (args.reuse is None):
+        print("give either a candidate seed or --reuse STEM", file=sys.stderr)
+        return 2
     stem = args.art_key if metal is None else f"{args.art_key}-{metal}"
-    candidate = args.out / "candidates" / stem / f"{args.candidate}.png"
-    if not candidate.exists():
-        print(f"no candidate {candidate}", file=sys.stderr)
-        return 1
     selection = _read_selection(args.selection)
-    selection[stem] = {"art_key": args.art_key, "metal": metal, "seed": args.candidate}
+    if args.reuse is not None:
+        source = selection.get(args.reuse)
+        if args.reuse == stem:
+            print(f"--reuse cannot point {stem} at itself", file=sys.stderr)
+            return 1
+        if source is None or "seed" not in source:
+            print(f"--reuse needs an existing picked selection, not {args.reuse}", file=sys.stderr)
+            return 1
+        selection[stem] = {"art_key": args.art_key, "metal": metal, "reuse": args.reuse}
+        print(f"selected {stem} reusing {args.reuse}")
+    else:
+        candidate = args.out / "candidates" / stem / f"{args.candidate}.png"
+        if not candidate.exists():
+            print(f"no candidate {candidate}", file=sys.stderr)
+            return 1
+        selection[stem] = {"art_key": args.art_key, "metal": metal, "seed": args.candidate}
+        print(f"selected {stem} seed {args.candidate}")
     args.selection.write_text(json.dumps(selection, indent=2, sort_keys=True) + "\n")
-    print(f"selected {stem} seed {args.candidate}")
     return 0
 
 
+def _file_stems(selection: dict[str, dict[str, Any]]) -> dict[str, str] | None:
+    """Each key's built-file stem: its own, or its reused source's. None when a reuse has no source."""
+    files: dict[str, str] = {}
+    for stem, pick in selection.items():
+        source = pick.get("reuse", stem)
+        if "reuse" in pick and (source == stem or "seed" not in selection.get(source, {})):
+            print(f"{stem} reuses {source}, which has no picked candidate", file=sys.stderr)
+            return None
+        files[stem] = source
+    return files
+
+
+def _write_manifest(selection: dict[str, dict[str, Any]], files: dict[str, str], repo_root: Path) -> None:
+    generated = repo_root / "frontend" / "src" / "features" / "achievements" / "trophyArt.gen.ts"
+    generated.parent.mkdir(parents=True, exist_ok=True)
+    generated.write_text(render_manifest_ts(list(selection), files))
+
+
 def _build(args: argparse.Namespace) -> int:
+    """Writes WebP pairs for picked candidates; a reused key gets no art of its own, only a manifest entry
+    that points at its source's files."""
     selection = _read_selection(args.selection)
+    files = _file_stems(selection)
+    if files is None:
+        return 1
     public = args.repo_root / "frontend" / "public" / "trophies"
     public.mkdir(parents=True, exist_ok=True)
     for stem, pick in sorted(selection.items()):
+        if "reuse" in pick:
+            continue
         candidate = args.out / "candidates" / stem / f"{pick['seed']}.png"
         if not candidate.exists():
             print(f"missing candidate {candidate}", file=sys.stderr)
@@ -138,10 +179,31 @@ def _build(args: argparse.Namespace) -> int:
         png = candidate.read_bytes()
         (public / f"{stem}.webp").write_bytes(medallion(png, 256))
         (public / f"{stem}@128.webp").write_bytes(medallion(png, 128))
-    generated = args.repo_root / "frontend" / "src" / "features" / "achievements" / "trophyArt.gen.ts"
-    generated.parent.mkdir(parents=True, exist_ok=True)
-    generated.write_text(render_manifest_ts(list(selection)))
-    print(f"built {len(selection)} trophies into {public}")
+    _write_manifest(selection, files, args.repo_root)
+    reused = sum("reuse" in pick for pick in selection.values())
+    print(f"built {len(selection) - reused} trophies into {public} ({reused} reused)")
+    return 0
+
+
+def _manifest(args: argparse.Namespace) -> int:
+    """Regenerates trophyArt.gen.ts from selection.json and the WebP files already built, no candidates."""
+    selection = _read_selection(args.selection)
+    files = _file_stems(selection)
+    if files is None:
+        return 1
+    public = args.repo_root / "frontend" / "public" / "trophies"
+    missing = [
+        f"{public / f'{source}{suffix}.webp'}"
+        for source in sorted(set(files.values()))
+        for suffix in ("", "@128")
+        if not (public / f"{source}{suffix}.webp").exists()
+    ]
+    for path in missing:
+        print(f"missing built file {path}", file=sys.stderr)
+    if missing:
+        return 1
+    _write_manifest(selection, files, args.repo_root)
+    print(f"wrote the manifest for {len(selection)} trophies")
     return 0
 
 
@@ -162,6 +224,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "sheet": _sheet,
     "select": _select,
     "build": _build,
+    "manifest": _manifest,
     "check": _check,
 }
 
@@ -186,9 +249,16 @@ def build_parser() -> argparse.ArgumentParser:
     select = sub.add_parser("select", help="record the user's pick")
     select.add_argument("art_key")
     select.add_argument("metal", help="bronze|silver|gold|platinum|diamond, or - for a one-off")
-    select.add_argument("candidate", type=int, help="the picked candidate's seed")
+    select.add_argument("candidate", type=int, nargs="?", help="the picked candidate's seed")
+    select.add_argument(
+        "--reuse",
+        metavar="STEM",
+        help="use another key's picked art instead of a candidate, e.g. clays_thrown-gold",
+    )
     build = sub.add_parser("build", help="write WebP medallions and trophyArt.gen.ts")
     build.add_argument("--repo-root", type=Path, default=HERE.parent.parent)
+    manifest = sub.add_parser("manifest", help="rewrite trophyArt.gen.ts from selection.json and the built files")
+    manifest.add_argument("--repo-root", type=Path, default=HERE.parent.parent)
     check = sub.add_parser("check", help="verify the manifest covers a JSON list of [art_key, metal|null]")
     check.add_argument("keys", type=Path)
     return parser

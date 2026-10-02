@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from sunday_clays.analytics import frames
 from sunday_clays.analytics.achievements.context import AchContext, empty_value_frame
 from sunday_clays.analytics.achievements.registry import (
     Achievement,
@@ -25,6 +26,7 @@ PB_MIN_PRIOR_ROUNDS = 5
 WELCOME_BACK_DAYS = 180
 ANNIVERSARY_WINDOW_DAYS = 7
 PERFECT_MONTH_MIN_EVENTS = 3
+THREE_BIRD_LABELS = frozenset({"3 bird shoot", "three bird shoot"})
 
 
 def _series(days: pd.DataFrame, values: pd.Series) -> pd.DataFrame:
@@ -140,6 +142,35 @@ def _new_year(ctx: AchContext) -> Iterator[Award]:
         hits["shooter_id"], hits["event_date"], hits["best_round_id"], strict=True
     ):
         yield Award(int(sid), "new_year", day, _round_id(rid), {"year": day.year})
+
+
+def normalize_label(label: str) -> str:
+    """Casefolded, hyphens and underscores as spaces, whitespace collapsed."""
+    return " ".join(label.casefold().replace("-", " ").replace("_", " ").split())
+
+
+def _three_bird_shoot(ctx: AchContext) -> Iterator[Award]:
+    """The first special Sunday a shooter shot whose label is a 3-bird shoot (appearances and
+    calendar only; a later 3-bird shoot never awards again or moves the date)."""
+    cal = ctx.calendar
+    special = cal[cal["kind"].eq(frames.EVENT_KIND_SPECIAL)]
+    labels = {
+        day: label
+        for day, label in zip(special["event_date"], special["label"], strict=True)
+        if isinstance(label, str) and normalize_label(label) in THREE_BIRD_LABELS
+    }
+    if not labels:
+        return
+    days = ctx.attendance_days
+    hits = days[days["special"] & days["event_date"].isin(labels)].drop_duplicates("shooter_id")
+    for sid, day in zip(hits["shooter_id"], hits["event_date"], strict=True):
+        yield Award(
+            int(sid),
+            "three_bird_shoot",
+            day,
+            None,
+            {"label": labels[day], "event_date": day.isoformat()},
+        )
 
 
 def _anniversary(years: int) -> Callable[[AchContext], Iterator[Award]]:
@@ -446,5 +477,15 @@ register(
         art_key="perfect_month",
         evaluate=_perfect_month,
         repeatable=True,
+    )
+)
+register(
+    Achievement(
+        code="three_bird_shoot",
+        name="3-Bird Shoot",
+        description="Shot the 3-Bird Shoot.",
+        category=Category.CALENDAR,
+        art_key="three_bird_shoot",
+        evaluate=_three_bird_shoot,
     )
 )
