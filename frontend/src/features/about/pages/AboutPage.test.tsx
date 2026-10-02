@@ -52,8 +52,8 @@ describe('AboutPage', () => {
 
   it('lists five privacy points', () => {
     renderWithProviders(<AboutPage />, { route: '/about' });
-    const section = screen.getByRole('heading', { name: 'Your privacy' }).closest('section');
-    if (section === null) throw new Error('expected a privacy section');
+    const section = screen.getByRole('region', { name: 'Your privacy' });
+    expect(within(section).getByRole('list')).toBeInTheDocument();
     expect(within(section).getAllByRole('listitem')).toHaveLength(5);
   });
 

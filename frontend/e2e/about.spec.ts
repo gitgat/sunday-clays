@@ -30,7 +30,9 @@ test('About opens from the nav and shows what, who, source and privacy', async (
   ]) {
     await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
   }
-  await expect(page.getByRole('main').getByRole('listitem')).toHaveCount(5);
+  await expect(
+    page.getByRole('region', { name: 'Your privacy' }).getByRole('listitem'),
+  ).toHaveCount(5);
 
   for (const [name, href] of [
     [/Read more on tcgc\.org/, 'https://tcgc.org/sunday-clays/'],
