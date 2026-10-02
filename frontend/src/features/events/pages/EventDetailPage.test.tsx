@@ -437,6 +437,36 @@ describe('EventDetailPage', () => {
       expect(screen.queryByText('Sporting')).not.toBeInTheDocument();
     });
 
+    it('takes the name and the target total from the data, not from a fixed shoot', async () => {
+      renderEvent({ ...specialDetail, label: 'Flurry', target_total: 75 });
+      expect(await screen.findByText('Flurry · Special · 75 targets')).toBeInTheDocument();
+      const glance = screen.getByRole('region', { name: 'This Sunday' });
+      expect(within(glance).getByText('Targets').closest('div')?.parentElement).toHaveTextContent(
+        '75',
+      );
+      expect(
+        within(screen.getByRole('table', { name: 'Results' })).getByRole('columnheader', {
+          name: 'Score (of 75)',
+        }),
+      ).toBeVisible();
+    });
+
+    it('focuses the results when the link names them, as a scored Sunday does', async () => {
+      renderEvent(specialDetail, [], '#chart-results');
+      expect(await screen.findByRole('region', { name: 'Results' })).toHaveFocus();
+    });
+
+    it('explains special shoots once, and explains Stations', async () => {
+      renderEvent(specialDetail);
+      await screen.findByRole('table', { name: 'Results' });
+      // The special-shoot explainer opens from the Targets stat only, not again on the Results card.
+      expect(
+        screen.getAllByRole('button', { name: /^About (Targets|special shoots)$/ }),
+      ).toHaveLength(1);
+      const glance = screen.getByRole('region', { name: 'This Sunday' });
+      await expectExplainer(glance, 'About Stations');
+    });
+
     it('explains the counting rule in neutral words', async () => {
       renderEvent(specialDetail);
       const note = await screen.findByRole('note');
@@ -460,11 +490,7 @@ describe('EventDetailPage', () => {
         expect(within(glance).queryByText(label)).not.toBeInTheDocument();
       }
       for (const stat of ['Shooters', 'Targets']) await expectExplainer(glance, `About ${stat}`);
-      await expectExplainer(
-        screen.getByRole('region', { name: 'Results' }),
-        'About special shoots',
-        { read: true },
-      );
+      await expectExplainer(glance, 'About Targets', { read: true });
     });
 
     it(

@@ -109,6 +109,10 @@ const explainers = {
     read: ['Each line names the shooter and what happened.'],
     computed: ['All round types count together.'],
   },
+  stations: {
+    what: 'How many stations were shot on this Sunday.',
+    computed: ['Counted from the station sheet, so it is blank when there is none.'],
+  },
   special: {
     what: 'A special shoot is a Sunday with its own format and number of targets, such as a 60-target 3-bird shoot.',
     read: [

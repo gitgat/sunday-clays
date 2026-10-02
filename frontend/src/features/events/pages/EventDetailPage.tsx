@@ -61,6 +61,7 @@ function specialHeader(event: EventDetail): string {
 }
 
 function SpecialEvent({ event }: { event: EventDetail }) {
+  useScrollToTarget('results', true);
   const stations = event.stations?.layout.length ?? null;
   return (
     <>
@@ -79,11 +80,14 @@ function SpecialEvent({ event }: { event: EventDetail }) {
             value={String(targetsOf(event))}
             explainer={eventExplainers.special}
           />
-          <Stat label="Stations" value={stations === null ? '—' : String(stations)} />
+          <Stat
+            label="Stations"
+            value={stations === null ? '—' : String(stations)}
+            explainer={eventExplainers.stations}
+          />
         </div>
       </Card>
       <Card id="chart-results" title="Results">
-        <About explainer={eventExplainers.special} label="About special shoots" />
         <SpecialResultsTable results={event.results} targetTotal={targetsOf(event)} />
       </Card>
       {event.stations !== null && (

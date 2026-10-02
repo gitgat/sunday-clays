@@ -175,6 +175,7 @@ describe('sundayCalendarOption', () => {
       show: false,
       min: -4,
       max: -3,
+      inRange: { color: ['transparent', 'transparent'] },
     });
   });
 

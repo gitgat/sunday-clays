@@ -414,7 +414,14 @@ function AttendanceYear({
     // Oldest year first, so the export reads chronologically.
     const years = activeYears(rounds, specialDates).sort((a, b) => a - b);
     return {
-      queryKey: ['/api/shooters/{id}/attendance', shooterId, roundTypes, years, 'chart-full'],
+      queryKey: [
+        '/api/shooters/{id}/attendance',
+        shooterId,
+        roundTypes,
+        years,
+        specialDates,
+        'chart-full',
+      ],
       queryFn: async () => {
         const perYear = await Promise.all(
           years.map(

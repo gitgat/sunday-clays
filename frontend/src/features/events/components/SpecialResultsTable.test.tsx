@@ -29,6 +29,11 @@ describe('SpecialResultsTable', () => {
     ]);
   });
 
+  it('heads the score column with the shoot’s own total', () => {
+    renderWithProviders(<SpecialResultsTable results={specialDetail.results} targetTotal={75} />);
+    expect(screen.getByRole('columnheader', { name: 'Score (of 75)' })).toBeVisible();
+  });
+
   it('breaks a tie by name and keeps the round-type filter on profile links', () => {
     const [first, second] = specialDetail.results as [EventResult, EventResult];
     renderWithProviders(

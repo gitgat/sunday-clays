@@ -24,6 +24,7 @@ describe('SpecialShootsCard', () => {
     expect(items[0]).toHaveTextContent('3-Bird Shoot · Special · 60');
     expect(items[0]).toHaveTextContent('55 of 60');
     expect(items[1]).toHaveTextContent('Flurry · Special · 75');
+    expect(items[1]).toHaveTextContent('61 of 75');
     expect(within(items[0] as HTMLElement).getByRole('link')).toHaveAttribute(
       'href',
       '/events/2026-09-20?rt=sporting',

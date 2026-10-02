@@ -473,6 +473,9 @@ describe('special shoots in the attendance views (Plan 17)', () => {
 
   it('leaves out a special shoot of another year', () => {
     expect(attendanceModel([], [], 2025, ['2026-09-20']).rows).toEqual([]);
+    expect(attendanceModel([], [], 2026, ['2026-09-20']).rows).toEqual([
+      { date: '2026-09-20', state: 'special', score: null },
+    ]);
   });
 
   it('counts a special shoot as a year shot and a Sunday shot that month', () => {

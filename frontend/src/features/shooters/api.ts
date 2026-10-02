@@ -127,6 +127,8 @@ export function useShooterSpecials(id: number) {
   return useQuery({
     queryKey: ['/api/shooters/{id}/special', id],
     queryFn: () => unwrap(api.GET('/api/shooters/{id}/special', { params: { path: { id } } })),
+    // The calendar and card degrade without them, so a failing request must not hold either up.
+    retry: false,
   });
 }
 

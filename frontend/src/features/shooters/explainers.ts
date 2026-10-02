@@ -91,7 +91,7 @@ export const explainers = {
     computed: [
       'Best score = your highest single round that Sunday.',
       'Missed = the club has complete results for that Sunday and you have no round in it. A special shoot is never missed.',
-      'The round-type filter applies to your rounds and to the club’s Sundays. The calendar opens on the year the time window ends in; the year tabs pick any other year.',
+      'The round-type filter applies to your rounds and to the club’s Sundays. Special shoots always show, whatever the round-type filter. The calendar opens on the year the time window ends in; the year tabs pick any other year.',
       'The fullscreen table and the CSV download cover every year you shot.',
     ],
     scope: 'all-time',

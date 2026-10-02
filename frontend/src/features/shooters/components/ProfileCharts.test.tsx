@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
+import { QueryClient } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { http, HttpResponse } from 'msw';
@@ -574,6 +575,22 @@ describe('ProfileCharts', () => {
       ).toEqual(['2026-09', '4']);
     });
 
+    it('still draws the calendar when the special shoots cannot load', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('*/api/shooters/:id/special', () =>
+          HttpResponse.json({ error: { code: 'x', message: 'nope' } }, { status: 500 }),
+        ),
+      );
+      // The app retries a failing request; the special shoots must not hold the calendar for that.
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: 2, retryDelay: 60_000, gcTime: Infinity } },
+      });
+      renderWithProviders(<ProfileCharts shooterId={3} />, { route: '/shooters/3', queryClient });
+      const rows = await calendarRows(user);
+      expect(rows).toContainEqual(['2026-08-16', 'shot']);
+    });
+
     it('opens a clicked special shoot', async () => {
       server.use(
         http.get('*/api/events', () =>
@@ -801,6 +818,35 @@ describe('ProfileCharts', () => {
           );
           expect(within(dialog).getByText(/Every year you shot/)).toBeVisible();
           expect(csv.names).toHaveLength(1);
+        },
+        LAZY_TEST_TIMEOUT,
+      );
+
+      it(
+        'puts a special shoot of another year in the CSV as special',
+        async () => {
+          stubViewport('desktop');
+          const csv = captureCsv();
+          const user = userEvent.setup();
+          server.use(
+            http.get('*/api/shooters/:id/special', () =>
+              HttpResponse.json([
+                {
+                  round_id: 8001,
+                  event_date: '2025-11-16',
+                  label: 'Flurry',
+                  target_total: 75,
+                  score: 61,
+                },
+              ]),
+            ),
+          );
+          renderWithProviders(<ProfileCharts shooterId={3} />, { route: '/shooters/3?cal=table' });
+          await screen.findByRole('table', { name: 'Attendance calendar 2026' }, LAZY_CHART);
+          const region = screen.getByRole('region', { name: 'Attendance calendar 2026' });
+          await user.click(within(region).getByRole('button', { name: 'CSV' }));
+          await waitFor(() => expect(csv.names).toHaveLength(1));
+          expect(await csv.text()).toMatch(/2025-11-16,special/);
         },
         LAZY_TEST_TIMEOUT,
       );

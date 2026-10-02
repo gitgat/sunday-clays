@@ -125,6 +125,12 @@ describe('SeasonCalendar', () => {
     expect(cell.className).not.toContain('bg-primary');
   });
 
+  it('names the shoot and its crowd from the data', () => {
+    expect(cellLabel({ ...specialSummary, label: 'Flurry', n_shooters: 12 })).toBe(
+      'Sep 20, 2026 — Flurry, special shoot, 12 shooters',
+    );
+  });
+
   it('labels a special Sunday without a name by what it is', () => {
     expect(cellLabel({ ...specialSummary, label: null })).toBe(
       'Sep 20, 2026 — special shoot, 5 shooters',
