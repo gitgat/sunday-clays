@@ -63,7 +63,7 @@ VALID: dict[str, Any] = {
             "deploy": {"replicas": 1, "placement": {"constraints": list(MANAGER)}},
             "volumes": [
                 dict(SOCKET),
-                {"type": "volume", "source": "deployer-state", "target": "/state"},
+                {"type": "bind", "source": "/var/data/sunday-clays/deployer", "target": "/state"},
             ],
         },
     },
@@ -266,6 +266,36 @@ def deployer_binds_the_host(stack: dict[str, Any]) -> None:
     stack["services"]["deployer"]["volumes"].append("/etc:/host-etc:ro")
 
 
+def deployer_state_on_a_named_volume(stack: dict[str, Any]) -> None:
+    stack["services"]["deployer"]["volumes"] = [
+        dict(SOCKET),
+        {"type": "volume", "source": "deployer-state", "target": "/state"},
+    ]
+
+
+def deployer_state_in_the_wrong_directory(stack: dict[str, Any]) -> None:
+    stack["services"]["deployer"]["volumes"] = [dict(SOCKET), "/var/data/sunday-clays/db:/state"]
+
+
+def deployer_state_at_the_wrong_target(stack: dict[str, Any]) -> None:
+    stack["services"]["deployer"]["volumes"] = [
+        dict(SOCKET),
+        "/var/data/sunday-clays/deployer:/data",
+    ]
+
+
+def named_volume_on_api(stack: dict[str, Any]) -> None:
+    stack["services"]["api"]["volumes"] = [{"type": "volume", "source": "x", "target": "/x"}]
+
+
+def short_named_volume_on_worker(stack: dict[str, Any]) -> None:
+    stack["services"]["worker"]["volumes"] = ["scratch:/scratch"]
+
+
+def anonymous_volume_on_caddy(stack: dict[str, Any]) -> None:
+    stack["services"]["caddy"]["volumes"] = ["/data"]
+
+
 def deployer_publishes_a_port(stack: dict[str, Any]) -> None:
     stack["services"]["deployer"]["ports"] = [{"target": 8080, "published": 8080}]
 
@@ -394,6 +424,23 @@ def missing_deployer(stack: dict[str, Any]) -> None:
         (untagged_image, "api: image 'registry.thehalf.io/sunday-clays-backend'"),
         (missing_backup, "backup: service missing"),
         (short_named_volume, "db: needs a bind mount under /var/data/sunday-clays/"),
+        (short_named_volume, "db: named volume 'db-data' is not allowed"),
+        (named_volume, "db: named volume 'db-data' is not allowed"),
+        (named_volume_on_api, "api: named volume 'x' is not allowed"),
+        (short_named_volume_on_worker, "worker: named volume 'scratch' is not allowed"),
+        (anonymous_volume_on_caddy, "caddy: named volume"),
+        (
+            deployer_state_on_a_named_volume,
+            "deployer: must bind /var/data/sunday-clays/deployer to /state",
+        ),
+        (
+            deployer_state_in_the_wrong_directory,
+            "deployer: must bind /var/data/sunday-clays/deployer to /state",
+        ),
+        (
+            deployer_state_at_the_wrong_target,
+            "deployer: must bind /var/data/sunday-clays/deployer to /state",
+        ),
         (short_bind_elsewhere, "backup: needs a bind mount under /var/data/sunday-clays/"),
     ],
 )

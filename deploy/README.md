@@ -144,7 +144,12 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    ```bash
    sudo install -d -o 999 -g 999 /var/data/sunday-clays/db        # postgres:17 (Debian) uid
    sudo install -d -o 10001 -g 10001 /var/data/sunday-clays/backups   # backend image uid
+   sudo install -d -m 700 /var/data/sunday-clays/deployer         # deployer state; it runs as root
    ```
+
+   `/var/data` is NFS-shared by every node, so the deployer's directory is visible wherever its
+   task lands. Persistent data is always a bind under `/var/data/sunday-clays/<service>/`, never a
+   Docker named volume (`scripts/check_stack.py` enforces it).
 
 4. Off-site copies: add `/var/data/sunday-clays/*` to the fleet restic set (nightly at 03:30 to
    lakitu, then Backblaze). The app's own dump runs at 02:30 America/Los_Angeles, before restic.
@@ -157,24 +162,24 @@ on"), after a change to `compose*.yaml` or a secret, or to refresh the deployer 
 pause the deployer first (otherwise the hand deploy races a rollout in progress), deploy the tag
 the deployer recorded as live (so the command changes configuration, not code), and resume it
 afterwards (the pause survives the deployer's restart, so without `resume` automatic deploys stay
-off for good). On the manager the deployer runs on (`docker service ps sundayclays_deployer`), in
-the directory holding `compose*.yaml` and `secrets/`, run these lines one at a time:
+off for good). On any manager, in the directory holding `compose*.yaml` and `secrets/`, run these
+lines one at a time. `dep` is the one-off container defined under "Talking to it" below (define it
+first); it reads the deployer's state from the shared `/var/data` directory, so it does not matter
+which manager runs the task:
 
 ```bash
 export GHCR_USER=<github-login>    # owner of the read:packages token ("Automatic deploys" → "Tokens")
-D=$(docker ps -q -f name=sundayclays_deployer)
-docker exec "$D" python3 /app/deployer.py pause "stack deploy"   # waits for a rollout in progress
-export IMAGE_TAG=$(docker exec "$D" python3 /app/deployer.py tag)
+dep pause "stack deploy"   # waits for a rollout in progress
+export IMAGE_TAG=$(dep tag)
 [[ $IMAGE_TAG =~ ^sha-[0-9a-f]{7}$ ]] && echo "deploy $IMAGE_TAG" || echo "STOP: bad tag '$IMAGE_TAG'"
 docker stack deploy -c compose.yaml -c compose.swarm.yaml sundayclays
-D=$(docker ps -q -f name=sundayclays_deployer)   # the deployer may have been recreated
-docker exec "$D" python3 /app/deployer.py resume
+dep resume
 curl -fsS https://sundayclays.claysmasher.com/api/health   # {"status":"ok","version":"sha-<7>"}
 ```
 
 - Do not run `docker stack deploy` if the check printed `STOP`. `deployer.py tag` fails with
-  `no deploy recorded` only when the deployer's state is empty (a fresh volume, or the task moved
-  to another manager); then use the `version` that `/api/health` reports, which is the live
+  `no deploy recorded` only when the deployer's state is empty (a fresh `/var/data/sunday-clays/deployer`,
+  such as the first deploy after the state moved off the old named volume); then use the `version` that `/api/health` reports, which is the live
   release because a failed rollout is always rolled back as a whole.
 - Never take `IMAGE_TAG` from an old command line or from a single service's image: an older tag
   makes the deployer see drift and put the recorded release straight back after `resume`.
@@ -206,7 +211,7 @@ The `deployer` service (`deploy/deployer/deployer.py`, one task on a Swarm manag
 after `ci-ok` passes on `main`), it mirrors the three into `registry.thehalf.io`, then runs
 `docker service update --image registry.thehalf.io/…:sha-<7>` on `api`, waits until `/api/health`
 reports `sha-<7>`, then updates `worker`, `caddy` and `backup`, and records the SHA in its
-`deployer-state` volume. A service already on that image is skipped.
+state directory, `/var/data/sunday-clays/deployer` (mounted at `/state`). A service already on that image is skipped.
 
 - **Mirroring.** For each image the deployer runs
   `docker buildx imagetools create --tag registry.thehalf.io/sunday-clays-<image>:sha-<7> ghcr.io/gitgat/sunday-clays-<image>:sha-<7>`,
@@ -300,8 +305,8 @@ images, is published for both `linux/arm64` and `linux/amd64`.
    IMAGE_TAG=$TAG docker stack deploy -c compose.yaml -c compose.swarm.yaml sundayclays
    ```
 
-   Later hand deploys of a tag the deployer has not mirrored: `docker exec "$D" python3
-   /app/deployer.py mirror sha-<7>` (logs in, mirrors, updates no service), then
+   Later hand deploys of a tag the deployer has not mirrored: `dep_exec mirror sha-<7>` (see
+   "Talking to it"; logs in, mirrors, updates no service), then
    `IMAGE_TAG=sha-<7> docker stack deploy …`.
 3. `docker service logs -f sundayclays_deployer` shows `deployer: watching … main every 120s`.
    From then on, a merge to `main` is live a few minutes after its `publish` run finishes.
@@ -312,21 +317,44 @@ seconds of errors) and `backup` (which takes a fresh dump on start). Pause aroun
 
 ### Talking to it
 
-`docker service ps sundayclays_deployer` shows the manager it runs on. Run these on that node:
+The deployer's state lives in `/var/data/sunday-clays/deployer` (`state.json`, plus `deploy.lock`),
+which every node shares over NFS. So `status`, `tag`, `pause` and `resume` run from **any manager** as
+a one-off container on that directory; no `docker exec` on the node that happens to run the task.
+Define these once per shell:
 
 ```bash
-D=$(docker ps -q -f name=sundayclays_deployer)
-docker exec "$D" python3 /app/deployer.py status          # live SHA and tag, pause, last failure, last 20 deploys
-docker exec "$D" python3 /app/deployer.py tag             # just the live tag
-docker exec "$D" python3 /app/deployer.py pause "club shoot"
-docker exec "$D" python3 /app/deployer.py resume
-docker exec "$D" python3 /app/deployer.py mirror sha-<7>  # copy a release into registry.thehalf.io, deploy nothing
+# one-off: same image as the running deployer, same state directory (no socket or tokens needed)
+dep() { docker run --rm -v /var/data/sunday-clays/deployer:/state \
+  "$(docker service inspect sundayclays_deployer --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')" "$@"; }
+# fallback, and for the commands that need the Docker socket and tokens (mirror, rollback): run on
+# the node that runs the task (`docker service ps sundayclays_deployer`)
+dep_exec() { docker exec "$(docker ps -q -f name=sundayclays_deployer)" python3 /app/deployer.py "$@"; }
+
+dep status          # live SHA and tag, pause, last failure, last 20 deploys
+dep tag             # just the live tag
+dep pause "club shoot"
+dep resume
+dep_exec mirror sha-<7>  # copy a release into registry.thehalf.io, deploy nothing
 ```
 
-`pause` waits for a rollout in progress to finish. The state lives in the node-local
-`deployer-state` volume: if the task moves to another manager, it starts empty, records `main`
-(without updating anything when that is already live) and forgets a pause, so pause again after a
-failover.
+The image's entrypoint is already `python3 /app/deployer.py`, so `dep` takes the subcommand directly.
+If the one-off cannot run for any reason, `dep_exec status` (etc.) on the deployer's node does the
+same job.
+
+`pause` waits for a rollout in progress to finish. It takes an `fcntl.flock` on
+`/var/data/sunday-clays/deployer/deploy.lock`; that coordinates the one-off with the running
+deployer across nodes only if the NFS mount supports locks, which NFSv4 does. On an NFSv3 mount
+without a lock daemon, use `dep_exec` on the deployer's node instead.
+
+Because the state is on shared storage, it survives the task moving to another manager: the new task
+picks up the recorded SHA and a pause exactly where they were. (This replaces the old node-local
+`deployer-state` volume and its "pause again after a failover" caveat.)
+
+**One-time migration (the first deploy of this change).** Run
+`sudo install -d -m 700 /var/data/sunday-clays/deployer` first ("Turn it on"). The deployer then
+starts on an empty directory: it records `main` without updating anything that is already live, and
+forgets any pause set before the move, so pause again if you need to. The old named volume is no
+longer used; remove it on the node(s) that have it with `docker volume rm sundayclays_deployer-state`.
 
 ### Rollback
 
@@ -336,8 +364,8 @@ failover.
 - **Manual, to an earlier release:**
 
   ```bash
-  docker exec "$D" python3 /app/deployer.py status               # history lists earlier tags
-  docker exec "$D" python3 /app/deployer.py rollback sha-<7>
+  dep status                # history lists earlier tags
+  dep_exec rollback sha-<7> # on the deployer's node: it needs the Docker socket and tokens
   ```
 
   `rollback` mirrors the tag again first, so the tag must still be published in GHCR. If GHCR no
