@@ -5,7 +5,7 @@ import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { AdminError } from '../../admin/components/AdminError';
-import { allTime, bumpsKey, fetchBumps, useBumps, type AnalyticsRange } from '../api';
+import { allTime, bumpsKey, fetchBumps, todayIso, useBumps, type AnalyticsRange } from '../api';
 import { analyticsExplainers } from '../explainers';
 import { bumpsModel } from '../models';
 
@@ -16,13 +16,15 @@ const bumpCount = (n: number) => `${String(n)} ${n === 1 ? 'bump' : 'bumps'}`;
 /** Bumps per day, how many devices bumped, and the most-bumped insights of the window. */
 export function BumpsCard({ range }: { range: AnalyticsRange }) {
   const query = useBumps(range);
+  // Fullscreen and the CSV run to today even when the window is custom and ends earlier.
+  const today = todayIso();
   const fullQuery = useMemo<ChartFullQuery>(() => {
-    const all = allTime(range.asOf);
+    const all = allTime(today);
     return {
       queryKey: [...bumpsKey(all), 'chart-full'],
       queryFn: async () => ({ ...bumpsModel(await fetchBumps(all)), note: 'Every day on record.' }),
     };
-  }, [range.asOf]);
+  }, [today]);
 
   if (query.isPending) {
     return (
@@ -43,24 +45,23 @@ export function BumpsCard({ range }: { range: AnalyticsRange }) {
   const summary = `${devices(data.devices)} bumped in this window · ${String(data.devices_all_time)} all time`;
   return (
     <>
-      {model.rows.every((r) => r.bumps === 0) ? (
-        <Card title={TITLE} subtitle={summary}>
-          <EmptyState title="Nothing counted in this window yet." />
-        </Card>
-      ) : (
-        <ChartFrame
-          title={TITLE}
-          subtitle={summary}
-          option={model.option}
-          columns={model.columns}
-          rows={model.rows}
-          csvName={`fist-bumps-${range.asOf}`}
-          ariaLabel={TITLE}
-          urlKey="bumps"
-          explainer={analyticsExplainers.bumps}
-          fullQuery={fullQuery}
-        />
-      )}
+      <ChartFrame
+        title={TITLE}
+        subtitle={summary}
+        option={model.option}
+        columns={model.columns}
+        rows={model.rows}
+        csvName={`fist-bumps-${range.asOf}`}
+        ariaLabel={TITLE}
+        urlKey="bumps"
+        explainer={analyticsExplainers.bumps}
+        fullQuery={fullQuery}
+        emptyInline={
+          model.rows.every((r) => r.bumps === 0) ? (
+            <EmptyState title="Nothing counted in this window yet." />
+          ) : undefined
+        }
+      />
       <Card title="Most-bumped insights">
         {data.top.length === 0 ? (
           <p className="text-sm text-text-muted">No bumps in this window yet.</p>

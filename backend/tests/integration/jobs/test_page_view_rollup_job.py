@@ -14,7 +14,14 @@ from sunday_clays.domain.page_views import RollupReport
 from sunday_clays.jobs import page_view_rollup, worker
 from sunday_clays.jobs.handlers import load_handlers
 from sunday_clays.jobs.queue import enqueue
-from sunday_clays.models import Job, PageView, PageViewAttempt, PageViewRollup
+from sunday_clays.models import (
+    BumpAttempt,
+    Job,
+    LoginAttempt,
+    PageView,
+    PageViewAttempt,
+    PageViewRollup,
+)
 
 
 def test_the_handler_is_registered() -> None:
@@ -82,3 +89,28 @@ def test_the_job_prunes_rate_limit_rows_left_by_a_quiet_spell(
     enqueue(session, "page_view_rollup")
     worker.process_one(session, weather_enabled=False)
     assert list(session.scalars(select(PageViewAttempt.ip))) == ["198.51.100.1"]
+
+
+def test_the_job_deletes_bump_and_login_attempts_older_than_a_day(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A quiet winter must not keep the last Sunday's rate-limit rows for months."""
+    monkeypatch.setattr(
+        page_view_rollup,
+        "get_settings",
+        lambda: SimpleNamespace(timezone="America/Los_Angeles"),
+    )
+    now = datetime.now(UTC)
+    old, fresh = now - timedelta(hours=25), now - timedelta(hours=1)
+    session.execute(insert(BumpAttempt), [{"ip": "old", "at": old}, {"ip": "fresh", "at": fresh}])
+    session.execute(
+        insert(LoginAttempt),
+        [
+            {"ip": "old", "at": old, "success": True},
+            {"ip": "fresh", "at": fresh, "success": False},
+        ],
+    )
+    enqueue(session, "page_view_rollup")
+    worker.process_one(session, weather_enabled=False)
+    assert list(session.scalars(select(BumpAttempt.ip))) == ["fresh"]
+    assert list(session.scalars(select(LoginAttempt.ip))) == ["fresh"]

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics.insights.store import existing_keys
-from sunday_clays.auth.deps import TooManyRequestsError, client_ip
+from sunday_clays.auth.deps import TooManyRequestsError, ip_fingerprint
 from sunday_clays.auth.ratelimit import bumps_limited, record_bump_action
 from sunday_clays.db import SessionDep
 from sunday_clays.domain.bumps import add_bump, bump_state, bump_states, remove_bump
@@ -77,7 +77,7 @@ def _bump_action(
     body: BumpIn,
     act: Callable[[Session, str, uuid.UUID], None],
 ) -> BumpStateOut:
-    ip = client_ip(request)
+    ip = ip_fingerprint(request)
     if bumps_limited(session, ip):
         raise TooManyRequestsError("rate_limited", "Too many bumps from here. Try again soon.")
     record_bump_action(session, ip)

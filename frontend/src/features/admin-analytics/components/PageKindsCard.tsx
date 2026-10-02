@@ -5,7 +5,7 @@ import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { AdminError } from '../../admin/components/AdminError';
-import { allTime, fetchPages, pagesKey, usePages, type AnalyticsRange } from '../api';
+import { allTime, fetchPages, pagesKey, todayIso, usePages, type AnalyticsRange } from '../api';
 import { analyticsExplainers } from '../explainers';
 import { pageKindsModel } from '../models';
 
@@ -13,8 +13,10 @@ const TITLE = 'Page views by page';
 
 export function PageKindsCard({ range }: { range: AnalyticsRange }) {
   const query = usePages(range);
+  // Fullscreen and the CSV run to today even when the window is custom and ends earlier.
+  const today = todayIso();
   const fullQuery = useMemo<ChartFullQuery>(() => {
-    const all = allTime(range.asOf);
+    const all = allTime(today);
     return {
       queryKey: [...pagesKey(all), 'chart-full'],
       queryFn: async () => ({
@@ -22,7 +24,7 @@ export function PageKindsCard({ range }: { range: AnalyticsRange }) {
         note: 'Every day on record.',
       }),
     };
-  }, [range.asOf]);
+  }, [today]);
 
   if (query.isPending) {
     return (
@@ -35,13 +37,6 @@ export function PageKindsCard({ range }: { range: AnalyticsRange }) {
     return (
       <Card title={TITLE}>
         <AdminError error={query.error} />
-      </Card>
-    );
-  }
-  if (query.data.length === 0) {
-    return (
-      <Card title={TITLE}>
-        <EmptyState title="Nothing counted in this window yet." />
       </Card>
     );
   }
@@ -58,6 +53,11 @@ export function PageKindsCard({ range }: { range: AnalyticsRange }) {
       urlKey="pages"
       explainer={analyticsExplainers.pages}
       fullQuery={fullQuery}
+      emptyInline={
+        query.data.length === 0 ? (
+          <EmptyState title="Nothing counted in this window yet." />
+        ) : undefined
+      }
       height={Math.max(240, 40 * model.rows.length)}
     />
   );

@@ -1,14 +1,16 @@
 """Page-view rollup (Plan 16 Task 1): raw visits older than about 90 days become daily and
 weekly totals in whole weeks of the club's local time, and the raw rows go."""
 
+import random
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import insert, select
+from sqlalchemy import Connection, Engine, delete, func, insert, select
 from sqlalchemy.orm import Session
 
 from sunday_clays.domain.page_views import RollupReport, rollup_cutoff, rollup_page_views
+from sunday_clays.domain.site_analytics import Span, page_kinds, uptake, visitors
 from sunday_clays.models import PageKindRollup, PageView, PageViewRollup
 
 TZ = "America/Los_Angeles"
@@ -18,6 +20,7 @@ A = uuid.UUID("00000000-0000-4000-8000-00000000000a")
 B = uuid.UUID("00000000-0000-4000-8000-00000000000b")
 C = uuid.UUID("00000000-0000-4000-8000-00000000000c")
 D = uuid.UUID("00000000-0000-4000-8000-00000000000d")
+KINDS = ("home", "leaderboards", "records", "profile")
 
 
 def _view(session: Session, device: uuid.UUID, kind: str, state: str, at: datetime) -> None:
@@ -106,3 +109,78 @@ def test_nothing_from_the_cutoff_on_is_touched(session: Session) -> None:
     assert _rollups(session) == []
     assert _kinds(session) == []
     assert _raw(session) == [(C, "home")]
+
+
+def test_a_concurrent_reader_sees_the_rollup_and_the_deletion_together_or_neither(
+    engine: Engine,
+) -> None:
+    """One transaction: until it commits another connection still sees the raw rows and no
+    rollups; after, the rollups and no raw rows. Never raw rows gone with rollups missing."""
+
+    def snapshot(conn: Connection) -> tuple[int, int, int]:
+        return (
+            conn.scalar(select(func.count()).select_from(PageView)) or 0,
+            conn.scalar(select(func.count()).select_from(PageViewRollup)) or 0,
+            conn.scalar(select(func.count()).select_from(PageKindRollup)) or 0,
+        )
+
+    cleanup = (PageKindRollup, PageViewRollup, PageView)
+    try:
+        with Session(engine) as seed:
+            _seed(seed)
+            seed.commit()
+        with Session(engine) as writer, engine.connect() as reader:
+            before = snapshot(reader)
+            assert before[0] == 7
+            rollup_page_views(writer, TODAY, TZ)  # not committed yet
+            assert snapshot(reader) == before
+            reader.rollback()
+            writer.commit()
+            after = snapshot(reader)
+            assert after[0] == 2
+            assert after[1] > 0
+            assert after[2] > 0
+    finally:
+        with engine.begin() as conn:
+            for table in cleanup:
+                conn.execute(delete(table))
+
+
+def test_reads_are_unchanged_by_the_rollup(session: Session) -> None:
+    """The rollup's buckets and the reads' buckets agree: the charts read the same before and
+    after, across both DST changes, for any run date (the second and third runs roll more)."""
+    rng = random.Random(165)  # noqa: S311 - a seeded fixture, not security
+    devices = [uuid.UUID(int=n + 1) for n in range(12)]
+    hours = [0, 1, 6, 12, 18, 22, 23]
+    first = datetime(2026, 7, 1, tzinfo=PT)
+    views = []
+    for _ in range(1000):
+        day = first + timedelta(days=rng.randrange(0, 273))  # to 2027-03-31, past both DST days
+        at = day.replace(hour=rng.choice(hours), minute=rng.randrange(60))
+        views.append(
+            (rng.choice(devices), rng.choice(KINDS), rng.choice(("none", "picked", "skipped")), at)
+        )
+    rng.shuffle(views)
+    for device, kind, state, at in views:
+        _view(session, device, kind, state, at)
+    today = date(2027, 4, 1)
+    spans = [
+        Span(None, today),  # open
+        Span(date(2026, 10, 26), date(2026, 11, 15)),  # across the fall DST change
+        Span(date(2027, 3, 1), today),  # recent, across the spring one
+    ]
+
+    def snapshot() -> list[object]:
+        out: list[object] = []
+        for span in spans:
+            out += [visitors(session, TZ, span), page_kinds(session, TZ, span)]
+            # Only the weekly series: ``latest`` is each device's last answer from the raw rows
+            # still kept, which the rollup shrinks on purpose.
+            out.append(uptake(session, TZ, span).weeks)
+        return out
+
+    before = snapshot()
+    for run_day in (today, today + timedelta(days=7), today + timedelta(days=14)):
+        assert rollup_page_views(session, run_day, TZ).rolled >= 0
+        assert snapshot() == before, run_day
+    assert session.scalar(select(func.count()).select_from(PageViewRollup)) > 0

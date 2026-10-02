@@ -7,7 +7,14 @@ import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { formatDate } from '../../../lib/format';
 import { AdminError } from '../../admin/components/AdminError';
-import { allTime, fetchVisitors, useVisitors, visitorsKey, type AnalyticsRange } from '../api';
+import {
+  allTime,
+  fetchVisitors,
+  todayIso,
+  useVisitors,
+  visitorsKey,
+  type AnalyticsRange,
+} from '../api';
 import { analyticsExplainers } from '../explainers';
 import { visitorsModel, type Per } from '../models';
 
@@ -18,8 +25,10 @@ const plural = (n: number) => `${String(n)} ${n === 1 ? 'device' : 'devices'}`;
 export function VisitorsCard({ range }: { range: AnalyticsRange }) {
   const [per, setPer] = useState<Per>('day');
   const query = useVisitors(range);
+  // Fullscreen and the CSV run to today even when the window is custom and ends earlier.
+  const today = todayIso();
   const fullQuery = useMemo<ChartFullQuery>(() => {
-    const all = allTime(range.asOf);
+    const all = allTime(today);
     return {
       queryKey: [...visitorsKey(all), per, 'chart-full'],
       queryFn: async () => ({
@@ -27,7 +36,7 @@ export function VisitorsCard({ range }: { range: AnalyticsRange }) {
         note: per === 'day' ? 'Every day on record.' : 'Every week on record.',
       }),
     };
-  }, [range.asOf, per]);
+  }, [today, per]);
 
   if (query.isPending) {
     return (
@@ -40,13 +49,6 @@ export function VisitorsCard({ range }: { range: AnalyticsRange }) {
     return (
       <Card title={TITLE}>
         <AdminError error={query.error} />
-      </Card>
-    );
-  }
-  if (query.data.days.every((d) => d.devices === 0)) {
-    return (
-      <Card title={TITLE}>
-        <EmptyState title="Nothing counted in this window yet." />
       </Card>
     );
   }
@@ -64,6 +66,11 @@ export function VisitorsCard({ range }: { range: AnalyticsRange }) {
         urlKey="visitors"
         explainer={analyticsExplainers.visitors}
         fullQuery={fullQuery}
+        emptyInline={
+          query.data.days.every((d) => d.devices === 0) ? (
+            <EmptyState title="Nothing counted in this window yet." />
+          ) : undefined
+        }
         controls={
           <>
             <Chip selected={per === 'day'} onClick={() => setPer('day')}>

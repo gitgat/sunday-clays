@@ -22,6 +22,7 @@ const RANGE: AnalyticsRange = { since: '2026-08-07', asOf: '2026-10-01' };
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 async function region(name: string): Promise<HTMLElement> {
@@ -115,48 +116,58 @@ describe('VisitorsCard', () => {
   });
 });
 
-describe('an empty database', () => {
-  // The API zero-fills a single day (since clamped to as_of), so there are rows but no counts.
-  it('says nothing was counted instead of drawing flat charts', async () => {
-    server.use(
-      http.get('*/api/admin/analytics/pages', () => HttpResponse.json([])),
-      http.get('*/api/admin/analytics/visitors', () =>
-        HttpResponse.json({
-          days: [{ day: '2026-10-01', devices: 0 }],
-          weeks: [{ week: '2026-09-28', devices: 0 }],
-          busiest: [],
-        }),
-      ),
-      http.get('*/api/admin/analytics/bumps', () =>
-        HttpResponse.json({
-          days: [{ day: '2026-10-01', bumps: 0 }],
-          top: [],
-          devices: 0,
-          devices_all_time: 0,
-        }),
-      ),
-      http.get('*/api/admin/analytics/me-states', () =>
-        HttpResponse.json({
-          weeks: [{ week: '2026-09-28', picked: 0, skipped: 0, none: 0 }],
-          latest: { picked: 0, skipped: 0, none: 0 },
-          latest_since: null,
-        }),
-      ),
-    );
-    renderWithProviders(
-      <>
-        <VisitorsCard range={RANGE} />
-        <BumpsCard range={RANGE} />
-        <UptakeCard range={RANGE} />
-        <PageKindsCard range={RANGE} />
-      </>,
-    );
-    await waitFor(
-      () => expect(screen.getAllByText('Nothing counted in this window yet.')).toHaveLength(4),
-      LAZY_CHART,
-    );
-    expect(screen.queryByRole('button', { name: 'Table' })).not.toBeInTheDocument();
-  });
+describe('an empty window', () => {
+  // The window has no counts, but data exists outside it: the card still offers Fullscreen and
+  // CSV, which read all time, so the full history stays reachable.
+  const empty = {
+    pages: [],
+    visitors: {
+      days: [{ day: '2026-10-01', devices: 0 }],
+      weeks: [{ week: '2026-09-28', devices: 0 }],
+      busiest: [],
+    },
+    bumps: {
+      days: [{ day: '2026-10-01', bumps: 0 }],
+      top: [],
+      devices: 0,
+      devices_all_time: 12,
+    },
+    'me-states': {
+      weeks: [{ week: '2026-09-28', picked: 0, skipped: 0, none: 0 }],
+      latest: { picked: 0, skipped: 0, none: 0 },
+      latest_since: null,
+    },
+  };
+  const everything = { pages: pageKinds, visitors, bumps, 'me-states': uptake };
+
+  it.each([
+    ['pages', 'Page views by page', PageKindsCard],
+    ['visitors', 'Visitors', VisitorsCard],
+    ['bumps', 'Fist bumps per day', BumpsCard],
+    ['me-states', '“Which one are you?” answers', UptakeCard],
+  ] as const)(
+    '%s card says nothing was counted, keeps Fullscreen and CSV, and fullscreen shows all time',
+    async (name, title, Card) => {
+      server.use(
+        http.get(`*/api/admin/analytics/${name}`, ({ request }) =>
+          HttpResponse.json(
+            new URL(request.url).searchParams.has('since') ? empty[name] : everything[name],
+          ),
+        ),
+      );
+      const csv = captureCsv();
+      const { user } = renderWithProviders(<Card range={RANGE} />);
+      const card = await region(title);
+      expect(within(card).getByText('Nothing counted in this window yet.')).toBeInTheDocument();
+      const dialog = await openFullscreen(user, card, title);
+      expect(await within(dialog).findByText(/on record\.$/)).toBeInTheDocument();
+      await user.click(within(card).getByRole('button', { name: 'CSV' }));
+      await waitFor(() => expect(csv.names).toHaveLength(1));
+      // The header and the all-time rows, not the empty window's single zero row.
+      expect((await csv.text()).trim().split('\n').length).toBeGreaterThan(2);
+    },
+    LAZY_TEST_TIMEOUT,
+  );
 });
 
 describe('PageKindsCard', () => {
@@ -280,6 +291,29 @@ describe.each([
       await user.click(within(dialog).getByRole('button', { name: 'CSV' }));
       await waitFor(() => expect(csv.names).toEqual([`${csvPrefix}-2026-10-01.csv`]));
       expect(seen).toEqual(['2026-08-07', null]);
+    },
+    LAZY_TEST_TIMEOUT,
+  );
+
+  it(
+    'reads all time up to today, not the custom window end, for fullscreen and the CSV',
+    async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(2026, 9, 5, 12, 0));
+      const seen: string[] = [];
+      server.use(
+        http.get(`*/api/admin/analytics/${name}`, ({ request }) => {
+          const q = new URL(request.url).searchParams;
+          seen.push(`${String(q.get('since'))}|${String(q.get('as_of'))}`);
+          return HttpResponse.json(body);
+        }),
+      );
+      const custom: AnalyticsRange = { since: '2026-01-01', asOf: '2026-03-31' };
+      const { user } = renderWithProviders(<Card range={custom} />);
+      const card = await region(title);
+      await openFullscreen(user, card, title);
+      await waitFor(() => expect(seen).toHaveLength(2));
+      expect(seen).toEqual(['2026-01-01|2026-03-31', 'null|2026-10-05']);
     },
     LAZY_TEST_TIMEOUT,
   );
