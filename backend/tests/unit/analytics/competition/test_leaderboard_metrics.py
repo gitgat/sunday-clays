@@ -322,3 +322,47 @@ def test_a_special_sheet_spelling_never_reorders_tied_score_rows(fb: FrameBuilde
         zip(with_special.shooters["shooter_id"], with_special.shooters["sort_key"], strict=True)
     )
     assert keys == {1: "ace amy", 2: "bee bob", 3: "cy cal"}
+
+
+def test_the_sundays_board_honours_the_round_type_filter_over_appearances(
+    fb: FrameBuilder,
+) -> None:
+    from sunday_clays.analytics import frames
+    from sunday_clays.analytics.leaderboards import make_leaderboard_frames
+
+    fb.shooter(1, "Ace, Amy")
+    fb.day(D1, {1: 40})
+    rounds = fb.rounds()
+    special = pd.DataFrame(
+        [
+            {
+                "shooter_id": 1,
+                "event_date": D2,
+                "kind": "special",
+                "round_type": "super_sporting",
+                "display_name": "Ace, Amy",
+                "shooter_status": "member",
+                "name_key": "ace amy",
+                "held": True,
+            }
+        ],
+        columns=list(frames.APPEARANCE_COLUMNS),
+    )
+    seen = pd.concat([frames.appearances_from_rounds(rounds), special], ignore_index=True)
+    lf = make_leaderboard_frames(rounds, fb.events(), fb.history(), seen)
+
+    everything = leaderboard(lf, ALL, LeaderboardMetric.EVENTS, D3)
+    sporting = leaderboard(
+        lf, ALL, LeaderboardMetric.EVENTS, D3, LeaderboardFilters(round_types=(RoundType.SPORTING,))
+    )
+    super_only = leaderboard(
+        lf,
+        ALL,
+        LeaderboardMetric.EVENTS,
+        D3,
+        LeaderboardFilters(round_types=(RoundType.SUPER_SPORTING,)),
+    )
+
+    assert values(everything) == {1: 2.0}
+    assert values(sporting) == {1: 1.0}
+    assert values(super_only) == {1: 1.0}

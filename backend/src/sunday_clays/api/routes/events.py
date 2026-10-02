@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Path, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from sunday_clays.analytics import frames
 from sunday_clays.api.routes._convert import opt_float, opt_int, opt_str, rows
@@ -27,6 +27,9 @@ class WinnerOut(BaseModel):
 
 
 class EventSummaryOut(BaseModel):
+    # Plan 17: kind, label and target_total are always sent, so the schema requires them
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     event_date: date
     round_type: RoundType
     round_type_source: str
@@ -124,6 +127,9 @@ class VsPrevOut(BaseModel):
 
 
 class EventDetailOut(BaseModel):
+    # Plan 17: kind, label and target_total are always sent, so the schema requires them
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     event_date: date
     round_type: RoundType
     round_type_source: str

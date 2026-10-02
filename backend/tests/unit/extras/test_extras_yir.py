@@ -421,3 +421,38 @@ def test_a_year_with_only_a_special_sunday_is_not_a_scored_year() -> None:
 
     assert scored_years(data) == scored_years(WORLD)
     assert 2031 not in scored_years(data)
+
+
+def _with_special_appearances(
+    extra: list[tuple[date, str, int]], base: YirFrames = WORLD
+) -> YirFrames:
+    regular = base.rounds[["event_date", "round_type", "shooter_id"]].drop_duplicates()
+    added = pd.DataFrame(extra, columns=["event_date", "round_type", "shooter_id"])
+    return replace(base, appearances=pd.concat([regular, added], ignore_index=True))
+
+
+def test_the_previous_year_totals_count_a_special_sunday() -> None:
+    data = _with_special_appearances([(date(2024, 6, 2), "sporting", 1)])
+
+    before = shooter_year(WORLD, 1, 2025).previous
+    after = shooter_year(data, 1, 2025).previous
+
+    assert after.events == before.events + 1
+    assert (after.rounds, after.clays_broken) == (before.rounds, before.clays_broken)
+
+
+def test_filter_round_types_narrows_the_appearances_too() -> None:
+    world = _world(ROUNDS, EVENTS, super_days=frozenset({B1}))
+    data = _with_special_appearances(
+        [
+            (date(2025, 2, 9), "sporting", 4),
+            (date(2025, 2, 16), RoundType.SUPER_SPORTING.value, 4),
+        ],
+        world,
+    )
+
+    only = filter_round_types(data, [RoundType.SUPER_SPORTING])
+
+    assert only.appearances is not None
+    assert set(only.appearances["round_type"]) == {RoundType.SUPER_SPORTING.value}
+    assert set(only.appearances["event_date"]) == {B1, date(2025, 2, 16)}

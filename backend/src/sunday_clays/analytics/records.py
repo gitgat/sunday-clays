@@ -268,9 +268,15 @@ def compute_records(
     adjusted = past_rounds[past_rounds["adjusted"].notna()]
     seen = _with_dates(rounds if appearances is None else appearances)
     seen_upto = seen[seen["event_date"] <= as_of]
-    sunday_names = seen_upto.groupby("shooter_id", as_index=False).agg(
-        display_name=("display_name", "first"), sort_key=("name_key", "min")
+    # The D6 tie key comes from scored rounds (``names``), as on the Sundays board; only a shooter
+    # with no scored round takes it from the special sheet's spelling.
+    sunday_names = (
+        seen_upto.groupby("shooter_id", as_index=False)
+        .agg(display_name=("display_name", "first"), seen_key=("name_key", "min"))
+        .merge(names[["shooter_id", "sort_key"]], on="shooter_id", how="left")
     )
+    sunday_names["sort_key"] = sunday_names["sort_key"].fillna(sunday_names["seen_key"])
+    sunday_names = sunday_names.drop(columns="seen_key")
     every_sunday = _with_dates(events if calendar is None else calendar)
     past_seen = in_range(apply_round_type_filter(seen_upto, round_types))
     past_calendar = in_range(

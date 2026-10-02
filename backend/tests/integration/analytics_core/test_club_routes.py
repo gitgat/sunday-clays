@@ -65,7 +65,7 @@ def test_club_openapi_paths_and_response_schemas() -> None:
             names,
             names,
         ), model
-    # Plan 17: kind, label and target_total are defaulted, so listed but never required
+    # Plan 17: kind, label and target_total are always sent, so the schema requires them
     attendance = components["AttendanceOut"]
     assert list(attendance["properties"]) == [
         "event_date",
@@ -78,7 +78,7 @@ def test_club_openapi_paths_and_response_schemas() -> None:
         "label",
         "target_total",
     ]
-    assert attendance["required"] == list(attendance["properties"])[:6]
+    assert attendance["required"] == list(attendance["properties"])
     nested = {
         ("ClubSummaryOut", "status_by_year"): "StatusYearOut",
         ("CohortOut", "retention"): "RetentionOut",

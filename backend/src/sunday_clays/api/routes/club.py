@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from sunday_clays.analytics import frames
 from sunday_clays.analytics.cohorts import cohort_tables, first_round_scores
@@ -50,6 +50,9 @@ class ClubSummaryOut(BaseModel):
 
 
 class AttendanceOut(BaseModel):
+    # Plan 17: kind, label and target_total are always sent, so the schema requires them
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     event_date: date
     head_count: int | None
     n_rounds: int

@@ -359,3 +359,76 @@ def test_club_turnout_cohorts_trends_and_year_count_the_special_sunday(
         assert special["totals"][key] == base["totals"][key], key
     assert special["top_rounds"] == base["top_rounds"]
     assert special["perfect_rounds"] == base["perfect_rounds"]
+
+
+def test_the_year_in_review_counts_a_special_only_shooter_as_a_newcomer(
+    fx_viewer_client: TestClient, fx_special_viewer_client: TestClient
+) -> None:
+    base, special = _both(fx_viewer_client, fx_special_viewer_client, "/api/yir/2026")
+    assert special["newcomers"] == base["newcomers"] + 1  # Kim, Pat's first Sunday
+
+
+def test_the_special_list_is_a_404_for_an_unknown_shooter(
+    fx_special_viewer_client: TestClient,
+) -> None:
+    response = fx_special_viewer_client.get("/api/shooters/999999/special")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "shooter_not_found"
+
+
+def test_the_special_list_is_oldest_first(
+    fx_special_viewer_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pandas as pd
+
+    from sunday_clays.analytics import frames
+
+    hadley = _id(fx_special_viewer_client, "Hadley, Ike")
+    shoots = [  # a newer Sunday listed first, and two rounds on one Sunday
+        (3, date(2026, 9, 20), 1, 55, "Three Clay Shoot"),
+        (1, date(2026, 3, 1), 2, 40, "Four Bird Shoot"),
+        (2, date(2026, 3, 1), 1, 44, "Four Bird Shoot"),
+    ]
+    frame = pd.DataFrame(
+        [
+            {
+                "round_id": rid,
+                "event_date": day,
+                "shooter_id": hadley,
+                "name_key": "hadley ike",
+                "display_name": "Hadley, Ike",
+                "shooter_status": "member",
+                "ordinal": ordinal,
+                "score": score,
+                "label": label,
+                "target_total": 60,
+            }
+            for rid, day, ordinal, score, label in shoots
+        ],
+        columns=list(frames.SPECIAL_ROUND_COLUMNS),
+    )
+    monkeypatch.setattr(frames, "load_special_rounds", lambda session: frame)
+
+    body = _get(fx_special_viewer_client, f"/api/shooters/{hadley}/special")
+
+    assert [(r["event_date"], r["round_id"], r["score"]) for r in body] == [
+        ("2026-03-01", 2, 44),
+        ("2026-03-01", 1, 40),
+        ("2026-09-20", 3, 55),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("model", "route"),
+    [
+        ("EventSummaryOut", "events"),
+        ("EventDetailOut", "events"),
+        ("AttendanceOut", "club"),
+    ],
+)
+def test_the_special_fields_are_required_in_the_openapi_schema(model: str, route: str) -> None:
+    """Required, so the frontend types are not optional (a regular Sunday answers regular)."""
+    from sunday_clays.api.app import create_app
+
+    schema = create_app().openapi()["components"]["schemas"][model]
+    assert {"kind", "label", "target_total"} <= set(schema["required"]), route

@@ -445,3 +445,26 @@ def test_most_sundays_and_longest_runs_count_special_sundays_but_scores_do_not()
     assert records.highest_scores == base.highest_scores
     assert records.biggest_jumps == base.biggest_jumps
     assert records.perfect_rounds == base.perfect_rounds
+
+
+def test_most_sundays_ties_use_the_scored_tie_key_not_a_special_sheet_spelling() -> None:
+    """The D6 tie key comes from scored rounds; a special-only shooter's own spelling is used."""
+    w = World().shot(D[0], 1, 40).shot(D[0], 2, 30)
+    seen = pd.DataFrame(
+        [
+            _seen(D[0], 1, "regular"),
+            _seen(D[0], 2, "regular"),
+            _seen(D[1], 1, "special"),
+            # 2's sheet spelling sorts before "ace amy"; it must not move the tied row
+            _seen(D[1], 2, "special") | {"name_key": "aardvark bob"},
+            _seen(D[1], 3, "special"),
+        ]
+    )
+
+    records = w.records(as_of=D[2], appearances=seen)
+
+    assert [(r.display_name, r.value) for r in records.most_events] == [
+        ("Ace, Amy", 2.0),
+        ("Bee, Bob", 2.0),
+        ("Cy, Cal", 1.0),
+    ]
