@@ -8,6 +8,7 @@ import os
 import socket
 import sys
 from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 from typing import cast
@@ -307,14 +308,15 @@ def load_weather_fixture(session: Session) -> None:
 
 
 # --- Plan 03 T6: the committed-fixtures world (C2) ---------------------------------------------
-@pytest.fixture(scope="session")
-def fx_engine(engine: Engine) -> Iterator[Engine]:
-    """Database ``<test db>_fx`` holding both real fixtures committed and rebuilt, once per run.
+@contextmanager
+def _build_world(
+    engine: Engine, suffix: str, uploads: Sequence[tuple[str, bytes]]
+) -> Iterator[Engine]:
+    """Database ``<test db>_<suffix>`` with ``uploads`` committed and rebuilt, then the pipeline.
 
-    Built with real commits: stage + commit + ``rebuild_live`` the scores workbook, then the same
-    for the stations workbook, then ``run_pipeline``.
-    Tests reach it only through ``fx_session``/``fx_client`` (rolled back after each test); they
-    never run the worker or open their own ``SessionFactory`` session on it.
+    Built with real commits: stage + commit + ``rebuild_live`` each upload in order, then the
+    weather fixture and ``run_pipeline``. The database is dropped on exit, also when setup fails.
+    Shared by ``fx_engine`` and ``fx_special_engine`` so the worlds are built the same way.
     """
     # local imports keep this appended block self-contained
     from sqlalchemy import create_engine
@@ -324,43 +326,49 @@ def fx_engine(engine: Engine) -> Iterator[Engine]:
     from sunday_clays.domain.imports import commit_import, stage_import
     from sunday_clays.domain.rebuild import rebuild_live
 
-    fx_url = engine.url.set(database=f"{engine.url.database}_fx")
-    drop = f'DROP DATABASE IF EXISTS "{fx_url.database}" WITH (FORCE)'
+    url = engine.url.set(database=f"{engine.url.database}_{suffix}")
+    drop = f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)'
     # NullPool: no idle connection to the maintenance database is held for the whole run.
     admin = create_engine(
         engine.url.set(database="postgres"), isolation_level="AUTOCOMMIT", poolclass=NullPool
     )
     with admin.connect() as conn:
         conn.exec_driver_sql(drop)
-        conn.exec_driver_sql(f'CREATE DATABASE "{fx_url.database}"')
-    fx = make_engine(fx_url.render_as_string(hide_password=False))
+        conn.exec_driver_sql(f'CREATE DATABASE "{url.database}"')
+    world = make_engine(url.render_as_string(hide_password=False))
     try:
         config = alembic_config()
-        with fx.begin() as connection:
+        with world.begin() as connection:
             config.attributes["connection"] = connection
             command.upgrade(config, "head")
-        with Session(fx) as setup:
+        with Session(world) as setup:
             # Scores go live before the stations file is staged, as in the real admin flow, so
             # the stored stations preview links against live rounds (Hadley's 9/13 mismatch).
-            for filename in ("scores_2026-09-27.xlsx", "stations_2026-09-27.xlsx"):
-                preview = stage_import(setup, (FIXTURES_DIR / filename).read_bytes(), filename)
+            for filename, data in uploads:
+                preview = stage_import(setup, data, filename)
                 commit_import(setup, preview.import_id)
                 rebuild_live(setup)
             load_weather_fixture(setup)  # Plan 12: weather kinds need event_weather (s20)
             run_pipeline(setup)
             setup.commit()
-        yield fx
-    finally:  # also when the setup above fails, so no <test db>_fx is left behind
-        fx.dispose()
+        yield world
+    finally:
+        world.dispose()
         with admin.connect() as conn:
             conn.exec_driver_sql(drop)
         admin.dispose()
 
 
-@pytest.fixture
-def fx_session(fx_engine: Engine) -> Iterator[Session]:
-    """Like ``session``, but on the committed-fixtures database."""
-    connection = fx_engine.connect()
+def _fixture_uploads() -> list[tuple[str, bytes]]:
+    return [
+        (name, (FIXTURES_DIR / name).read_bytes())
+        for name in ("scores_2026-09-27.xlsx", "stations_2026-09-27.xlsx")
+    ]
+
+
+def _rolled_back_session(world: Engine) -> Iterator[Session]:
+    """A session on ``world`` whose work is rolled back after the test."""
+    connection = world.connect()
     outer = connection.begin()
     db_session = Session(bind=connection, join_transaction_mode="create_savepoint")
     try:
@@ -371,15 +379,14 @@ def fx_session(fx_engine: Engine) -> Iterator[Session]:
         connection.close()
 
 
-@pytest.fixture
-def fx_client(fx_session: Session, test_settings: Settings) -> Iterator[TestClient]:
-    """Like ``client`` (same settings fixture and get_session override), bound to fx_session."""
+def _client_for(db_session: Session) -> Iterator[TestClient]:
+    """Like ``client`` (same get_session override), bound to ``db_session``."""
     app = create_app()
 
     def session_override() -> Iterator[Session]:
-        nested = fx_session.begin_nested()
+        nested = db_session.begin_nested()
         try:
-            yield fx_session
+            yield db_session
         except BaseException:
             if nested.is_active:
                 nested.rollback()
@@ -391,6 +398,29 @@ def fx_client(fx_session: Session, test_settings: Settings) -> Iterator[TestClie
     app.dependency_overrides[get_session] = session_override
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture(scope="session")
+def fx_engine(engine: Engine) -> Iterator[Engine]:
+    """Database ``<test db>_fx`` holding both real fixtures committed and rebuilt, once per run.
+
+    Tests reach it only through ``fx_session``/``fx_client`` (rolled back after each test); they
+    never run the worker or open their own ``SessionFactory`` session on it.
+    """
+    with _build_world(engine, "fx", _fixture_uploads()) as world:
+        yield world
+
+
+@pytest.fixture
+def fx_session(fx_engine: Engine) -> Iterator[Session]:
+    """Like ``session``, but on the committed-fixtures database."""
+    yield from _rolled_back_session(fx_engine)
+
+
+@pytest.fixture
+def fx_client(fx_session: Session, test_settings: Settings) -> Iterator[TestClient]:
+    """Like ``client`` (same settings fixture and get_session override), bound to fx_session."""
+    yield from _client_for(fx_session)
 
 
 # --- Plan 06 T1: the analytics memo (C2) --------------------------------------------------------
@@ -455,82 +485,21 @@ def fx_special_engine(engine: Engine) -> Iterator[Engine]:
     is new. Its own database, so the analytics memo (keyed by database name) never mixes it with
     fx_engine; tests that read both worlds still call clear_cache() between them.
     """
-    from sqlalchemy import create_engine
-    from sqlalchemy.pool import NullPool
-
-    from sunday_clays.analytics.pipeline import run_pipeline
-    from sunday_clays.domain.imports import commit_import, stage_import
-    from sunday_clays.domain.rebuild import rebuild_live
-
-    url = engine.url.set(database=f"{engine.url.database}_fx_special")
-    drop = f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)'
-    admin = create_engine(
-        engine.url.set(database="postgres"), isolation_level="AUTOCOMMIT", poolclass=NullPool
-    )
-    with admin.connect() as conn:
-        conn.exec_driver_sql(drop)
-        conn.exec_driver_sql(f'CREATE DATABASE "{url.database}"')
-    world = make_engine(url.render_as_string(hide_password=False))
-    try:
-        config = alembic_config()
-        with world.begin() as connection:
-            config.attributes["connection"] = connection
-            command.upgrade(config, "head")
-        uploads = [
-            (name, (FIXTURES_DIR / name).read_bytes())
-            for name in ("scores_2026-09-27.xlsx", "stations_2026-09-27.xlsx")
-        ]
-        uploads.append(("special_2026-09-20.xlsx", _special_workbook()))
-        with Session(world) as setup:
-            for filename, data in uploads:
-                preview = stage_import(setup, data, filename)
-                commit_import(setup, preview.import_id)
-                rebuild_live(setup)
-            load_weather_fixture(setup)
-            run_pipeline(setup)
-            setup.commit()
+    uploads = [*_fixture_uploads(), ("special_2026-09-20.xlsx", _special_workbook())]
+    with _build_world(engine, "fx_special", uploads) as world:
         yield world
-    finally:
-        world.dispose()
-        with admin.connect() as conn:
-            conn.exec_driver_sql(drop)
-        admin.dispose()
 
 
 @pytest.fixture
 def fx_special_session(fx_special_engine: Engine) -> Iterator[Session]:
     """Like ``fx_session``, on the special-Sunday world."""
-    connection = fx_special_engine.connect()
-    outer = connection.begin()
-    db_session = Session(bind=connection, join_transaction_mode="create_savepoint")
-    try:
-        yield db_session
-    finally:
-        db_session.close()
-        outer.rollback()
-        connection.close()
+    yield from _rolled_back_session(fx_special_engine)
 
 
 @pytest.fixture
 def fx_special_client(fx_special_session: Session, test_settings: Settings) -> Iterator[TestClient]:
     """Like ``fx_client``, bound to ``fx_special_session``."""
-    app = create_app()
-
-    def session_override() -> Iterator[Session]:
-        nested = fx_special_session.begin_nested()
-        try:
-            yield fx_special_session
-        except BaseException:
-            if nested.is_active:
-                nested.rollback()
-            raise
-        else:
-            if nested.is_active:
-                nested.commit()
-
-    app.dependency_overrides[get_session] = session_override
-    with TestClient(app) as test_client:
-        yield test_client
+    yield from _client_for(fx_special_session)
 
 
 @pytest.fixture

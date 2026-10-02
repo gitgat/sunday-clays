@@ -7,10 +7,10 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from sunday_clays.domain.identity import lookup_shooter
+from sunday_clays.domain.identity import alias_rule_targets, lookup_shooter
 from sunday_clays.domain.imports import commit_import, rollback_import, stage_import
 from sunday_clays.domain.rebuild import rebuild_live
-from sunday_clays.domain.rules import RuleType, create_rule
+from sunday_clays.domain.rules import RuleType, create_rule, deactivate_rule
 from sunday_clays.models import (
     DataIssue,
     Event,
@@ -233,15 +233,138 @@ def test_alias_rules_still_leave_weekly_rows_alone(
         scores_workbook([*WEEKLY, ("Ace, Amy", 40, BEFORE), ("Ace, Amelia", 30, AFTER)]),
         "scores-2.xlsx",
     )
-    _commit(session, special_workbook([("Kim, Pat", FIVES)]), "s.xlsx")
+    rebuild_live(session)
+    weekly_before = session.scalar(
+        select(Round.shooter_id).where(Round.event_date == AFTER, Round.name_key == "ace amelia")
+    )
+    assert weekly_before is not None
+    assert weekly_before != amy  # Decision 15: today's behaviour for weekly rows
+
+    # the special sheet lists the same weekly name: only its special row is re-booked
+    special_id = _commit(
+        session, special_workbook([("Ace, Amelia", FIVES), ("Kim, Pat", FIVES)]), "s.xlsx"
+    )
+    rebuild_live(session)
+
+    def weekly_shooter() -> int | None:
+        return session.scalar(
+            select(Round.shooter_id).where(
+                Round.event_date == AFTER, Round.name_key == "ace amelia"
+            )
+        )
+
+    assert weekly_shooter() == weekly_before
+    assert (
+        session.scalar(
+            select(Round.shooter_id).where(
+                Round.event_date == SPECIAL, Round.name_key == "ace amelia"
+            )
+        )
+        == amy
+    )
+    rollback_import(session, special_id)
+    rebuild_live(session)
+    assert weekly_shooter() == weekly_before
+
+
+def test_a_shooter_has_one_round_on_a_special_sunday_the_first_one_kept(
+    session: Session,
+    scores_workbook: Callable[..., bytes],
+    special_workbook: Callable[..., bytes],
+) -> None:
+    _commit(session, scores_workbook([*WEEKLY, ("Ace, Amy", 40, BEFORE)]), "scores.xlsx")
+    rebuild_live(session)
+    amy = lookup_shooter(session, "ace amy")
+    assert amy is not None
+    create_rule(session, RuleType.ALIAS_NAME, {"name_key": "ace amelia", "shooter_id": amy}, None)
+    _commit(session, special_workbook([("Ace, Amy", (6,) * 10), ("Ace, Amelia", FIVES)]), "s.xlsx")
 
     rebuild_live(session)
 
-    weekly = session.scalar(
-        select(Round.shooter_id).where(Round.event_date == AFTER, Round.name_key == "ace amelia")
+    event = session.get(Event, SPECIAL)
+    assert event is not None
+    assert (event.n_rounds, event.n_shooters) == (1, 1)
+    assert _scores_on(session, SPECIAL) == {"Ace, Amy": 60}  # the first row, not the repeat
+    issues = session.execute(
+        select(DataIssue.severity, DataIssue.details).where(
+            DataIssue.code == "special_duplicate_shooter"
+        )
+    ).all()
+    assert [(i.severity, i.details) for i in issues] == [
+        (
+            "warning",
+            {"event_date": SPECIAL.isoformat(), "shooter_id": amy, "name_keys": ["ace amelia"]},
+        )
+    ]
+
+
+def test_the_special_sheet_wins_over_a_stations_workbook_tab_of_the_same_date(
+    session: Session,
+    scores_workbook: Callable[..., bytes],
+    special_workbook: Callable[..., bytes],
+    stations_workbook: Callable[..., bytes],
+) -> None:
+    _commit(session, scores_workbook(WEEKLY), "scores.xlsx")
+    tab = [("Hadley, Ike", (1,) * 7)]
+    _commit(session, stations_workbook([("9 20 26", SPECIAL, (3,) * 7, tab)]), "st.xlsx")
+    special_id = _commit(session, special_workbook(), "special.xlsx")
+
+    rebuild_live(session)
+
+    layout = session.execute(
+        select(
+            StationLayout.station_label, StationLayout.target_count, StationLayout.source_import_id
+        ).where(StationLayout.event_date == SPECIAL)
+    ).all()
+    assert len(layout) == 10
+    assert {(r.target_count, r.source_import_id) for r in layout} == {(6, special_id)}
+
+
+def test_alias_rule_targets_ignore_inactive_rules_and_the_newest_rule_wins(
+    session: Session, scores_workbook: Callable[..., bytes]
+) -> None:
+    _commit(
+        session, scores_workbook([("Ace, Amy", 40, BEFORE), ("Bee, Bob", 41, BEFORE)]), "s.xlsx"
     )
-    assert weekly is not None
-    assert weekly != amy  # Decision 15: today's behaviour for weekly rows
+    rebuild_live(session)
+    amy, bob = lookup_shooter(session, "ace amy"), lookup_shooter(session, "bee bob")
+    assert amy is not None
+    assert bob is not None
+    gone = create_rule(
+        session, RuleType.ALIAS_NAME, {"name_key": "ghost one", "shooter_id": amy}, None
+    )
+    deactivate_rule(session, gone)
+    create_rule(session, RuleType.ALIAS_NAME, {"name_key": "twice two", "shooter_id": amy}, None)
+    create_rule(session, RuleType.ALIAS_NAME, {"name_key": "twice two", "shooter_id": bob}, None)
+
+    assert alias_rule_targets(session) == {"twice two": bob}
+
+
+def test_the_left_out_weekly_rows_message_agrees_with_the_count(
+    session: Session,
+    scores_workbook: Callable[..., bytes],
+    special_workbook: Callable[..., bytes],
+) -> None:
+    _live_special(
+        session, scores_workbook, special_workbook, [*WEEKLY, ("Hadley, Ike", 40, SPECIAL)]
+    )
+    one = session.scalar(
+        select(DataIssue.message).where(DataIssue.code == "special_event_date_conflict")
+    )
+    assert one is not None
+    assert one.startswith("1 row in the scores workbook on 2026-09-20 is left out")
+
+    _commit(
+        session,
+        scores_workbook([*WEEKLY, ("Hadley, Ike", 40, SPECIAL), ("Devlin, Sid", 30, SPECIAL)]),
+        "scores-2.xlsx",
+    )
+    rebuild_live(session)
+    two = session.scalar(
+        select(DataIssue.message).where(DataIssue.code == "special_event_date_conflict")
+    )
+    assert two is not None
+    assert two.startswith("2 rows in the scores workbook on 2026-09-20 are left out")
 
 
 def test_a_round_type_override_still_applies_to_a_special_sunday(

@@ -21,6 +21,8 @@ from sunday_clays.domain.identity import (
 )
 from sunday_clays.domain.imports import (
     SpecialSource,
+    _is_are,
+    _rows,
     active_scores_import,
     active_special_sources,
     active_station_sources,
@@ -104,10 +106,8 @@ def rebuild_live(session: Session) -> RebuildReport:
     merges = merge_map(session)
     active_id = active_scores_import(session)
     specials = active_special_sources(session)
-    staged, special_keys = _with_special_rows(
-        session, load_staged_scores(session, active_id), specials, issues
-    )
-    rounds = _live_rounds(session, staged, rules, merges, issues, special_keys)
+    staged = _with_special_rows(session, load_staged_scores(session, active_id), specials, issues)
+    rounds = _live_rounds(session, staged, rules, merges, issues, specials.keys())
     # a special Sunday's own sheet wins over a station workbook tab of the same date
     sources = dict(
         sorted(
@@ -182,11 +182,10 @@ def _with_special_rows(
     weekly: list[StagedScore],
     specials: Mapping[date, SpecialSource],
     issues: list[DataIssue],
-) -> tuple[list[StagedScore], set[str]]:
+) -> list[StagedScore]:
     """The scores import's rows minus any on a live special Sunday, plus every special row.
 
     A special import owns its date (Decision 13): weekly rows on it are left out and reported.
-    Returns the rows and the name keys found on special sheets.
     """
     left_out = Counter(row.event_date for row in weekly if row.event_date in specials)
     for day, n in sorted(left_out.items()):
@@ -196,8 +195,8 @@ def _with_special_rows(
                 severity="warning",
                 event_date=day,
                 message=(
-                    f"{n} scores-workbook rows on {day} are left out: {day} is the special"
-                    f" shoot {specials[day].label!r}"
+                    f"{_rows(n)} in the scores workbook on {day} {_is_are(n)} left out: {day} is"
+                    f" the special shoot {specials[day].label!r}"
                 ),
                 details={"rows": n, "special_import_id": specials[day].import_id},
             )
@@ -206,7 +205,7 @@ def _with_special_rows(
         row for source in specials.values() for row in load_staged_scores(session, source.import_id)
     ]
     kept = [row for row in weekly if row.event_date not in specials]
-    return [*kept, *special_rows], {row.name_key for row in special_rows}
+    return [*kept, *special_rows]
 
 
 def _live_rounds(
@@ -215,7 +214,7 @@ def _live_rounds(
     rules: ActiveRules,
     merges: dict[int, int],
     issues: list[DataIssue],
-    special_keys: AbstractSet[str] = frozenset(),
+    special_dates: AbstractSet[date] = frozenset(),
 ) -> list[_LiveRound]:
     """Visible rounds with overridden scores; ordinals come from the raw rows, before any rule.
 
@@ -242,24 +241,75 @@ def _live_rounds(
     visible = [(key, row) for key, row in by_key.items() if key not in hidden]
     names = representative_names(staged)
     first_dates: dict[str, date] = {}
+    # Special rows come after every weekly row, so a key's "first" date here is not always its
+    # earliest; harmless, because the date only matters to one-token keys, which carry their own
+    # '@date' (identity_key), and two-token keys ignore it.
     for row in staged:
         first_dates.setdefault(row.name_key, row.event_date)
-    # A name key on a special sheet with an alias_name rule goes to that rule's shooter
-    # (Decision 15); every other key resolves exactly as before.
-    ruled = alias_rule_targets(session) if special_keys else {}
-    shooter_ids: dict[str, int] = {}
-    for name_key in sorted({row.name_key for _, row in visible}):
-        target = ruled.get(name_key) if name_key in special_keys else None
-        shooter_id = (
-            target
-            if target is not None
-            else resolve_shooter(session, names[name_key], first_dates[name_key])
+    # Weekly rows resolve exactly as before (Decision 15). A row on a special date goes to its
+    # key's alias_name rule target when there is one, else resolves like any other row.
+    ruled = alias_rule_targets(session) if special_dates else {}
+    weekly_keys = {row.name_key for _, row in visible if row.event_date not in special_dates}
+    special_keys = {row.name_key for _, row in visible if row.event_date in special_dates}
+
+    def resolved(name_key: str) -> int:
+        shooter_id = resolve_shooter(session, names[name_key], first_dates[name_key])
+        return merges.get(shooter_id, shooter_id)
+
+    shooter_ids = {name_key: resolved(name_key) for name_key in sorted(weekly_keys)}
+    special_ids = {
+        name_key: (
+            merges.get(ruled[name_key], ruled[name_key])
+            if name_key in ruled
+            else resolved(name_key)
         )
-        shooter_ids[name_key] = merges.get(shooter_id, shooter_id)
-    return [
-        _LiveRound(row, key[2], scores.get(key, row.score), shooter_ids[row.name_key])
+        for name_key in sorted(special_keys)
+    }
+    live = [
+        _LiveRound(
+            row,
+            key[2],
+            scores.get(key, row.score),
+            (special_ids if row.event_date in special_dates else shooter_ids)[row.name_key],
+        )
         for key, row in sorted(visible, key=lambda item: (item[1].event_date, item[1].row_number))
     ]
+    return _one_round_per_special_shooter(live, special_dates, issues)
+
+
+def _one_round_per_special_shooter(
+    rounds: list[_LiveRound], special_dates: AbstractSet[date], issues: list[DataIssue]
+) -> list[_LiveRound]:
+    """P17-R3: a special date keeps each shooter's first round (lowest row_number).
+
+    Alias rules and merges can map two sheet names to one shooter; every dropped repeat is
+    reported as a special_duplicate_shooter warning.
+    """
+    kept: list[_LiveRound] = []
+    seen: dict[tuple[date, int], _LiveRound] = {}
+    for rnd in rounds:  # sorted by (event_date, row_number)
+        slot = (rnd.row.event_date, rnd.shooter_id)
+        if rnd.row.event_date not in special_dates or slot not in seen:
+            seen[slot] = rnd
+            kept.append(rnd)
+            continue
+        issues.append(
+            DataIssue(
+                code="special_duplicate_shooter",
+                severity="warning",
+                event_date=rnd.row.event_date,
+                message=(
+                    f"{rnd.row.event_date} is a special shoot with one round per shooter:"
+                    f" the repeat under {rnd.row.name_key!r} is left out"
+                ),
+                details={
+                    "event_date": rnd.row.event_date.isoformat(),
+                    "shooter_id": rnd.shooter_id,
+                    "name_keys": [rnd.row.name_key],
+                },
+            )
+        )
+    return kept
 
 
 def _station_layouts(
