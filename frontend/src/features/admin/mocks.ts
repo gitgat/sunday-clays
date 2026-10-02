@@ -144,6 +144,37 @@ export const stationsPreview: ImportPreview = {
   requires_removal_confirmation: false,
 };
 
+/** Plan 17: a special-shoot workbook's preview (invented names). */
+export const specialPreview: ImportPreview = {
+  import_id: 6,
+  kind: 'special',
+  filename: 'special_2026-09-20.xlsx',
+  duplicate_of: null,
+  findings: [
+    {
+      code: 'special_total_mismatch',
+      severity: 'warning',
+      message: 'Total 50 does not match the station hits (51); the hits are used',
+      sheet: 'Special Event',
+      row: 6,
+      event_date: '2026-09-20',
+      name: 'Kaplan, Noel',
+    },
+  ],
+  diff: {
+    event_date: '2026-09-20',
+    label: '3-Bird Shoot',
+    target_total: 60,
+    stations: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
+    n_shooters: 5,
+    replaces_import: null,
+    regular_rows_on_date: 0,
+    new_names: ['Kim, Pat'],
+    possible_duplicates: [['Kim, Pat', 'Kimm, Pat']],
+  },
+  requires_removal_confirmation: false,
+};
+
 /**
  * Re-upload of the committed stations file: Plan 03 (Decision 7) stages nothing and returns import #2's stored
  * preview with `import_id === duplicate_of` and its original filename.

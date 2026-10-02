@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
-import { scoresPreview, stalePreview, stationsPreview } from '../mocks';
+import { scoresPreview, specialPreview, stalePreview, stationsPreview } from '../mocks';
 import { DiffSummary } from './DiffSummary';
 
 describe('DiffSummary', () => {
@@ -48,24 +48,45 @@ describe('DiffSummary', () => {
     expect(screen.queryByRole('list', { name: 'Removed events' })).not.toBeInTheDocument();
   });
 
-  it('shows one neutral line for a special-shoot preview until its full view lands (Plan 17 T7)', () => {
-    const special = {
-      event_date: '2026-09-20',
-      label: 'Three Clay Shoot',
-      target_total: 60,
-      stations: ['1', '2'],
-      n_shooters: 5,
-      replaces_import: null,
-      regular_rows_on_date: 0,
-      new_names: [],
-      possible_duplicates: [],
-    };
-    renderWithProviders(<DiffSummary diff={special} />);
-    const card = screen.getByRole('region', { name: 'Changes' });
-    expect(
-      within(card).getByText('Three Clay Shoot · 5 shooters · 60 targets'),
-    ).toBeInTheDocument();
-    expect(within(card).queryByText('Weeks replaced')).not.toBeInTheDocument();
-    expect(within(card).queryByText('Rows added')).not.toBeInTheDocument();
+  describe('a special-shoot workbook (Plan 17)', () => {
+    function row(label: string) {
+      return screen.getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
+    }
+
+    it('shows the Sunday, its name, targets and stations, shooters and what it replaces', () => {
+      renderWithProviders(<DiffSummary diff={specialPreview.diff} />);
+      expect(row('Sunday')).toBe('Sep 20, 2026');
+      expect(row('Special shoot')).toBe('3-Bird Shoot');
+      expect(row('Targets')).toBe('60 (10 stations)');
+      expect(row('Shooters')).toBe('5');
+      expect(row('Replaces')).toBe('—');
+      expect(screen.queryByRole('note')).not.toBeInTheDocument();
+      expect(screen.queryByText('Rows added')).not.toBeInTheDocument();
+    });
+
+    it('lists new names and possible duplicates as the scores preview does', () => {
+      renderWithProviders(<DiffSummary diff={specialPreview.diff} />);
+      expect(screen.getByText('New names (1)')).toBeInTheDocument();
+      expect(screen.getByText('Kim, Pat ↔ Kimm, Pat')).toBeInTheDocument();
+    });
+
+    it('names the live import it replaces and warns about weekly rows on that Sunday', () => {
+      renderWithProviders(
+        <DiffSummary
+          diff={{ ...specialPreview.diff, replaces_import: 12, regular_rows_on_date: 3 } as never}
+        />,
+      );
+      expect(row('Replaces')).toBe('Import #12');
+      expect(screen.getByRole('note')).toHaveTextContent(
+        'The scores workbook has 3 rows on Sep 20, 2026. While this special shoot is live they are left out, and rolling it back brings them back.',
+      );
+    });
+
+    it('says one row in the singular', () => {
+      renderWithProviders(
+        <DiffSummary diff={{ ...specialPreview.diff, regular_rows_on_date: 1 } as never} />,
+      );
+      expect(screen.getByRole('note')).toHaveTextContent('has 1 row on Sep 20, 2026.');
+    });
   });
 });
