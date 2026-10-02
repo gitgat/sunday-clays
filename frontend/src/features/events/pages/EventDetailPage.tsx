@@ -15,6 +15,7 @@ import { NotablesCard } from '../components/NotablesCard';
 import { Notice } from '../components/Notice';
 import { highlightedShooters, ResultsTable } from '../components/ResultsTable';
 import { VsPrevCard } from '../components/VsPrevCard';
+import { SpecialResultsTable } from '../components/SpecialResultsTable';
 import { WeatherCard } from '../components/WeatherCard';
 import { eventExplainers } from '../explainers';
 import {
@@ -22,8 +23,12 @@ import {
   formatDay,
   formatScore,
   formatSigned,
+  isSpecial,
   neighbourSundays,
   roundTypeLabel,
+  specialName,
+  specialTag,
+  targetsOf,
 } from '../format';
 import { eventSections, sectionsAt } from '../sections';
 import type { EventSection } from '../sections';
@@ -43,6 +48,61 @@ export function attendanceOnlyTitle(headCount: number | null): string {
   return headCount === null
     ? 'No scores recorded for this Sunday'
     : `Attendance only — ${headCount} shooters, no scores recorded`;
+}
+
+/** Decision 20: the counting rule, in neutral words. */
+const SPECIAL_NOTE =
+  'A special shoot counts as a Sunday shot for everyone who came, so it keeps streaks going. Its scores stay out of averages, best scores, records and leaderboards.';
+
+/** "3-Bird Shoot · Special · 60 targets" (the name is left out when the sheet gave none). */
+function specialHeader(event: EventDetail): string {
+  const name = specialName(event);
+  return `${name === null ? '' : `${name} · `}${specialTag(event)} targets`;
+}
+
+function SpecialEvent({ event }: { event: EventDetail }) {
+  const stations = event.stations?.layout.length ?? null;
+  return (
+    <>
+      <p role="note" className="rounded-card border border-accent p-3">
+        {SPECIAL_NOTE}
+      </p>
+      <Card title="This Sunday">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <Stat
+            label="Shooters"
+            value={String(event.n_shooters)}
+            explainer={eventExplainers.shooters}
+          />
+          <Stat
+            label="Targets"
+            value={String(targetsOf(event))}
+            explainer={eventExplainers.special}
+          />
+          <Stat label="Stations" value={stations === null ? '—' : String(stations)} />
+        </div>
+      </Card>
+      <Card id="chart-results" title="Results">
+        <About explainer={eventExplainers.special} label="About special shoots" />
+        <SpecialResultsTable results={event.results} targetTotal={targetsOf(event)} />
+      </Card>
+      {event.stations !== null && (
+        <Suspense
+          fallback={
+            <Card title="Station hits">
+              <Skeleton label="Loading station hits" />
+            </Card>
+          }
+        >
+          <StationHeatmap
+            stations={event.stations}
+            results={event.results}
+            date={event.event_date}
+          />
+        </Suspense>
+      )}
+    </>
+  );
 }
 
 function ScoredEvent({ event }: { event: EventDetail }) {
@@ -146,20 +206,29 @@ function SundayNav({ date }: { date: string }) {
 }
 
 function EventDetailView({ event, sections }: { event: EventDetail; sections: EventSection[] }) {
+  const special = isSpecial(event);
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-medium">{formatDay(event.event_date)}</h1>
         <p className="text-text-muted">
-          <span>{roundTypeLabel(event.round_type)}</span>
-          {SOURCE_NOTES[event.round_type_source] ?? ''}
+          {special ? (
+            <span>{specialHeader(event)}</span>
+          ) : (
+            <>
+              <span>{roundTypeLabel(event.round_type)}</span>
+              {SOURCE_NOTES[event.round_type_source] ?? ''}
+            </>
+          )}
         </p>
       </header>
       <SundayNav date={event.event_date} />
       <EventSections date={event.event_date} sections={sectionsAt(sections, 'top')} />
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
-          {event.has_scores ? (
+          {special ? (
+            <SpecialEvent event={event} />
+          ) : event.has_scores ? (
             <ScoredEvent event={event} />
           ) : (
             <Notice level={2} title={attendanceOnlyTitle(event.head_count)} />
@@ -167,7 +236,7 @@ function EventDetailView({ event, sections }: { event: EventDetail; sections: Ev
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <WeatherCard weather={event.weather} />
-          {event.has_scores && <VsPrevCard vsPrev={event.vs_prev} />}
+          {event.has_scores && !special && <VsPrevCard vsPrev={event.vs_prev} />}
           {event.has_scores && <NotablesCard notables={event.notables} />}
         </div>
       </div>

@@ -37,6 +37,29 @@ describe('summaryLine', () => {
   ])('%# → %s', (event, want) => {
     expect(summaryLine(event)).toBe(want);
   });
+
+  it.each([
+    [
+      summary({
+        kind: 'special',
+        label: '3-Bird Shoot',
+        target_total: 60,
+        n_shooters: 40,
+        median: null,
+        top_score: null,
+      }),
+      '3-Bird Shoot · Special · 60 · 40 shooters',
+    ],
+    [
+      summary({ kind: 'special', label: null, target_total: 60, n_shooters: 40 }),
+      'Special · 60 · 40 shooters',
+    ],
+  ])(
+    'a special Sunday reads by its name and targets, never a median or top score (%#)',
+    (event, want) => {
+      expect(summaryLine(event)).toBe(want);
+    },
+  );
 });
 
 describe('EventList', () => {

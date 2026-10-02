@@ -4,7 +4,7 @@ import { useRoundTypeHref } from '../../../lib/roundTypes';
 import type { EventSummary } from '../api';
 import { eventExplainers } from '../explainers';
 import { About } from './About';
-import { formatDay } from '../format';
+import { formatDay, isSpecial, specialName } from '../format';
 
 const MONTH = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
 
@@ -12,6 +12,7 @@ const MONTH = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC'
 const CELL_STYLES = {
   scored: 'bg-primary text-text',
   unscored: 'border border-outline-variant text-text-muted',
+  special: 'border-2 border-accent text-text',
   empty: 'opacity-40',
   other: 'border border-dashed border-outline-variant text-text-muted',
 } as const;
@@ -19,9 +20,16 @@ const CELL_STYLES = {
 const LEGEND: { state: keyof typeof CELL_STYLES; label: string }[] = [
   { state: 'scored', label: 'Scored' },
   { state: 'unscored', label: 'No scores' },
+  { state: 'special', label: 'Special shoot' },
   { state: 'other', label: 'Other round type' },
   { state: 'empty', label: 'No Sunday on file' },
 ];
+
+/** A Sunday on file: a special shoot, scored, or met without scores. */
+function cellState(e: EventSummary): 'special' | 'scored' | 'unscored' {
+  if (isSpecial(e)) return 'special';
+  return e.has_scores ? 'scored' : 'unscored';
+}
 
 /** ISO dates of every Sunday in `year` (UTC arithmetic, so no DST or timezone drift). */
 export function sundaysOfYear(year: number): string[] {
@@ -36,6 +44,10 @@ export function sundaysOfYear(year: number): string[] {
 }
 
 export function cellLabel(e: EventSummary): string {
+  if (isSpecial(e)) {
+    const name = specialName(e);
+    return `${formatDay(e.event_date)} — ${name === null ? '' : `${name}, `}special shoot, ${e.n_shooters} shooters`;
+  }
   if (e.has_scores) return `${formatDay(e.event_date)} — ${e.n_shooters} shooters`;
   if (e.head_count !== null) {
     return `${formatDay(e.event_date)} — attendance only, ${e.head_count} shooters`;
@@ -111,7 +123,7 @@ export function SeasonCalendar({
                   to={href(`/events/${day}`)}
                   aria-label={cellLabel(event)}
                   className={`flex size-11 items-center justify-center rounded-button text-sm ${
-                    CELL_STYLES[event.has_scores ? 'scored' : 'unscored']
+                    CELL_STYLES[cellState(event)]
                   }`}
                 >
                   {dayOfMonth}

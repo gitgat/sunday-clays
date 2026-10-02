@@ -15,6 +15,7 @@ import {
   trendLineByDate,
   trendModel,
 } from './charts';
+import { hadleyRounds } from './mocks';
 
 type LineSeries = { name: string; data: unknown[]; markPoint?: { data: { coord: unknown[] }[] } };
 
@@ -451,5 +452,37 @@ describe('toughDaysModel', () => {
       '2026-08-16',
       '2026-08-23',
     ]);
+  });
+});
+
+describe('special shoots in the attendance views (Plan 17)', () => {
+  const held = ['2026-09-06', '2026-09-13', '2026-09-27'];
+
+  it('marks a special shoot as special, never missed, once however many rounds', () => {
+    const m = attendanceModel(hadleyRounds, held, 2026, ['2026-09-20', '2026-09-20']);
+    expect(m.rows.filter((r) => r.date === '2026-09-20')).toEqual([
+      { date: '2026-09-20', state: 'special', score: null },
+    ]);
+    expect(m.rows.map((r) => r.date)).toEqual([...m.rows.map((r) => r.date)].sort());
+  });
+
+  it('never calls a held date missed when the shooter came to a special shoot on it', () => {
+    const m = attendanceModel([], ['2026-09-20'], 2026, ['2026-09-20']);
+    expect(m.rows).toEqual([{ date: '2026-09-20', state: 'special', score: null }]);
+  });
+
+  it('leaves out a special shoot of another year', () => {
+    expect(attendanceModel([], [], 2025, ['2026-09-20']).rows).toEqual([]);
+  });
+
+  it('counts a special shoot as a year shot and a Sunday shot that month', () => {
+    expect(activeYears([], ['2024-06-16'])).toEqual([2024]);
+    expect(activeYears(hadleyRounds, ['2024-06-16'])).toEqual([2026, 2024]);
+    const months = monthsModel(hadleyRounds, ['2026-09-20']);
+    expect(months.rows.find((r) => r.month === '2026-09')).toEqual({
+      month: '2026-09',
+      sundays: 4,
+    });
+    expect(monthsModel([], ['2026-09-20']).rows).toEqual([{ month: '2026-09', sundays: 1 }]);
   });
 });

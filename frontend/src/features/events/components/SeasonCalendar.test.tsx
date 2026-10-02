@@ -2,8 +2,8 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
 import type { EventSummary } from '../api';
-import { eventSummaries } from '../mocks';
-import { SeasonCalendar, sundaysOfYear } from './SeasonCalendar';
+import { eventSummaries, specialSummary } from '../mocks';
+import { cellLabel, SeasonCalendar, sundaysOfYear } from './SeasonCalendar';
 
 describe('sundaysOfYear', () => {
   it('lists the 52 Sundays of 2026', () => {
@@ -83,6 +83,7 @@ describe('SeasonCalendar', () => {
     expect(items.map((li) => li.lastChild?.textContent)).toEqual([
       'Scored',
       'No scores',
+      'Special shoot',
       'Other round type',
       'No Sunday on file',
     ]);
@@ -112,5 +113,21 @@ describe('SeasonCalendar', () => {
     expect(
       screen.getByRole('link', { name: 'Jan 14, 2019 — attendance only, 9 shooters' }),
     ).toHaveAttribute('href', '/events/2019-01-14?rt=super_sporting');
+  });
+
+  it('marks a special Sunday with an accent square that names it', () => {
+    renderWithProviders(<SeasonCalendar year={2026} events={[specialSummary]} />);
+    const cell = screen.getByRole('link', {
+      name: 'Sep 20, 2026 — 3-Bird Shoot, special shoot, 5 shooters',
+    });
+    expect(cell).toHaveAttribute('href', '/events/2026-09-20');
+    expect(cell.className).toContain('border-accent');
+    expect(cell.className).not.toContain('bg-primary');
+  });
+
+  it('labels a special Sunday without a name by what it is', () => {
+    expect(cellLabel({ ...specialSummary, label: null })).toBe(
+      'Sep 20, 2026 — special shoot, 5 shooters',
+    );
   });
 });

@@ -27,6 +27,7 @@ import {
   useShooterInsights,
   useShooterRating,
   useShooterRounds,
+  useShooterSpecials,
   useShooterSplits,
 } from '../api';
 import type { ShooterRound, SplitBy } from '../api';
@@ -393,11 +394,13 @@ function AttendanceYear({
   shooterId,
   year,
   rounds,
+  specialDates,
   yearChips,
 }: {
   shooterId: number;
   year: number;
   rounds: ShooterRound[];
+  specialDates: readonly string[];
   yearChips: ReactNode;
 }) {
   const held = useHeldSundays(year);
@@ -409,14 +412,19 @@ function AttendanceYear({
   // Every year the shooter shot, fetched only when fullscreen opens or CSV is pressed.
   const fullQuery = useMemo<ChartFullQuery>(() => {
     // Oldest year first, so the export reads chronologically.
-    const years = activeYears(rounds).sort((a, b) => a - b);
+    const years = activeYears(rounds, specialDates).sort((a, b) => a - b);
     return {
       queryKey: ['/api/shooters/{id}/attendance', shooterId, roundTypes, years, 'chart-full'],
       queryFn: async () => {
         const perYear = await Promise.all(
           years.map(
             async (y) =>
-              attendanceModel(rounds, await fetchHeldSundays(queryClient, y, roundTypes), y).rows,
+              attendanceModel(
+                rounds,
+                await fetchHeldSundays(queryClient, y, roundTypes),
+                y,
+                specialDates,
+              ).rows,
           ),
         );
         return {
@@ -425,15 +433,15 @@ function AttendanceYear({
         };
       },
     };
-  }, [shooterId, roundTypes, rounds, queryClient]);
+  }, [shooterId, roundTypes, rounds, specialDates, queryClient]);
   return (
     <QueryChart title={title} query={held} isEmpty={() => false} emptyText="" controls={yearChips}>
       {(heldDates) => {
-        const m = attendanceModel(rounds, heldDates, year);
+        const m = attendanceModel(rounds, heldDates, year, specialDates);
         return (
           <ChartFrame
             title={title}
-            subtitle="Best score on each Sunday you shot; outlined squares are Sundays you missed"
+            subtitle="Best score on each Sunday you shot; outlined squares are Sundays you missed; ★ is a special shoot"
             option={m.option}
             columns={m.columns}
             rows={m.rows}
@@ -473,6 +481,12 @@ const calViewCodec = enumCodec<CalView>(['year', 'month']);
 
 function AttendanceCalendar({ shooterId }: { shooterId: number }) {
   const query = useShooterRounds(shooterId);
+  // Plan 17: special shoots count as Sundays shot (an error leaves them out rather than blocking).
+  const specials = useShooterSpecials(shooterId);
+  const specialDates = useMemo(
+    () => (specials.data ?? []).map((s) => s.event_date),
+    [specials.data],
+  );
   // `calYear`, not `cal`: the ChartFrame below keeps its Table/Fullscreen view state under urlKey "cal" (C10).
   const [yearParam, setYear] = useUrlState('calYear', intCodec, 0);
   const { range } = useTimeWindow();
@@ -496,14 +510,14 @@ function AttendanceCalendar({ shooterId }: { shooterId: number }) {
     <QueryChart
       title="Attendance calendar"
       query={query}
-      waiting={pending}
-      isEmpty={(d) => d.length === 0}
-      emptyText="No rounds yet"
+      waiting={pending || specials.isPending}
+      isEmpty={(d) => d.length === 0 && specialDates.length === 0}
+      emptyText="No Sundays shot yet"
       controls={viewChips}
     >
       {(rounds) => {
         if (view === 'month') {
-          const m = monthsModel(rounds);
+          const m = monthsModel(rounds, specialDates);
           return (
             <ChartFrame
               title="Sundays shot per month"
@@ -520,7 +534,7 @@ function AttendanceCalendar({ shooterId }: { shooterId: number }) {
             />
           );
         }
-        const years = activeYears(rounds);
+        const years = activeYears(rounds, specialDates);
         // Opens on the year the window ends in (or the latest year they shot up to it).
         const endYear = shown === null ? Infinity : Number(shown.to.slice(0, 4));
         const opening = years.find((y) => y <= endYear) ?? (years[0] as number);
@@ -538,7 +552,13 @@ function AttendanceCalendar({ shooterId }: { shooterId: number }) {
           </div>
         );
         return (
-          <AttendanceYear shooterId={shooterId} year={year} rounds={rounds} yearChips={yearChips} />
+          <AttendanceYear
+            shooterId={shooterId}
+            year={year}
+            rounds={rounds}
+            specialDates={specialDates}
+            yearChips={yearChips}
+          />
         );
       }}
     </QueryChart>

@@ -86,10 +86,11 @@ export const explainers = {
     read: [
       'A filled square shows your best round that day, out of 50; brighter means a higher score.',
       'Click a filled square to open that Sunday.',
+      'A ★ square is a special shoot you came to. It counts as a Sunday shot and has no colour, because its score is out of a different total.',
     ],
     computed: [
       'Best score = your highest single round that Sunday.',
-      'Missed = the club has complete results for that Sunday and you have no round in it.',
+      'Missed = the club has complete results for that Sunday and you have no round in it. A special shoot is never missed.',
       'The round-type filter applies to your rounds and to the club’s Sundays. The calendar opens on the year the time window ends in; the year tabs pick any other year.',
       'The fullscreen table and the CSV download cover every year you shot.',
     ],
@@ -102,7 +103,7 @@ export const explainers = {
       'Ringed bars are the months an insight points to.',
     ],
     computed: [
-      'Each Sunday counts once, however many rounds you shot that day. The round-type filter applies.',
+      'Each Sunday counts once, however many rounds you shot that day, special shoots included. The round-type filter applies.',
       'Opens on the year the time window ends in; fullscreen and the CSV download show every month.',
     ],
     scope: 'windowed',

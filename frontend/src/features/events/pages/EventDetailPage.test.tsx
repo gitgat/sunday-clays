@@ -10,7 +10,7 @@ import { server } from '../../../test/msw/server';
 import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { renderWithProviders } from '../../../test/render';
 import type { EventDetail, Notable, StationMatrix } from '../api';
-import { attendanceOnlyDetail, eventDetail, eventSummaries } from '../mocks';
+import { attendanceOnlyDetail, eventDetail, eventSummaries, specialDetail } from '../mocks';
 import type { EventSection } from '../sections';
 import { EventDetailPage } from './EventDetailPage';
 
@@ -427,5 +427,85 @@ describe('EventDetailPage', () => {
     renderEvent(eventDetail);
     await screen.findByRole('heading', { level: 1 });
     expect(screen.queryByRole('navigation', { name: 'Other Sundays' })).not.toBeInTheDocument();
+  });
+
+  describe('a special Sunday (Plan 17)', () => {
+    it('names the shoot and its targets in the header, with no round type', async () => {
+      renderEvent(specialDetail);
+      expect(await screen.findByText('3-Bird Shoot · Special · 60 targets')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'Sep 20, 2026' })).toBeInTheDocument();
+      expect(screen.queryByText('Sporting')).not.toBeInTheDocument();
+    });
+
+    it('explains the counting rule in neutral words', async () => {
+      renderEvent(specialDetail);
+      const note = await screen.findByRole('note');
+      expect(note).toHaveTextContent(/^A special shoot counts as a Sunday shot/);
+      expect(note.textContent).not.toMatch(/\b(he|she|his|her)\b/i);
+    });
+
+    it('shows shooters, targets and stations, and no median, top score or difficulty', async () => {
+      renderEvent(specialDetail);
+      const glance = await screen.findByRole('region', { name: 'This Sunday' });
+      for (const [label, value] of [
+        ['Shooters', '3'],
+        ['Targets', '60'],
+        ['Stations', '10'],
+      ] as const) {
+        expect(within(glance).getByText(label).closest('div')?.parentElement).toHaveTextContent(
+          value,
+        );
+      }
+      for (const label of ['Median', 'Top score', 'Difficulty', 'Head count']) {
+        expect(within(glance).queryByText(label)).not.toBeInTheDocument();
+      }
+      for (const stat of ['Shooters', 'Targets']) await expectExplainer(glance, `About ${stat}`);
+      await expectExplainer(
+        screen.getByRole('region', { name: 'Results' }),
+        'About special shoots',
+        { read: true },
+      );
+    });
+
+    it(
+      'lists the results out of 60, best first, and draws the station grid',
+      async () => {
+        renderEvent(specialDetail);
+        const results = await screen.findByRole('table', { name: 'Results' });
+        expect(within(results).getByRole('columnheader', { name: 'Score (of 60)' })).toBeVisible();
+        expect(
+          within(results).queryByRole('columnheader', { name: 'Rank' }),
+        ).not.toBeInTheDocument();
+        expect(within(results).getAllByRole('row')).toHaveLength(4);
+        expect(
+          await screen.findByRole(
+            'img',
+            { name: 'Station hits heatmap for Sep 20, 2026' },
+            LAZY_CHART,
+          ),
+        ).toBeInTheDocument();
+      },
+      LAZY_TEST_TIMEOUT,
+    );
+
+    it('keeps the weather but has no comparison with the previous Sunday', async () => {
+      renderEvent(specialDetail);
+      await screen.findByRole('table', { name: 'Results' });
+      expect(screen.queryByRole('region', { name: 'vs previous Sunday' })).not.toBeInTheDocument();
+      expect(screen.getByText('No weather recorded for this Sunday')).toBeInTheDocument();
+      // First-timers are told by Sunday insights (Plan 12), which a special Sunday does not get (Decision 12).
+      expect(screen.queryByRole('region', { name: 'Notables' })).not.toBeInTheDocument();
+      expectUnbrokenOutline();
+    });
+
+    it('a special Sunday without a name or a station sheet still reads cleanly', async () => {
+      renderEvent({ ...specialDetail, label: null, stations: null });
+      expect(await screen.findByText('Special · 60 targets')).toBeInTheDocument();
+      const glance = screen.getByRole('region', { name: 'This Sunday' });
+      expect(within(glance).getByText('Stations').closest('div')?.parentElement).toHaveTextContent(
+        '—',
+      );
+      expect(screen.queryByText('Station hits')).not.toBeInTheDocument();
+    });
   });
 });
