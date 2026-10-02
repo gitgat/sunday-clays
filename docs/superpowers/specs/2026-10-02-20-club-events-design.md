@@ -1,6 +1,6 @@
 # Sunday Clays: Club events & registration — Design Spec (Plan 20)
 
-> Date: 2026-10-02 · Status: draft for owner review · Parent spec: `2026-09-27-sunday-clays-design.md` · Contract: master plan C1–C12 · Depends on: Plan 19 (launch switches; Plan 19 D5 adds no migration, so this plan's migration is `0009`) · Implementation plan: `docs/superpowers/plans/2026-10-02-20-club-events.md` (written after approval)
+> Date: 2026-10-02 · Status: draft for owner review · Parent spec: `2026-09-27-sunday-clays-design.md` · Contract: master plan C1–C12 · Depends on: Plan 19 (launch switches; Plan 19 adds one migration (`0009`, the page cache, D28), so this plan's migration is `0010`) · Implementation plan: `docs/superpowers/plans/2026-10-02-20-club-events.md` (written after approval)
 > Base: `main` @ `fc2a101` (Plans 15, 16 and 17 merged) plus Plan 19.
 
 A **club event** is a one-off, club-only gathering that members sign up for in the app: a work party, a fun shoot, a banquet, a lesson day. It is not a Sunday shoot, has no scores and no ScoreChaser link. Organizers (admins) create it; members (viewers past the club password) see it, say they are coming, and can bring guests.
@@ -85,7 +85,7 @@ A **club event** is a one-off, club-only gathering that members sign up for in t
 
 **D18. Plain text only.** Notes, titles and names are rendered as React text with `white-space: pre-line`; there is no HTML, Markdown or auto-linking. *Rationale:* owner decision; React text escaping plus the existing CSP makes stored-XSS impossible by construction.
 
-**D19. Migration `0009_club_events`, expand-only, one file.** `down_revision` is the Alembic head on `main` when this plan merges. Today that is `"0008"`: Plan 19's spec (D5) adds no migration and leaves `0009` to this plan. If anything else lands a `0009` first, this file is renumbered to the next free number with `down_revision` set to that head. **Pre-merge check** (a task step and a CI-visible test): `uv run alembic heads` prints exactly one head, `0009_club_events` (or its renumbered name), and `test_migration_chain_is_linear` passes. Four new durable tables; nothing existing changes. *Rationale:* safe while the previous release runs (it never reads them), and `domain/rebuild.py` `LIVE_TABLES` never lists them, so a rebuild keeps them.
+**D19. Migration `0010_club_events`, expand-only, one file.** `down_revision` is the Alembic head on `main` when this plan merges. Plan 19 lands `0009` (its page-cache table, Plan 19 D28) first, so today that is `"0009"`. If anything else lands a `0010` first, this file is renumbered to the next free number with `down_revision` set to that head. **Pre-merge check** (a task step and a CI-visible test): `uv run alembic heads` prints exactly one head, `0010_club_events` (or its renumbered name), and `test_migration_chain_is_linear` passes. Four new durable tables; nothing existing changes. *Rationale:* safe while the previous release runs (it never reads them), and `domain/rebuild.py` `LIVE_TABLES` never lists them, so a rebuild keeps them.
 
 **D20. Viewer responses are never cached or ETagged.** `"/api/club-events"` (no trailing slash, so the root list path `/api/club-events` matches too) joins both `NO_ETAG_PREFIXES` and `NO_STORE_PREFIXES` in `api/etag.py`, beside `/api/auth/`, `/api/admin/` and Plan 19's `/api/features`. *Rationale:* the roster changes without a `data_version` bump; an ETag would answer 304 with a stale list (the Plan 15 bumps lesson).
 
@@ -157,7 +157,7 @@ The 404 is decided before body validation, rate limiting or any read (except a b
 
 **Switch flipped off mid-sign-up.** The sheet's POST gets the 404. Because the gate runs before the handler, no attempt row, registration or contact is written; nothing is half-done. The sheet shows "Club events aren't available right now. Nothing was saved." with a Close button, then invalidates `['/api/features']`, so the page falls to `NotFoundView` on the refetch. Stored tokens are kept for when the switch comes back on.
 
-### 5.2 Data model (migration `0009_club_events`)
+### 5.2 Data model (migration `0010_club_events`)
 
 All tables are durable (never in `LIVE_TABLES`), use the repo's `conv()` constraint names, and are created in one migration. Downgrade drops the four tables.
 
@@ -496,7 +496,7 @@ Strict TDD with evidence (RED then GREEN pasted per step; reviewers re-run new t
 
 ### 7.2 Integration (backend, real Postgres)
 
-- Migration `0009_club_events` upgrades from `0008` and downgrades cleanly; `test_migration_chain_is_linear` (one Alembic head); CHECKs reject bad rows (guests 11, `max_guests` with guests off, an inactive row with an email).
+- Migration `0010_club_events` upgrades from `0009` and downgrades cleanly; `test_migration_chain_is_linear` (one Alembic head); CHECKs reject bad rows (guests 11, `max_guests` with guests off, an inactive row with an email).
 - Launch gate: with `events` off, every viewer route answers 404 to a viewer and is served to an admin; the 404 happens before a rate-limit row is written (`test_gated_signup_leaves_no_attempt_row`).
 - Sign-up happy paths for picked-with-email, picked-without-email (contact created, source `signup`), typed name; `email_used` values; token returned once and only its hash stored.
 - Duplicate rules: same shooter; same typed key in the other word order; typed name equal to a live shooter's renamed display name, to an alias in the other word order, and to an `alias_name` rule key; merged source and target treated as one. `test_profileless_shooter_name_can_be_typed`: a shooter in `shooters` and `shooter_aliases` with no `shooter_profiles` row is absent from the picker, and typing that name succeeds (201), as does a deceased shooter's name.

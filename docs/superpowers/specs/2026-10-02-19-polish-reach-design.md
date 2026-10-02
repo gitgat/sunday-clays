@@ -2,8 +2,9 @@
 
 > Date: 2026-10-02 · Status: draft for owner review · Parent spec: `2026-09-27-sunday-clays-design.md` · Contract: master plan C1–C12 (amendments in §2: D6, D21 and D24) · Base: `main` with Plans 15, 16 and 17 merged (`fc2a101`)
 > Shared decision with Plan 20: Plan 19 builds the **launch switch** mechanism (§3.0); Plan 20 only adds keys to it.
+> Amended 2026-10-02 (owner-approved): §3.7 page cache and warm-up, decisions D28–D37. It adds Plan 19's one migration (D28), which amends D5 and D22.
 
-Plan 19 makes the app easier to find, share and understand, without changing any number it already shows. It has seven parts: launch switches (the mechanism the other six ship behind), link previews, a first-visit tour with a glossary, a weekly recap for the club email, Add to Home Screen, club milestones, and a per-profile summary card.
+Plan 19 makes the app easier to find, share and understand, without changing any number it already shows. It has eight parts: launch switches (the mechanism the other six features ship behind), link previews, a first-visit tour with a glossary, a weekly recap for the club email, Add to Home Screen, club milestones, a per-profile summary card, and a page cache with warm-up that makes the busiest pages open fast (§3.7). The page cache changes how fast an answer arrives, never what it says.
 
 ---
 
@@ -20,6 +21,7 @@ Plan 19 makes the app easier to find, share and understand, without changing any
 5. The club's own milestones are dated and celebrated on Home and on the Club page.
 6. Any profile can produce a shareable summary for the header time window.
 7. Each of goals 1–6 can be turned on for everyone, or off again, by an admin without a redeploy.
+8. The busiest pages answer from a finished, stored response instead of recomputing it on every visit, and they are already stored before the first visitor arrives after an upload or at the start of a day (§3.7). The page cache has its own kill switch (D36).
 
 **Binding owner rules (restated; every section below follows them)**
 
@@ -33,7 +35,7 @@ Plan 19 makes the app easier to find, share and understand, without changing any
 | R6 | The password gate stays. | Only `/api/og/*` is public, and it serves no names or scores (§3.1, D6). |
 | R7 | Nothing is removed from Home. | Home only gains: `data-tour` attributes, one milestone card, one install tip (§3.2, §3.4, §3.5). |
 | R8 | Real names never go in tracked files; tests use invented names. | Fixture pseudonyms only (`Devlin, Sid`, `Kaplan, Noel`, `Hadley, Ike`, `Kim, Pat`, …). |
-| R9 | Persistent data binds under `/var/data/sunday-clays/<svc>`, never named volumes. | Plan 19 adds no persistent data (D22). |
+| R9 | Persistent data binds under `/var/data/sunday-clays/<svc>`, never named volumes. | Plan 19 adds no volume. Its one new table, `response_cache`, lives in the existing Postgres data directory (D22, D28). |
 | R10 | Images are multi-arch (amd64 + arm64). | The one new dependency, Pillow, ships manylinux wheels for both (D8). |
 | R11 | No IPs stored (rate limits use `ip_fingerprint`), no access log. | §4. |
 
@@ -45,11 +47,11 @@ Plan 19 makes the app easier to find, share and understand, without changing any
 
 2. **Gate semantics.** While a switch is off: an **admin** sees the feature with an "Admin preview" badge and its API answers normally; a **viewer** sees nothing, and the feature's viewer API routes answer **404 with the same body as an unknown `/api` path** (`{"detail":"Not Found"}`). The gate is the dependency `feature_gate("<key>")`, which raises `HTTPException(404)`. It runs after the router's `require_viewer`, so a request with **no session gets 401** (as on every gated route), never 404. *Rationale:* the 404 keeps a switched-off feature tidy: the page shows "Page not found" and the API agrees, with no special error state to design. It is **not** a secrecy claim: the JavaScript bundle ships every gated component and its copy, which is acceptable because nothing in an unreleased feature is private. To avoid listing unreleased keys needlessly, `GET /api/features` returns only the enabled keys to a viewer (D3).
 
-3. **The switch API.** `GET /api/features` (viewer) answers `{"switches": {"<key>": true, …}}`: for a **viewer**, only the keys that are on (a missing key means off); for an **admin**, every registered key with its `bool`. `GET /api/admin/features` lists each switch with its label, description, `enabled` and `updated_at`. `PUT /api/admin/features/{key}` takes `{"enabled": bool}`, upserts the row, writes `audit_log` action `feature_switch` with `{key, enabled}`, and returns the switch. An unknown key is 404 `feature_not_found`. `/api/features` is added to the ETag middleware's no-store list, because switches change without a `data_version` bump. *Rationale:* same shape as the Plan 15 bump counts, which have the same staleness problem.
+3. **The switch API.** `GET /api/features` (viewer) answers `{"switches": {"<key>": true, …}}`: for a **viewer**, only the keys that are on (a missing key means off); for an **admin**, every registered feature key with its `bool`. Infrastructure keys (`page_cache`, D36) are never in this answer, because no screen is gated on them. `GET /api/admin/features` lists each switch, infrastructure keys included, with its label, description, `enabled` and `updated_at`. `PUT /api/admin/features/{key}` takes `{"enabled": bool}`, upserts the row, writes `audit_log` action `feature_switch` with `{key, enabled}`, and returns the switch. An unknown key is 404 `feature_not_found`. `/api/features` is added to the ETag middleware's no-store list, because switches change without a `data_version` bump. *Rationale:* same shape as the Plan 15 bump counts, which have the same staleness problem.
 
 4. **`FEATURES_DEFAULT_ON` setting (default empty).** A comma-separated list of keys treated as on when their `app_state` row is missing. `compose.test.yaml` sets it to all six keys, so the read-only e2e projects see every feature. Production leaves it empty, so every feature starts off. *Rationale:* the shared e2e stack must exercise the features without a mutating setup step, and production launches must be deliberate.
 
-5. **No migration in Plan 19.** Switches use `app_state` (D1); milestones, the summary and the recap are computed on read (D17, D18, D14); OG images are memoized in process (D8). `0009` stays free for Plan 20. *Rationale:* fewer moving parts, and a rollback to the previous release needs no data step. The previous release ignores the `feature.*` rows.
+5. **One migration in Plan 19, for the page cache only (amended by D28).** Switches use `app_state` (D1); milestones, the summary and the recap are computed on read (D17, D18, D14); OG images are memoized in process (D8). The only new table is `response_cache` (D28), whose migration takes the next free number when it merges, with `down_revision` set to the head on `main` at that moment (the same rule as Plan 20 D19). *Rationale:* fewer moving parts, and a rollback to the previous release needs no data step. The previous release ignores the `feature.*` rows and never reads `response_cache`.
 
 6. **One new public route module, `og` (C2 amendment).** `api/app.py`'s `PUBLIC_ROUTE_MODULES` becomes `{"health", "auth", "og"}`. This is a one-line contract change owned by the link-preview task. A test pins that every route in `og` is under `/api/og/` and accepts GET and HEAD only. The routes are declared with `@router.api_route(..., methods=["GET", "HEAD"])`, because FastAPI's `@router.get` answers HEAD with 405 and crawlers (and the runbook's `curl -sI`) send HEAD. *Rationale:* crawlers cannot log in. Keeping every public path in one small module under one prefix makes the unauthenticated surface easy to audit.
 
@@ -83,17 +85,54 @@ Plan 19 makes the app easier to find, share and understand, without changing any
 
 21. **Nav items and routes can name a feature (C10 amendment).** `NavItem` gains `feature?: FeatureKey`, and nav rendering hides an item whose feature is not visible. The new `<FeatureGate feature="…">` wraps a gated page. For a viewer with the switch off, it renders the same "Page not found" view that `RouteErrorPage` shows for unknown paths (extracted as `NotFoundView` from `app/ErrorBoundary.tsx`). *Rationale:* gating stays declarative in each feature's `routes.tsx`, so `router.tsx` is not edited.
 
-22. **No new persistent data, volumes or services.** Everything new is either computed on read, kept in `app_state`, held in a process memo, or kept in the viewer's own browser storage. *Rationale:* rule R9 is met trivially, and backups need no change.
+22. **No new volumes or services, and no new data that needs keeping (amended by D28).** Everything new is either computed on read, kept in `app_state`, held in a process memo, kept in the viewer's own browser storage, or (the page cache) stored in the disposable `response_cache` table, which can be emptied at any time with no loss. *Rationale:* rule R9 is met, because the table lives in the existing Postgres data directory, and a restore needs no step for it: an empty cache simply refills.
 
-23. **Six switch keys.** `link_previews`, `tour_glossary`, `weekly_recap`, `pwa`, `club_milestones`, `summary_card`. They are declared once in `backend/src/sunday_clays/domain/features.py` as `FeatureKey = Literal[...]` plus the `FEATURES` tuple (key, label, description). The frontend gets the union from the generated `schema.d.ts`. Plan 20 appends to this tuple. *Rationale:* one registry, typed end to end. A test asserts that the admin page lists exactly `FEATURES`.
+23. **Six feature keys, plus one infrastructure key.** `link_previews`, `tour_glossary`, `weekly_recap`, `pwa`, `club_milestones`, `summary_card`, and the infrastructure kill switch `page_cache` (D36), whose rules differ. They are declared once in `backend/src/sunday_clays/domain/features.py` as `FeatureKey = Literal[...]` plus the `FEATURES` tuple (key, label, description). The frontend gets the union from the generated `schema.d.ts`. Plan 20 appends to this tuple. *Rationale:* one registry, typed end to end. A test asserts that the admin page lists exactly `FEATURES`.
 
 24. **e2e runs with service workers blocked, except the PWA spec (C10 amendment).** `frontend/playwright.config.ts` gains `serviceWorkers: 'block'` in the shared `use` block, and `pwa.spec.ts` opts back in with `test.use({ serviceWorkers: 'allow' })`. The C10 comment in that file gains "and Plan 19 T9 (serviceWorkers)". *Rationale:* `FEATURES_DEFAULT_ON` turns `pwa` on for the whole e2e stack. Playwright's `page.route` does not see requests a service worker answers, which would break `insight-bumps.spec.ts` and `weather.spec.ts`, and a cache-first `/assets/*` would carry state between tests.
 
-25. **The production default (all off) is tested end to end.** The `admin-mutations` project gains an "all switches off" test that turns every key off, checks the viewer experience, and restores the previous values in `finally` (§5.3). *Rationale:* the read-only worlds turn everything on (D4), so without this the shipped default would be covered only by unit tests.
+25. **The production default (all off) is tested end to end.** The `admin-mutations` project gains an "all switches off" test that turns every feature key off (the six of D23; `page_cache` stays on, since its production default is on, D36), checks the viewer experience, and restores the previous values in `finally` (§5.3). *Rationale:* the read-only worlds turn everything on (D4), so without this the shipped default would be covered only by unit tests.
 
 26. **Dates shown from timestamps use the club timezone.** "Changed Oct 2, 2026" on the Features page comes from `FeatureSwitchOut.updated_on: date | None`, which the backend computes as `updated_at` converted to `ZoneInfo(settings.timezone)` (America/Los_Angeles). The frontend formats that date with the existing `formatDate` and never converts a timestamp itself. The recap picker's default and the summary card's `to` anchor are the latest scored Sunday, never "today". *Rationale:* a UTC timestamp near midnight would otherwise show the next day, and the rest of the app anchors windows on the latest scored Sunday.
 
 27. **Review points accepted in full.** Every point of the 2026-10-02 spec review was taken; none was rejected. Where the review offered a choice, the choice and its reason are in the decision above that it touches (D2/D3 enabled-keys-only, D7 one `route` block, D8 Sunday PNG one hour, D16 definite-off unregister, §3.3 first-time earners plus holders, §3.4 one `main` widget, §3.5 crossings on every scored or attended Sunday).
+
+28. **The page cache stores finished JSON bodies in one Postgres table, `response_cache`.** The table is `UNLOGGED` and is created by Plan 19's one migration (`00NN_response_cache`, next free number, D5). It is never in `domain/rebuild.py` `LIVE_TABLES`, so a rebuild does not empty it. A row is the exact bytes a route answered, plus the inputs of its key (§3.7.1). *Rationale:* the existing per-process memo (`cached_by_data_version`, C7) already caches loaders, yet production still spends 3.1 s on a repeat `/api/insights/home`. The route's own SQL, selection and Pydantic serialization run on every request, and only a stored body removes all of that. Postgres is shared by every API replica and by the worker, survives API restarts and deploys, and needs no new service (no Redis) and no volume (R9). `UNLOGGED` skips the write-ahead log, so stores are cheap. Postgres empties an unlogged table after a crash, which is harmless for a cache, and keeps its rows across a clean restart.
+
+29. **The key is the full request identity plus everything the body may depend on.** `key = "v1|<app_version>|<data_version>|<local_date>|<role>|GET <path>?<sorted query>"`. `<sorted query>` is `etag.sorted_query(request)`, the string the ETag already hashes. `data_version` and `local_date` are the values the ETag middleware reads before the route runs. `role` is `viewer` or `admin`, from the signed session. A request is not cached (`bypass`) when its query names a parameter the matched route does not declare, or when the path plus query is longer than 2,048 characters. *Rationale:* the key uses the same inputs as the ETag (C8) plus the role, so the cache can never be fresher or staler than the ETag. `app_version` keeps two releases from sharing bodies during a rolling deploy. Refusing undeclared parameters stops `?_=<random>` from creating endless keys that the route would answer identically anyway. The `v1` prefix lets a later change to the stored format retire every old row at once.
+
+30. **Only an explicit allowlist of route templates is cached. Nothing else is ever stored.** The allowlist (§3.7.2) is a tuple of exact route templates, such as `/api/insights/home` and `/api/shooters/{id}`. It is the strict form of a prefix allowlist: each entry is matched with the same compiled path regex FastAPI uses for that route. At startup, `create_app` checks that every template names exactly one GET route. A test pins that no allowlisted route has a `feature_gate`, sits in an `admin_*` or public module, or reads `Request`, cookies, headers or a `device_id`. *Rationale:* a prefix such as `/api/club/` would silently take in the gated `/api/club/milestones` (§3.5) and any Plan 20 route later added under it. With exact templates, a new route stays uncached until someone adds it on purpose and the pin tests pass.
+
+31. **The cache is an inner middleware under the ETag middleware, and all ETag logic stays where it is.** `PageCacheMiddleware` is registered just inside `CacheHeadersMiddleware` (one `add_middleware` line in `api/app.py`; no route is added there). The outer middleware already reads `data_version` and the local date in its `_tag_inputs` query. That same query now also reads the `page_cache` switch, and it leaves all three on `request.state`. The inner middleware uses them for the key. On a hit it returns the stored body as a plain `200 application/json`. The outer middleware then adds `Cache-Control` and the ETag, and answers 304 when `If-None-Match` matches, exactly as it does for a computed body. No ETag is stored. *Rationale:* the ETag is a pure function of the same inputs as the key (`compute_etag(app_version, data_version, local_date, path, query)`). Computing it once, in one place, keeps a cached response identical to an uncached one in body, headers and 304 behaviour. A stored copy could only drift.
+
+32. **Only clean 200 JSON answers are stored, and storing can never break a page.** A body is stored only when all of these hold: the status is 200, the media type is `application/json`, there is no `Set-Cookie`, and the body is at most 2 MiB. 4xx and 5xx answers, 304s, HEAD requests and redirects are never stored. Before an insert, the table must hold fewer than 2,000 rows (`INSERT … SELECT … WHERE (SELECT count(*) FROM response_cache) < :max_rows ON CONFLICT (key) DO NOTHING`). When it is full, the body is served but not stored until the next prune. Any database error while reading or writing the cache is logged once as a warning naming the route template only (never the concrete path or query), and the request is answered as if the cache were off. *Rationale:* a cache that can fail a page it would otherwise answer is worse than no cache. The row cap bounds the table between prunes, whatever a signed-in viewer requests, and the edge throttle (300/min) bounds how fast anyone can fill it.
+
+33. **Concurrent first requests compute once per process, and at most once per replica.** Within one API process, the first miss for a key leads. Later requests for the same key wait for it and are served its stored body. This is an `asyncio` single-flight map in the middleware, the same idea as the flights in `cached_by_data_version`. A follower waits at most 30 s, then runs the route itself without storing. If the leader's answer is not storable (an error, a 404, too large), each follower runs the route itself, so every caller gets its own correct status. Across replicas, each may compute once, and `ON CONFLICT (key) DO NOTHING` keeps the first row. *Rationale:* the stampede that matters is the few minutes after an upload, when several people open Home together. One 4.5 s computation replaces N parallel ones on a 4-core Pi. A cross-replica lock would add a database round trip to every miss, to save at worst one duplicate computation per replica.
+
+34. **Invalidation is implicit, and pruning only reclaims space.** A new `data_version` or a new local date gives every request a new key, so an old row can never be served. Every import commit or rollback, rule change, shooter merge or rename, and recompute bumps `data_version`, because all of them run `run_pipeline`. The `page_warm` job (D35) prunes before it warms, in two steps:
+    - it deletes rows whose `data_version` or `local_date` differs from the current one;
+    - then, if more than 1,500 rows remain, it deletes the oldest by `created_at` until 1,500 are left.
+
+    It runs after every `data_version` change and once a local day, so pruning happens at both of those moments.
+
+    **Contract (added to C7):** any write that changes the body of an allowlisted route must bump `data_version`, or that route must leave the allowlist. Today, the writes that change a body without a bump are fist bumps, page views, feature switches and the weather forecast, and the routes they affect are all outside the allowlist.
+
+    *Rationale:* `data_version` is already the app's single "the data changed" signal, and the memo and the ETag both rely on it. Keying on it needs no invalidation code and has no invalidation race.
+
+35. **Warm-up is a queued job, `page_warm`, that calls the app in process as a viewer.** `jobs/scheduler.py` enqueues `page_warm` (dedupe key `page_warm`) when the switch is on and the last warm-up's `(data_version, local_date)` differs from the current one. That last warm-up is kept in `app_state` `page_cache.last_warm`. So the job runs after every committed rebuild or recompute, and once just after local midnight. A failed or partial warm-up is retried at most every 5 minutes (`_created_since(session, "page_warm", now − 5 min)`). The handler builds the app with `create_app()`. It sends each target (§3.7.5) through `starlette.testclient.TestClient` (in process, with no socket and no network), carrying a viewer cookie minted with `issue_session(settings, "viewer")`. Each request goes through the same middleware, route and serializer as a visitor's, so it stores exactly the row the visitor will hit. The job has a 180 s budget. Before each target it checks the elapsed time, and it stops when over budget, logging how many targets it skipped. Running out of budget completes the job and does not fail it. A target that raises is logged by template and skipped. Only the viewer role is warmed. *Rationale:*
+    - The rebuild and recompute handlers are not edited. Results-upload changes are parked (§6), and the scheduler already runs on every worker poll (C6). Comparing two `app_state` values there catches every `data_version` change, including future ones, and it can only see a committed bump.
+    - Calling the real ASGI app in process is clearly simpler than calling route functions directly. Re-creating FastAPI's validation and JSON rendering by hand could produce a body one byte different from a visitor's, and the key would then serve those bytes.
+    - A queued job keeps the single-worker invariant (C6: one worker, one job at a time), so a warm-up never overlaps a rebuild. The dedupe key folds a burst of uploads into one warm-up.
+    - Admins are one or two people, so warming their role would double the work for little gain.
+
+36. **`page_cache` is a kill switch: an infrastructure key that defaults to on.** It is registered in `FEATURES` with `kind="infrastructure"` and `default_on=True`, so a missing row means **on**. That is unlike D1's feature keys, where a missing row means off, and `FEATURES_DEFAULT_ON` is not consulted for it. It has no admin preview: off means off for every role. `GET /api/features` does not list it (D3), and the admin Features page shows it in its own "Infrastructure" group.
+    - Turning it **off** deletes every `response_cache` row in the same transaction as the switch upsert and the audit row. From then on the middleware neither reads nor writes the table, and the scheduler enqueues no `page_warm`.
+    - Turning it **on** also deletes every row (a request that read "on" just before the switch-off may have stored one afterwards) and clears `page_cache.last_warm`, so the next worker poll warms the pages from empty.
+    - A deployment setting, `PAGE_CACHE_ENABLED` (default `true`), is a hard override for operators: `false` bypasses the cache whatever the switch says. The pytest settings set it to `false`, and only the page-cache tests turn it on.
+
+    *Rationale:* the cache changes no number, so it needs no launch gate, and it ships on. A wrong cached body would show wrong numbers to everyone, though, so the owner needs a one-click way out with no redeploy, and that way out must also throw away whatever is stored. Reading the switch costs nothing extra, because the ETag middleware already reads `app_state` once per request (D31). Pytest defaults to off because many existing integration tests write fixture rows without bumping `data_version`, and would otherwise read each other's stored bodies across tests.
+
+37. **Node placement is a separate operator decision, outside this plan.** The production timings (§3.7) were measured with the API on a 4-core arm64 Pi and Postgres on another node. Whether to constrain `api` and `worker` to x86 nodes is for the owner to decide separately. Plan 19 neither depends on that decision nor changes the placement in `compose.swarm.yaml`, and the images stay multi-arch (R10). *Rationale:* the cache must pay off on the slowest node the stack may run on. Placement is an operator change with its own rollback.
 
 ---
 
@@ -661,6 +700,183 @@ All round types · sundayclays.claysmasher.com
 - A custom window across years is fine.
 - A window of one Sunday: a streak of 1 is hidden.
 
+### 3.7 Page cache and warm-up (`page_cache`, infrastructure)
+
+**Problem.** Times on production on 2026-10-02 (API on a 4-core arm64 Pi, Postgres on another node), first request and repeat request:
+
+| Route | First | Repeat | Note |
+|---|---|---|---|
+| `/api/insights/home` | 4.5 s | 3.1 s | Home's hero and feed |
+| `/api/stations` | 1.5 s | 1.2 s | |
+| `/api/club/trends` | 0.9 s | 0.9 s | |
+| `/api/insights/shooters/{id}` | 1.2 s | 0.6 s | |
+| `/api/leaderboards` | 0.6 s | 0.1 s | the loaders are already memoized (C7) |
+
+The data behind these answers changes only when an import is committed or rolled back, a rule changes, or a recompute runs, and each of those bumps `data_version`. A few answers also depend on the local date: `/api/club/trends`, `/api/shooters/{id}` and `/api/on-this-day` resolve "today" with `resolve_as_of`, and the station routes use `today_local` for reset dates. So for a given `(data_version, local date)` each URL has exactly one answer. The page cache stores that answer once (D28) and has the worker store the busiest ones before anyone asks (D35). It changes no number, no copy and no route.
+
+#### 3.7.1 Data
+
+Migration `00NN_response_cache` (next free number, D5), expand-only:
+
+```sql
+CREATE UNLOGGED TABLE response_cache (
+  key          text        PRIMARY KEY,          -- D29: v1|app_version|data_version|local_date|role|GET path?sorted query
+  data_version integer     NOT NULL,
+  local_date   date        NOT NULL,
+  app_version  text        NOT NULL,
+  role         text        NOT NULL CHECK (role IN ('viewer', 'admin')),
+  route        text        NOT NULL,             -- the allowlisted template, e.g. /api/shooters/{id}
+  body         bytea       NOT NULL CHECK (octet_length(body) <= 2097152),
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+```
+
+- Not in `LIVE_TABLES` (a rebuild keeps it). The downgrade drops it. The previous release never reads it, so an app rollback is safe at any time.
+- `app_state` gains one key, `page_cache.last_warm` → `{"data_version": 412, "local_date": "2026-10-02", "finished_at": "<db now()>", "warmed": 27, "skipped": 0, "failed": 0, "seconds": 41.2}`. A missing row means "never warmed". `feature.page_cache` follows D1's shape.
+- New settings in `config.py`: `page_cache_enabled: bool = True` (D36), plus module constants in `api/page_cache.py`: `MAX_BODY_BYTES = 2 * 1024 * 1024`, `MAX_ROWS = 2000`, `PRUNE_TO_ROWS = 1500`, `MAX_KEY_URL = 2048`, `FOLLOW_TIMEOUT_S = 30.0`; and in `jobs/page_warm.py`: `WARM_BUDGET_S = 180.0`, `RETRY_AFTER = timedelta(minutes=5)`.
+
+#### 3.7.2 What is cached (`api/page_cache.py` `ALLOWLIST`)
+
+Exact GET route templates (D30). Every one needs a viewer, reads only its path and query parameters, the session and settings, and has no `feature_gate`.
+
+| Area | Templates |
+|---|---|
+| Insights | `/api/insights/home`, `/api/insights/club`, `/api/insights/leaderboards`, `/api/insights/records`, `/api/insights/stations`, `/api/insights/sundays/{date}`, `/api/insights/shooters/{id}` |
+| Sundays | `/api/events`, `/api/events/{date}`, `/api/events/{date}/achievements` |
+| Leaderboards and race | `/api/leaderboards`, `/api/leaderboards/movers`, `/api/leaderboards/history` |
+| Stations | `/api/stations`, `/api/stations/{label}`, `/api/shooters/{id}/stations` |
+| Club | `/api/club/summary`, `/api/club/attendance`, `/api/club/cohorts`, `/api/club/distribution`, `/api/club/first-rounds`, `/api/club/regulars`, `/api/club/conversion`, `/api/club/parity`, `/api/club/trends` |
+| Records and trophies | `/api/records`, `/api/achievements`, `/api/achievements/{code}`, `/api/shooters/{id}/achievements` |
+| Shooters | `/api/shooters`, `/api/shooters/{id}`, `/api/shooters/{id}/rounds`, `/api/shooters/{id}/special`, `/api/shooters/{id}/rating`, `/api/shooters/{id}/splits`, `/api/shooters/{id}/insights` |
+| Year in review | `/api/yir/{year}`, `/api/yir/{year}/shooters/{id}`, `/api/on-this-day` |
+
+**Never cached.** Every path not listed above. These are named so that no one adds them later without a decision:
+
+| Route | Why not |
+|---|---|
+| `/api/bumps` (GET with `device_id`, POST, DELETE) | Per-device, and counts change without a `data_version` bump (Plan 15). |
+| `/api/pageviews` | Per-device POST beacon (Plan 16). |
+| `/api/auth/*` | Per-session; `/api/auth/me` answers the caller's role. |
+| `/api/admin/*` | Admin-only, `no-store` (C8), and often mid-edit. |
+| `/api/features` | Answers differ by role (D3), and switches change without a bump. |
+| `/api/club/milestones`, `/api/shooters/{id}/summary`, and every other route with a `feature_gate` | The answer depends on a launch switch that flips without a `data_version` bump. A viewer's 200 stored while the switch was on would still be served after a switch-off, at the same key. **Summary card decision:** its body is deterministic for `(shooter, from, to, data_version)` and role-independent, but it is gated, and its key space (every shooter × every window, custom dates included) gives almost no reuse. So it stays out. A gated route may join the allowlist once its switch is retired and the gate removed. |
+| `/api/og/*` | Public, and not JSON. It has its own memo and edge caching (D8). |
+| `/api/predictions/next`, `/api/weather/*` | They read the forecast or hourly weather rows, which `forecast_refresh` and `weather_sync` write without always bumping `data_version`. |
+| `/api/meta`, `/api/health` | Cheap. `/api/meta` is how the SPA notices a new `data_version`, so it always answers live. |
+| `POST /api/explore` | Not a GET. |
+| Plan 20 club events (registration and per-person rows) | Per-person data. Plan 20 adds nothing to the allowlist. |
+
+Any 4xx or 5xx, any HEAD, and any request whose query has a parameter the route does not declare are never stored (D29, D32).
+
+#### 3.7.3 Request path
+
+```text
+CacheHeadersMiddleware (outer, existing)
+  ├─ eligible GET with a session cookie: one query reads data_version and feature.page_cache  → request.state.tag_inputs
+  └─ PageCacheMiddleware (inner, new)
+       ├─ not allowlisted, HEAD, switch off, PAGE_CACHE_ENABLED=false, no valid role,
+       │  undeclared query parameter, URL > 2,048 chars          → call_next (no header for non-allowlisted; X-Page-Cache: bypass otherwise)
+       ├─ SELECT body FROM response_cache WHERE key = :key      → hit: Response(body, 200, media_type="application/json"), X-Page-Cache: hit
+       └─ miss: single-flight per key (D33) → call_next → buffer body
+                → storable (D32)? INSERT … ON CONFLICT DO NOTHING (own short session) → same bytes, X-Page-Cache: miss
+  └─ outer: Cache-Control: private, no-cache; ETag = compute_etag(...); 304 when If-None-Match matches (unchanged)
+```
+
+- The role comes from `auth.sessions.load_session(settings, cookie)`, the same check `current_role` makes. An invalid or expired cookie gives no role, so the request bypasses the cache and the route answers 401 as today.
+- A hit never runs the route. That is safe because the pin test (§5.1) proves an allowlisted route has no dependency other than `require_viewer`, the session, settings and its own parameters.
+- The key's `data_version` is read before the route runs, and the route's statements start after that read (read committed). So a stored body is never older than its key. It can be newer, by the length of one request, exactly as with the ETag today (C8: "the tag can only be older than the body").
+- Cache reads and writes use their own sessions from `get_session` (honouring test overrides, as `_tag_inputs` does), never the route's session.
+- `X-Page-Cache` (`hit` | `miss` | `bypass`) is sent on allowlisted routes only. It carries no data and lets the owner, the runbook and the tests see what happened.
+
+#### 3.7.4 Invalidation and pruning
+
+As D34. No code deletes a row because data changed. Every row of an older `data_version` or another local date simply stops matching any request, and `page_warm` deletes it on its next run (after every bump and once a day). The 2,000-row insert cap and the prune to 1,500 by `created_at` bound the table at 4 GB in the worst case (2,000 × 2 MiB). In practice, allowlisted bodies are a few kB to a few hundred kB, so the table holds tens of MB. `GET /api/admin/page-cache` reports the live size (§3.7.6).
+
+#### 3.7.5 Warm-up (`jobs/page_warm.py`)
+
+**When.** `schedule_due` gains one check, run on every worker poll:
+- `page_cache` is on (the switch and `PAGE_CACHE_ENABLED`); and
+- `page_cache.last_warm`'s `(data_version, local_date)` differs from the current `(get_data_version, today_local)`; and
+- no `page_warm` job was created in the last 5 minutes.
+
+Then it calls `enqueue(session, "page_warm", dedupe_key="page_warm")`. The check sees only committed values, so a warm-up always follows the commit of the rebuild or recompute that bumped the version. It also fires within one poll (2 s) of local midnight. `handle_rebuild` and `handle_recompute` are not edited (D35).
+
+**What it does.**
+1. **Prune** (D34).
+2. **Resolve the targets** with `warm_targets(session, settings) -> list[str]`. The anchor is the latest scored Sunday (`_filters.LAST_SCORE_DATE_SQL`), exactly as the SPA anchors windows on `/api/meta`'s `last_score_date`. The default header window is 8W: `since = anchor − 55 days`, `as_of = anchor` (`windowRange('8w')`, `EIGHT_WEEK_DAYS = 56`). The race default is rolling 12 months: `from = anchor − 12 months`, `to = anchor`. The round-type filter is empty, so no `round_type` parameter is sent. Every other parameter is the default each page sends (period, metric, `top`, `era`, `limit`, `by`).
+3. **Request each target in order** through `TestClient(create_app(), base_url="http://page-warm.internal")` with the minted viewer cookie, checking the 180 s budget before each one. The response body is discarded; the middleware has stored it.
+4. **Write `page_cache.last_warm`** with the counts and duration, and log one line: `page_warm: 27 warmed, 0 skipped, 0 failed in 41.2 s`. No paths are logged, only counts.
+
+**Targets, in order of cost × visits** (about 27 requests):
+
+| # | Page | Requests (default window) |
+|---|---|---|
+| 1 | Home | `/api/insights/home`; `/api/events/{latest}` (latest-Sunday card); `/api/events` (turnout chart) |
+| 2 | Latest Sunday | `/api/insights/sundays/{latest}`; `/api/events/{latest}/achievements` |
+| 3 | Sundays list | `/api/events` with the Sundays page's default query (its year view of the latest year) |
+| 4 | Stations | `/api/stations` (default era, 8W); `/api/insights/stations` |
+| 5 | Club | `/api/club/trends`; `/api/club/summary` (8W) and `/api/club/summary` (no window, status by year); `/api/club/first-rounds` (8W); `/api/club/attendance`; `/api/club/cohorts`; `/api/club/distribution?by=year`; `/api/club/regulars`; `/api/club/conversion`; `/api/club/parity?by=year`; `/api/insights/club` |
+| 6 | Leaderboards | `/api/leaderboards` (default period and metric, 8W); `/api/leaderboards/movers` (8W, default `top`); `/api/insights/leaderboards` |
+| 7 | Race | `/api/leaderboards/history` (default period, metric and `top`, rolling 12 months) |
+| 8 | Records | `/api/records` (8W, default `limit`); `/api/insights/records` |
+| 9 | Trophies | `/api/achievements` |
+
+- `{latest}` is the latest scored Sunday.
+- Per-shooter pages are not warmed: there are hundreds of them, and each is cached on its first visit.
+- The exact query strings live in one place, `warm_targets`. The e2e pin test (§5.3) proves they equal what the SPA really sends on each default page, so a frontend change that alters a default query fails CI instead of silently warming the wrong key.
+
+**Limits.**
+- Single worker, one job at a time (C6), so a warm-up never runs during a rebuild.
+- A target that raises is counted in `failed`, logged by template, and skipped.
+- Running out of the 180 s budget counts the rest as `skipped`.
+- The job completes in every case. The 5-minute retry gap stops a broken target from looping.
+- The worker's own memo (`cached_by_data_version`) warms as a side effect. It is bounded (256 entries per process) and lives only in the worker process.
+
+#### 3.7.6 Kill switch and admin view
+
+- `FEATURES` gains `Feature(key="page_cache", label="Page cache", description=…, kind="infrastructure", default_on=True)` (D36). `Feature.kind` defaults to `"feature"` and `default_on` to `False`, so the six existing entries are unchanged.
+- `FeatureSwitchOut` gains `kind: Literal["feature", "infrastructure"]`.
+- `set_switch` for `page_cache` runs `DELETE FROM response_cache` in the same transaction, on and off alike, and on "on" also deletes `page_cache.last_warm`.
+- New admin route `GET /api/admin/page-cache` (module `admin_page_cache.py`, admin by prefix, `no-store`) → `PageCacheStatusOut`:
+
+```text
+enabled: bool                 # switch and PAGE_CACHE_ENABLED both on
+forced_off: bool              # PAGE_CACHE_ENABLED is false
+rows: int
+bytes: int                    # sum(octet_length(body))
+last_warm: {data_version, local_date, finished_at, warmed, skipped, failed, seconds} | None
+current: {data_version, local_date}
+targets: list[str]            # warm_targets(), path?sorted query; used by the e2e pin test
+```
+
+**UI copy (admin Features page, "Infrastructure" group, below the six features).**
+- Group heading "Infrastructure". Intro: "Behind-the-scenes settings. They change how fast pages open, never what they show."
+- Row label **Page cache**. Description: "Keeps each page's finished answer ready, so pages open fast. Refreshed after every upload and each midnight. Turn off only if a page looks wrong. Turning it off clears everything stored." The existing `Toggle` (accessible name "Page cache") and "Changed …" line as for the other rows. No "Admin preview" badge.
+- Status line under the row, from `GET /api/admin/page-cache`: "1,240 pages stored · 38 MB · last refreshed Oct 2, 2026 (27 pages in 41 s)". If `last_warm` is from an older `data_version` or date: "Refreshing…". If never warmed: "Not refreshed yet". If `forced_off`: "Off for this deployment (PAGE_CACHE_ENABLED=false)", and the toggle is disabled.
+- The copy passes the R1 banned-word list (the backend `test_features_copy.py` covers the label and description; `features/admin-features/copy.test.ts` covers the group intro and status lines).
+
+#### 3.7.7 Edge cases
+
+- **An upload while a visitor is mid-request:** the request keyed on the old `data_version` may store its row after the bump. No later request uses that key, and the next prune deletes the row.
+- **Local midnight:** from 00:00 every key changes. Requests compute (and store) until the warm-up, queued within one poll, has run. Pages whose answer does not depend on the date simply recompute the same body once.
+- **Rolling deploy:** the old and new releases use different `app_version` keys and never share bodies. The new release's rows fill on first visit. `page_warm` (worker, new release) warms the new keys only.
+- **The worker is down:** nothing is warmed, but every allowlisted page is still stored on its first visit. Nothing is ever served stale, because staleness is impossible by key.
+- **The table is full** (2,000 rows): pages are served uncached until the next prune. No error.
+- **Postgres slow or failing on the cache query:** the request is answered uncached and one warning names the template (D32). The route would need the same database anyway.
+- **Admin visits:** the admin role is keyed separately, so an admin's first visit to a page is a miss. A viewer body is never served to an admin, and an admin body never to a viewer.
+- **304s:** unchanged. A browser holding a current ETag gets 304 whether the body came from the cache or not.
+- **A switch flip for a gated feature:** no effect on the cache, since gated routes are never cached.
+- **Kill switch flipped off mid-request:** a request that read "on" may store one row after the purge. It is never read while the switch is off, and turning the switch on deletes every row again (D36).
+- **An expired session cookie:** bypass, then 401 from the route, as today.
+- **Fixture and test stacks:** pytest runs with `PAGE_CACHE_ENABLED=false` except in the page-cache tests. The e2e stack (`compose.test.yaml`) leaves it on (the default), so the read-only e2e projects exercise hits. The `admin-mutations` project's rebuilds bump `data_version`, so they never read a stale body.
+
+#### 3.7.8 Deploy runbook additions (`deploy/README.md`, new "Page cache" section)
+
+1. **After the deploy that ships it:** open `/admin/features` and check "Page cache" is on and the status line shows a refresh with `failed 0`. In the browser's network panel, a second load of Home shows `x-page-cache: hit` on `/api/insights/home`, and that request takes well under a second.
+2. **If a page looks wrong after an upload:** turn "Page cache" off on `/admin/features`. This clears everything stored, and every page then computes live. Turn it back on once the cause is understood; the next worker poll warms the pages again. If the admin page itself is unavailable, set `PAGE_CACHE_ENABLED=false` on the `api` service and redeploy the stack.
+3. **Backups:** `response_cache` is disposable. A restore needs no step for it, and `pg_dump --exclude-table-data=response_cache` is safe if a smaller dump is wanted.
+4. **Separate operator item, not part of this plan's code (D37):** the owner is deciding separately whether to constrain the `api` and `worker` services to x86 nodes (a `node.platform.arch == x86_64` placement constraint in `compose.swarm.yaml`). Plan 19 does not make that change, and the page cache must meet its targets on arm64 as well.
+
 ---
 
 ## 4. Privacy
@@ -669,6 +885,7 @@ All round types · sundayclays.claysmasher.com
 - **No access log.** uvicorn keeps `--no-access-log`, and the Caddyfile still has no `log` directive. The `og` routes log nothing per request: not the User-Agent, not the path. A corrupt switch logs the key only.
 - **What is public without a password:** the generic preview, and for `/events/<date>` (switch on) the date, the shooter count, the round type and a special label. That is exactly what the owner approved. There are no names, no scores, no profile facts, and profile links are generic. The test in §5.2 enforces it.
 - **The service worker never caches `/api` or `/l/`.** Only the app shell (HTML, JS, CSS, icons) is on the device, and no personal data is cached by Plan 19.
+- **The page cache stores only what a viewer already sees, and nothing about the visitor.** `response_cache` rows are the JSON bodies of allowlisted viewer routes. These are the same names and scores the password-gated pages show, and they are kept in the same database as the data they come from. A row holds no IP, no `device_id`, no cookie, no header and no user agent; the only thing it records about the request is the role (`viewer` or `admin`). Per-device and per-person routes are never stored (§3.7.2). The cache logs counts and route templates only, never a concrete path or query (D32, §3.7.5), so it adds no access log. The `X-Page-Cache` header says only `hit`, `miss` or `bypass`.
 - **Images are client-side.** The summary card and the recap PNG are rendered in the browser through `lib/share` and never uploaded.
 - **Browser storage keys** (this device only): `sc.tour.v1`, `sc.install.dismissed` (localStorage), and `sc.pwa.launched` (sessionStorage).
 - **About page, "Your privacy" card**, gains one sentence: "Links shared in chat apps show only the club name, and for a Sunday its date, how many shot and the round type. Never names or scores." The pronoun and banned-word lints run on it.
@@ -725,6 +942,15 @@ Strict TDD with RED-then-GREEN evidence per step (memory: TDD evidence required)
   - 409 when not held;
   - milestones only when the switch is on.
 - `etag.py`: `/api/features` and `/api/og/*` are untagged; `cache_control_for('/api/og/…')` is `None`.
+- Page cache, pure parts (`api/page_cache.py`):
+  - the key: the same request gives the same key; each input (`app_version`, `data_version`, `local_date`, `role`, path, any query value) changes it; query order does not;
+  - an undeclared query parameter and a URL over 2,048 characters give `bypass`;
+  - `storable()`: 200 + `application/json` + no `Set-Cookie` + ≤ 2 MiB is true; each of 201, 204, 304, 400, 401, 403, 404, 409, 422, 500, `text/html`, a `Set-Cookie`, and 2 MiB + 1 byte is false;
+  - **allowlist pin tests**, walking `create_app().routes`: every `ALLOWLIST` template names exactly one GET route; no allowlisted route has a `feature_gate` dependency, comes from a public or `admin_*` module, or has a `Request`, `Response`, cookie, header or `device_id` parameter, or any dependency besides `require_viewer`, the session, settings and its own path and query parameters; `/api/bumps`, `/api/pageviews`, `/api/features`, `/api/meta`, `/api/health`, `/api/predictions/next`, `/api/weather/*`, `/api/og/*`, `/api/club/milestones` and `/api/shooters/{id}/summary` are not in it;
+  - `create_app` raises at startup when a template matches no route (a test passes a bogus template).
+- `domain/features.py` for `page_cache`: a missing row is **on** (whatever `FEATURES_DEFAULT_ON` says); it is absent from `GET /api/features` for both roles; `set_switch('page_cache', …)` deletes every `response_cache` row in the same transaction, on and off alike, and "on" also deletes `page_cache.last_warm`.
+- `jobs/scheduler.py`: `page_warm` is enqueued when `last_warm` is missing, when its `data_version` differs, and when its `local_date` differs (a `now` one minute after local midnight); it is not enqueued when both match, when the switch is off, when `PAGE_CACHE_ENABLED` is false, or when a `page_warm` job was created under 5 minutes ago; dedupe holds a single queued job.
+- `warm_targets()`: on a hand-built world with latest scored Sunday 2026-09-27, the 8W targets carry `since=2026-08-03&as_of=2026-09-27`, and the race target carries `from=2025-09-27&to=2026-09-27`; Home targets come first; every target's template is in `ALLOWLIST`.
 
 **Frontend (Vitest + Testing Library + MSW)**
 - `useFeature`: the visible/preview matrix (viewer/admin × on/off), pending → not visible and not settled, a missing key → off, and the query is not enabled without a session (no request on `/login`).
@@ -776,6 +1002,20 @@ Strict TDD with RED-then-GREEN evidence per step (memory: TDD evidence required)
 - `GET /api/club/milestones` in `fx_special_client`: the special Sunday adds to `sundays_held` and `shooters` but not to `clays_thrown`. Against `fx_engine` it answers exactly as it does without the special Sunday.
 - `GET /api/shooters/{id}/summary`: `fx_special_client` `Kim, Pat` (special-only) and `Hadley, Ike` (extended streak) cases. 422 when `to` is missing; `from` omitted is an open start; 400 `invalid_range`; 404 `shooter_not_found`.
 - `GET /api/admin/recap/{date}`: the fixture's latest Sunday 2026-09-27 matches `GET /api/events/2026-09-27` for podium names and PBs, and the `fx_special_client` 2026-09-20 special variant (label "3-Bird Shoot") has `three_bird_new` equal to the `three_bird_shoot` awards dated that day and `three_bird_holders` equal to those dated on or before it. A viewer gets 403.
+- **Page cache** (`tests/integration/api/test_page_cache.py`, `PAGE_CACHE_ENABLED=true`, the table truncated per test):
+  - **Byte-identical, every allowlisted route.** A `SAMPLE_URLS` table holds at least one real URL per `ALLOWLIST` template, on `fx_viewer_client` and `fx_special_viewer_client`; a meta-test fails when a template has no sample. For each URL: the uncached answer (cache off) A, the first cached answer (`X-Page-Cache: miss`) B, and the second (`hit`) C have equal status, equal body bytes, and equal headers apart from `X-Page-Cache` (`content-type`, `content-length`, `cache-control`, `etag`). `If-None-Match` with that ETag gives 304 on a hit, as on a miss.
+  - **A `data_version` bump serves fresh data.** Store `/api/insights/home` and `/api/shooters/{id}`, change a fixture row (a rename of `Hadley, Ike` to `Hadley, Ivo`) and call `bump_data_version` and commit: the next answer is a `miss`, equals the uncached answer, and contains the new name; the old row is never returned (a sentinel body written under the old key is not served).
+  - **The local date rolling over serves fresh data.** With `_filters.today_local` monkeypatched to 2026-10-02 then 2026-10-03, `/api/club/trends` (which resolves `as_of` to today), `/api/on-this-day` and `/api/shooters/{id}` are a `miss` on the new date, their body equals the uncached answer for that date, and the stored rows carry the two dates.
+  - **Role separation.** A viewer `miss` then an admin request to the same URL is a `miss` and stores a second row with `role = 'admin'`. A sentinel body written under the viewer key is never served to the admin, and a sentinel under the admin key is never served to the viewer.
+  - **Excluded routes are never stored.** With the cache on, request every route in the §3.7.2 "never cached" table (with a `device_id` for bumps; `/api/club/milestones` and `/api/shooters/{id}/summary` with their switch on and off, as viewer and admin), a 404 (`/api/events/1999-01-03`), a 422 (`/api/shooters/abc`), a 400 (`invalid_range`), an allowlisted URL with `?_=1`, and a HEAD to an allowlisted URL: `response_cache` stays empty and none of them carries `X-Page-Cache: hit`.
+  - **Stampede.** Ten concurrent first requests for `/api/insights/home` (`httpx.AsyncClient` over `ASGITransport`, `asyncio.gather`), with the route's selection function wrapped by a call counter: it runs once, all ten bodies are identical, one row is stored. Two app instances (two `create_app()`, standing in for two replicas) hit together: at most two computations, exactly one row, identical bodies. A leader whose answer is a 404 makes each follower compute and get its own 404, and nothing is stored.
+  - **Fail-open.** With the cache's session factory made to raise, every allowlisted URL still answers 200 with the uncached body and `bypass`; exactly one warning per request, naming the template and no path or query (`caplog`).
+  - **Caps.** With `MAX_ROWS` patched to 2 and two rows stored, a third distinct URL answers correctly and is not stored. `page_warm` prunes old-version rows and then the oldest beyond `PRUNE_TO_ROWS`.
+  - **Kill switch.** `PUT /api/admin/features/page_cache {enabled:false}` empties the table and writes one `feature_switch` audit row; later requests are `bypass` and store nothing. `{enabled:true}` empties the table again and clears `last_warm`. `PAGE_CACHE_ENABLED=false` gives `bypass` even with the switch on.
+  - **Warm-up.** Run the `page_warm` handler on `fx_engine`: it stores one row per `warm_targets()` entry, and a viewer GET of each target is then a `hit` whose body equals the uncached answer; `last_warm` holds the current `(data_version, local_date)` and the counts. With the budget patched to 0, it warms nothing, records `skipped = len(targets)`, and the job completes. A target that raises is counted in `failed` and the rest still warm. With the switch off, the scheduler enqueues nothing.
+  - **Single-worker invariant.** A `rebuild` job followed by worker polls: `page_warm` runs only after the rebuild's commit (its `last_warm.data_version` equals the post-rebuild value), and never while another job is `running`.
+  - **Performance, loose ceilings only** (memory: perf tests are loose ceilings that catch gross regressions, never runner-dependent tight bounds): on `fx_engine`, the `page_warm` job finishes in under 120 s, and a `hit` on each warm target answers in under 2 s. No assert compares hit and miss times.
+- `GET /api/admin/page-cache`: an admin gets the status shape, `no-store`, no ETag, and `targets` equal to `warm_targets()`; a viewer gets 403.
 
 ### 5.3 End to end (Playwright, `desktop` 1440×900 and `mobile` 390×844 projects)
 
@@ -833,6 +1073,11 @@ Every spec uses the shared `test` from `e2e/fixtures.ts` (CSP violations and pag
   - the Plain text tab starts "Sunday Clays · Sunday, September 27, 2026" and contains "Podium";
   - Copy text puts it on the clipboard (`context.grantPermissions(['clipboard-read','clipboard-write'])`);
   - Download image downloads `sunday-clays-recap-2026-09-27.png`.
+- `page-cache.spec.ts` (read-only projects; the e2e stack runs with the cache on):
+  - **Warm targets match the SPA (pin test).** Fetch `targets` from `GET /api/admin/page-cache` (admin request). Then, as a viewer at default URL state (no `w`, no filters), visit `/`, `/events`, `/events/<latest>`, `/stations`, `/club`, `/leaderboards`, `/race`, `/records` and `/achievements`, and record every GET to an allowlisted route (`page.on('request')`, path plus sorted query). Every recorded URL whose template is listed in §3.7.5 for that page is in `targets`;
+  - a second load of `/` shows `x-page-cache: hit` on `/api/insights/home`;
+  - no response under `/api/bumps`, `/api/auth/` or `/api/features` carries an `x-page-cache` header.
+- In `features.admin-mutations.spec.ts`, one more test: turn `page_cache` off as admin, and a viewer load of `/` shows `x-page-cache: bypass` on `/api/insights/home` and the same Home content; turn it back on in `finally`. The Features page lists "Page cache" under "Infrastructure" with no "Admin preview" badge.
 - `features.admin-mutations.spec.ts` (the existing `admin-mutations` project, run at both sizes with `page.setViewportSize`):
   - turn `summary_card` off; a viewer context sees no "Summary card" section, and `GET /api/shooters/3/summary?from=…&to=…` returns 404 with `{"detail":"Not Found"}`;
   - the admin context sees the card with "Admin preview";
@@ -850,7 +1095,7 @@ Every spec uses the shared `test` from `e2e/fixtures.ts` (CSP violations and pag
 
 ## 6. Out of scope
 
-- **Results-upload changes of any kind** (parked by the owner): no change to imports, previews, staging, the special-shoot workbook or the rebuild.
+- **Results-upload changes of any kind** (parked by the owner): no change to imports, previews, staging, the special-shoot workbook or the rebuild. The page cache follows uploads only by watching `data_version` from the scheduler (D35); the rebuild and recompute handlers are not edited.
 - Push notifications, offline data, background sync, or caching any `/api` response in the service worker.
 - Emailing the recap from the app (no SMTP, no mailing list). The admin pastes it.
 - Personal or named facts in link previews, and per-shooter OG images.
@@ -859,7 +1104,9 @@ Every spec uses the shared `test` from `e2e/fixtures.ts` (CSP violations and pag
 - Turning Cloudflare Access on. The runbook only documents the bypass if it ever is.
 - A per-viewer or percentage rollout of switches. Switches are on or off for everyone, with admin preview.
 - New insight kinds, trophy kinds, or changes to any existing number, chart, page or Home card (Home only gains elements).
-- A database migration (`0009` is left for Plan 20).
+- Any database migration other than `00NN_response_cache` (D5, D28). `0009` is still meant for Plan 20; whichever of the two merges second renumbers.
+- Caching per-device, per-person, admin, gated or forecast-dependent responses (§3.7.2), caching at the Cloudflare edge or in the service worker, and warming per-shooter pages.
+- Moving `api` or `worker` to particular nodes (D37, an operator decision).
 
 ## 7. Delivery outline (for the plan author)
 
@@ -869,6 +1116,9 @@ Every spec uses the shared `test` from `e2e/fixtures.ts` (CSP violations and pag
 | 2 | T2 switches frontend (`lib/features.ts`, `FeatureGate`, `AdminPreviewBadge`, `NotFoundView`, `registry.ts` `feature`, nav filtering, `admin-features` page) ∥ T3 link previews backend (`og/` package, Pillow, `app.py` public module, logo, icon generator) |
 | 3 | T4 Caddy (`route` block, `/l/` guard, `Vary`), `deploy/caddy/test_crawler_ua.sh` (`caddy validate` + UA table), runbook (incl. step 4 cache note), the CSP and PWA headers, `link-previews.spec.ts` ∥ T5 tour + glossary ∥ T6 club milestones (API + Home + Club) ∥ T7 summary card (API + profile, `lib/share` download) |
 | 4 | T8 weekly recap (API + admin page) ∥ T9 PWA (manifest, `pwaShell()`, install tip with launch redirect, `lib/chunkReload.ts`, `playwright.config.ts` `serviceWorkers: 'block'` per D24) |
-| 5 | T10 `features.admin-mutations.spec.ts` (incl. the all-switches-off viewer run, D25) + About privacy sentence + owner preview |
+| 5 | T10 `features.admin-mutations.spec.ts` (incl. the all-switches-off viewer run, D25) + About privacy sentence + owner preview ∥ T11 page cache (§3.7: migration `00NN_response_cache`, `api/page_cache.py` + one `add_middleware` line in `app.py`, `etag.py` `_tag_inputs` switch read, `config.py` `page_cache_enabled`, `domain/features.py` `kind`/`default_on` + `page_cache` entry, `admin_page_cache.py`, the admin Features "Infrastructure" group, pytest default off) |
+| 6 | T12 warm-up (`jobs/page_warm.py`, `scheduler.py` check, `warm_targets`, `page-cache.spec.ts` incl. the SPA pin test, the `admin-mutations` page-cache test, runbook "Page cache" section incl. the separate x86 placement note, D37) |
 
-Every new user-facing feature merges switched **off** in production (D4). The owner flips each one on from `/admin/features` after preview.
+Every new user-facing feature merges switched **off** in production (D4). The owner flips each one on from `/admin/features` after preview. The page cache is the exception: it merges **on** (D36), because it changes no number, and the owner checks it with runbook step 1 (§3.7.8).
+
+T11 runs in wave 5 because it edits `app.py` (after T3's `PUBLIC_ROUTE_MODULES` change), `etag.py` and `domain/features.py` (after T1), and its pin tests must see the gated routes that T6 and T7 add. T12 needs T11's middleware and admin status route. The x86 placement question (D37) is an operator item outside both tasks.
