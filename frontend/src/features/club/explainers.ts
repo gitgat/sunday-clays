@@ -13,9 +13,10 @@ export const explainers: Record<string, Explainer> = {
     computed: [
       'We add up every Sunday on record since Jan 5, 2020, in date order, and note the Sunday each total first reached a round number.',
       'Special shoots count as a Sunday held and add their shooters, but not their clays or rounds.',
+      'The round-type filter does not apply.',
     ],
     scope: 'all-time',
-    terms: ['held-sunday', 'special-shoot', 'clays-thrown'],
+    terms: ['held-sunday', 'special-shoot', 'clays-thrown', 'round-types'],
   },
   'club-milestones': {
     what: 'Every round number the club has passed, with the Sunday it was passed on.',
@@ -23,9 +24,10 @@ export const explainers: Record<string, Explainer> = {
       'Totals add up every Sunday on record, in date order.',
       'A milestone is dated at the first Sunday its total reached the round number.',
       'Special shoots count as a Sunday held and add their shooters, but not their clays or rounds.',
+      'The round-type filter does not apply.',
     ],
     scope: 'all-time',
-    terms: ['held-sunday', 'special-shoot', 'clays-thrown'],
+    terms: ['held-sunday', 'special-shoot', 'clays-thrown', 'round-types'],
   },
   ctot: {
     what: "How the club's running totals have grown, Sunday by Sunday, with each round number marked.",
@@ -37,9 +39,10 @@ export const explainers: Record<string, Explainer> = {
       'Clays thrown: 50 for every regular round. Rounds: regular rounds only.',
       'Sundays held and Shooters include special shoots.',
       'Totals start at the first Sunday on record, Jan 5, 2020.',
+      'The round-type filter does not apply.',
     ],
     scope: 'windowed',
-    terms: ['clays-thrown', 'special-shoot', 'held-sunday'],
+    terms: ['clays-thrown', 'special-shoot', 'held-sunday', 'round-types'],
   },
   // Charts
   att: {

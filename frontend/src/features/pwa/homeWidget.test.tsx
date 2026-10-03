@@ -60,6 +60,38 @@ describe('install tip and launch redirect', () => {
     expect(screen.queryByRole('heading', { name: /home screen/ })).not.toBeInTheDocument();
   });
 
+  it('moves focus to the Home heading when the tip is dismissed', async () => {
+    media({ '(pointer: coarse)': true });
+    const { user } = renderWithProviders(
+      <>
+        <h1 id="home-title" tabIndex={-1}>
+          Home
+        </h1>
+        <Component meId={null} />
+      </>,
+    );
+    fireInstallPrompt();
+    await user.click(await screen.findByRole('button', { name: 'Not now' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toHaveFocus();
+  });
+
+  it('moves focus to the Home heading after Got it on iPhone Safari', async () => {
+    media({ '(pointer: coarse)': true });
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    );
+    const { user } = renderWithProviders(
+      <>
+        <h1 id="home-title" tabIndex={-1}>
+          Home
+        </h1>
+        <Component meId={null} />
+      </>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Got it' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toHaveFocus();
+  });
+
   it('Install calls prompt()', async () => {
     media({ '(pointer: coarse)': true });
     const { user } = renderWithProviders(<Component meId={null} />);
@@ -124,6 +156,17 @@ describe('install tip and launch redirect', () => {
     const { router } = renderWithProviders(<Component meId={3} />, { route: '/' });
     await waitFor(() => expect(router.state.location.pathname).toBe('/shooters/3'));
     expect(sessionStorage.getItem(LAUNCHED_KEY)).toBe('1');
+  });
+
+  it('decides once per page load: a name picked later does not bounce a Home tap', async () => {
+    media({ '(display-mode: standalone)': true });
+    const first = renderWithProviders(<Component meId={null} />, { route: '/' });
+    await waitFor(() => expect(sessionStorage.getItem(LAUNCHED_KEY)).not.toBeNull());
+    first.unmount();
+    localStorage.setItem('sc.me', '3');
+    const second = renderWithProviders(<Component meId={3} />, { route: '/' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(second.router.state.location.pathname).toBe('/');
   });
 
   it('stays on Home without a picked name, or once already launched', async () => {
