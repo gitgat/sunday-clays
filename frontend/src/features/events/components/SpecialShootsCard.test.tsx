@@ -49,4 +49,17 @@ describe('SpecialShootsCard', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('tags a special shoot without a name from the sheet by its targets alone', async () => {
+    withSpecials([
+      { round_id: 8002, event_date: '2025-07-06', label: null, target_total: 40, score: 33 },
+    ]);
+    renderWithProviders(<SpecialShootsCard shooterId={3} />);
+    const item = within(await screen.findByRole('list', { name: 'Special shoots' })).getByRole(
+      'listitem',
+    );
+    expect(item).toHaveTextContent('Special · 40');
+    expect(item).not.toHaveTextContent('·  ·');
+    expect(item).toHaveTextContent('33 of 40');
+  });
 });

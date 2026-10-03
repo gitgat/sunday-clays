@@ -50,4 +50,22 @@ describe('SpecialResultsTable', () => {
     expect(links.map((l) => l.textContent)).toEqual(['Ace, Amy', 'Zed, Al']);
     expect(links[0]).toHaveAttribute('href', `/shooters/${second.shooter_id}?rt=sporting`);
   });
+
+  it('breaks a tie on score and name by the round order', () => {
+    const [first, second] = specialDetail.results as [EventResult, EventResult];
+    renderWithProviders(
+      <SpecialResultsTable
+        results={[
+          { ...first, display_name: 'Ace, Amy', score: 40, ordinal: 2, round_id: 701 },
+          { ...second, display_name: 'Ace, Amy', score: 40, ordinal: 1, round_id: 702 },
+        ]}
+        targetTotal={60}
+      />,
+    );
+    const rows = within(screen.getByRole('table', { name: 'Results' }))
+      .getAllByRole('row')
+      .slice(1);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('Ace, Amy');
+  });
 });
