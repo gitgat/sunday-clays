@@ -225,39 +225,45 @@ async function checkViewer(
   if (admin) await expect(items.getByText(BADGE)).toBeVisible();
 }
 
-test("all switches off (the production default): the viewer sees today's app", async ({
-  request,
-  browser,
-}) => {
-  const id = await ikeId(request);
-  // Control: every switch on (the stack's start). The same checks must find every surface.
-  for (const key of FEATURE_KEYS) await setSwitch(request, key, true);
-  for (const size of SIZES) {
-    const viewer = await viewerPage(browser, size);
-    await checkViewer(viewer, size, id, true);
-    await viewer.context().close();
-  }
+// One test per size: a flip empties nothing, but every page load after one is cold (the page cache
+// recomputes), and a single test doing all sixteen loads at both sizes outgrew the default 30 s on
+// a slow CI runner (14 placeholders still up after 15 s). Each size has its own on-state control.
+for (const size of SIZES) {
+  test(`all switches off (the production default) at ${String(size.width)}: the viewer sees today's app`, async ({
+    request,
+    browser,
+  }) => {
+    test.setTimeout(120_000);
+    const id = await ikeId(request);
+    // Control: every switch on (the stack's start). The same checks must find every surface.
+    for (const key of FEATURE_KEYS) await setSwitch(request, key, true);
+    const on = await viewerPage(browser, size);
+    await checkViewer(on, size, id, true);
+    await on.context().close();
 
-  // Control for the install tip: only `pwa` on, a first-time phone viewer, the event fired after
-  // the page settles (lib/installPrompt.ts listens from import). The tip shows, so its absence
-  // below is the switch, not a missed event.
-  for (const key of FEATURE_KEYS) await setSwitch(request, key, key === 'pwa');
-  const control = await viewerPage(browser, SIZES[0]);
-  await control.goto('/');
-  await whenSettled(control);
-  await fireInstallPrompt(control);
-  await expect(control.getByRole('heading', { name: TIP })).toBeVisible();
-  await control.context().close();
+    if (size.width < 600) {
+      // Control for the install tip: only `pwa` on, a first-time phone viewer, the event fired
+      // after the page settles (lib/installPrompt.ts listens from import). The tip shows, so its
+      // absence below is the switch, not a missed event. The tip is for touch devices, so only
+      // the phone run proves "off".
+      for (const key of FEATURE_KEYS) await setSwitch(request, key, key === 'pwa');
+      const control = await viewerPage(browser, size);
+      await control.goto('/');
+      await whenSettled(control);
+      await fireInstallPrompt(control);
+      await expect(control.getByRole('heading', { name: TIP })).toBeVisible();
+      await control.context().close();
+    }
 
-  await setSwitch(request, 'pwa', false);
-  for (const size of SIZES) {
+    for (const key of FEATURE_KEYS) await setSwitch(request, key, false);
     const viewer = await viewerPage(browser, size);
     await checkViewer(viewer, size, id, false);
-    await viewer.goto('/');
-    await whenSettled(viewer);
-    await fireInstallPrompt(viewer);
-    // The tip is for touch devices, so only the 390 run (with its positive control) proves "off".
-    await expect(viewer.getByRole('heading', { name: TIP })).toHaveCount(0);
+    if (size.width < 600) {
+      await viewer.goto('/');
+      await whenSettled(viewer);
+      await fireInstallPrompt(viewer);
+      await expect(viewer.getByRole('heading', { name: TIP })).toHaveCount(0);
+    }
     const features = await viewer.request.get('/api/features');
     expect(await features.json()).toEqual({ switches: {} });
     await viewer.context().close();
@@ -272,7 +278,8 @@ test("all switches off (the production default): the viewer sees today's app", a
     });
     await checkViewer(await adminContext.newPage(), size, id, false, true);
     await adminContext.close();
-  }
-  expect(await description(request)).toBe(GENERIC);
-  expect((await request.get(`/api/og/image/sunday/${DAY}.png`)).status()).toBe(404);
-});
+
+    expect(await description(request)).toBe(GENERIC);
+    expect((await request.get(`/api/og/image/sunday/${DAY}.png`)).status()).toBe(404);
+  });
+}
