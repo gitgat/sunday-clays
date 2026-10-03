@@ -1,0 +1,21 @@
+{
+  "id": "/",
+  "name": "Sunday Clays",
+  "short_name": "Sunday Clays",
+  "description": "Scores, trophies and stats for the Sunday Clays group.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1A4D2E",
+  "theme_color": "#1A4D2E",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
