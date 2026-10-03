@@ -4,6 +4,7 @@ import html
 from datetime import date
 from typing import Final
 
+from sunday_clays.analytics.achievements.participation import THREE_BIRD_LABELS, normalize_label
 from sunday_clays.domain.round_type import RoundType
 from sunday_clays.og.facts import PreviewFacts, page_path
 
@@ -43,6 +44,15 @@ def _round_type(facts: PreviewFacts) -> list[str]:
     return [] if facts.round_type is None else [_ROUND_TYPES[facts.round_type]]
 
 
+def _public_label(facts: PreviewFacts) -> str:
+    """The workbook's label is a free-text cell and these previews are public, so only a known
+    event label (a 3-Bird Shoot) shows; anything else reads "Special shoot" (R1)."""
+    label = facts.label
+    if label is not None and normalize_label(label) in THREE_BIRD_LABELS:
+        return label
+    return "Special shoot"
+
+
 def title_of(facts: PreviewFacts) -> str:
     return SITE_TITLE
 
@@ -51,7 +61,7 @@ def description_of(facts: PreviewFacts) -> str:
     if facts.kind == "generic" or facts.event_date is None:
         return GENERIC_DESCRIPTION
     if facts.kind == "special":
-        return " · ".join([facts.label or "Special shoot", *_shooters(facts.n_shooters)])
+        return " · ".join([_public_label(facts), *_shooters(facts.n_shooters)])
     parts = [f"Sunday, {_short(facts.event_date)}", *_shooters(facts.n_shooters)]
     return " · ".join([*parts, *_round_type(facts)])
 
@@ -60,7 +70,7 @@ def image_alt_of(facts: PreviewFacts) -> str:
     if facts.kind == "generic" or facts.event_date is None:
         return "Sunday Clays logo"
     if facts.kind == "special":
-        return f"Sunday Clays, {facts.label or 'Special shoot'} on {_short(facts.event_date)}"
+        return f"Sunday Clays, {_public_label(facts)} on {_short(facts.event_date)}"
     return f"Sunday Clays, Sunday {_short(facts.event_date)}"
 
 
@@ -70,7 +80,7 @@ def image_lines(facts: PreviewFacts) -> tuple[str, str] | None:
         return None
     if facts.kind == "special":
         line_b = " · ".join(["Special shoot", *_shooters(facts.n_shooters)])
-        return facts.label or "Special shoot", line_b
+        return _public_label(facts), line_b
     line_b = " · ".join([*_shooters(facts.n_shooters), *_round_type(facts)])
     return f"Sunday, {_short(facts.event_date)}", line_b
 

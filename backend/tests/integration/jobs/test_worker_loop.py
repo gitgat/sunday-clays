@@ -51,7 +51,10 @@ def worker_settings(
         worker,
         "get_settings",
         lambda: SimpleNamespace(
-            weather_enabled=False, timezone="America/Los_Angeles", page_cache_enabled=False
+            weather_enabled=False,
+            timezone="America/Los_Angeles",
+            page_cache_enabled=False,
+            app_version="v7",
         ),
     )
 
@@ -198,7 +201,12 @@ def test_run_worker_passes_the_timezone_and_weather_flag_to_the_scheduler(
     monkeypatch.setattr(worker, "process_one", once)
     worker.run_worker(stop, poll_seconds=0.01)
     assert schedule_calls == [
-        {"weather_enabled": False, "timezone": "America/Los_Angeles", "page_cache_enabled": False}
+        {
+            "weather_enabled": False,
+            "timezone": "America/Los_Angeles",
+            "page_cache_enabled": False,
+            "app_version": "v7",
+        }
     ]
 
 

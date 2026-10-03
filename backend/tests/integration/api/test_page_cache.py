@@ -337,6 +337,25 @@ def test_stampede_computes_once_per_process(
         assert s.execute(text("SELECT count(*) FROM response_cache")).scalar_one() == 1
 
 
+def test_followers_that_time_out_compute_alone_and_store_nothing(
+    live_app_cookie: str, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D33 fallback: a follower waits FOLLOW_TIMEOUT_S for a slow leader, then answers from its
+    own computation and stores nothing (the leader stores the one row). The timeout is patched to
+    50 ms; the leader takes 300 ms. Kills: a follower that raises or hangs on the timeout, one
+    that stores a second row, or one that answers with an empty body."""
+    monkeypatch.setattr(pc, "FOLLOW_TIMEOUT_S", 0.05)
+    calls = _count_calls(monkeypatch, insights_routes, "held_dates")
+    responses = asyncio.run(_hit_many([create_app()], live_app_cookie, "/api/insights/home", 4))
+    assert {r.status_code for r in responses} == {200}
+    assert len({r.content for r in responses}) == 1
+    assert responses[0].content != b""
+    assert {r.headers["x-page-cache"] for r in responses} == {"miss"}  # nobody got a hit
+    assert len(calls) == 4  # the leader and the 3 followers that gave up each ran the route
+    with Session(committed_engine) as s:
+        assert s.execute(text("SELECT count(*) FROM response_cache")).scalar_one() == 1
+
+
 def test_two_replicas_compute_at_most_twice_and_keep_one_row(
     live_app_cookie: str, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

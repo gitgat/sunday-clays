@@ -85,8 +85,9 @@ export const pageCacheStatus: PageCacheStatus = {
     skipped: 0,
     failed: 0,
     seconds: 41.2,
+    app_version: 'sha-abc1234',
   },
-  current: { data_version: 412, local_date: '2026-10-02' },
+  current: { data_version: 412, local_date: '2026-10-02', app_version: 'sha-abc1234' },
   targets: ['/api/insights/home', '/api/events/2026-09-27', '/api/events'],
 };
 

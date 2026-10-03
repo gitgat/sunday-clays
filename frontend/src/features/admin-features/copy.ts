@@ -20,7 +20,9 @@ export function cacheStatusText(status: PageCacheStatus): string {
   if (warm === null) return 'Not refreshed yet';
   if (
     warm.data_version !== status.current.data_version ||
-    warm.local_date !== status.current.local_date
+    warm.local_date !== status.current.local_date ||
+    // a deploy makes every key cold; a warm-up from before releases were recorded counts as stale
+    (warm.app_version ?? null) !== status.current.app_version
   ) {
     return 'Refreshing…';
   }
