@@ -66,6 +66,10 @@ ROUND_ID_INDEX_DEF = (
 MODEL_CHECK = re.compile(r"(\w+) IN \((.*)\)")
 # CHECKs that are not "column IN (...)": name -> (model sqltext, pg_get_constraintdef text).
 OTHER_CHECKS = {
+    "ck_response_cache_body_size": (
+        "octet_length(body) <= 2097152",
+        "CHECK ((octet_length(body) <= 2097152))",
+    ),
     "ck_insights_field_negative_unnamed": (
         "polarity <> 'field_negative' OR cardinality(named_shooter_ids) = 0",
         "CHECK (((polarity <> 'field_negative'::text) OR (cardinality(named_shooter_ids) = 0)))",
@@ -133,11 +137,13 @@ C4_TABLES = {
     "page_view_rollups",  # 0007 (Plan 16)
     "page_kind_rollups",  # 0007 (Plan 16)
     "import_special_events",  # 0008 (Plan 17)
+    "response_cache",  # 0009 (Plan 19)
 }
 TABLES_0003 = {"insights", "insight_picks"}
 TABLES_0006 = {"fist_bumps", "bump_attempts"}
 TABLES_0007 = {"page_views", "page_view_attempts", "page_view_rollups", "page_kind_rollups"}
 TABLES_0008 = {"import_special_events"}
+TABLES_0009 = {"response_cache"}
 
 
 def _alembic(eng: Engine, action: str, target: str) -> None:
@@ -261,11 +267,14 @@ def test_upgrade_downgrade_roundtrip(scratch_engine: Engine) -> None:
     _alembic(scratch_engine, "upgrade", "head")
     assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
     assert _round_id_index(scratch_engine) == ROUND_ID_INDEX_DEF
+    _alembic(scratch_engine, "downgrade", "0008")  # 0009 drops only the response cache
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0009) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0007")  # 0008 drops its table and the event kind
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0008) | {"alembic_version"}
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0008 - TABLES_0009) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0006")  # 0007 drops only its four tables
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0007 - TABLES_0008) | {"alembic_version"}
-    later = TABLES_0006 | TABLES_0007 | TABLES_0008
+    newer = TABLES_0007 | TABLES_0008 | TABLES_0009
+    assert _tables(scratch_engine) == (C4_TABLES - newer) | {"alembic_version"}
+    later = TABLES_0006 | newer
     _alembic(scratch_engine, "downgrade", "0005")  # 0006 drops only its two tables
     assert _tables(scratch_engine) == (C4_TABLES - later) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0004")  # 0005 drops the station labels
@@ -690,3 +699,28 @@ def test_0008_downgrade_removes_special_imports_and_special_sundays(
 def test_import_kind_check_accepts_a_special_import(session: Session) -> None:
     session.add(Import(kind="special", filename="s.xlsx", sha256="c" * 64, file_bytes=b"x"))
     session.flush()
+
+
+def test_response_cache_is_unlogged_and_bounded(engine: Engine, session: Session) -> None:
+    """Plan 19 D28: UNLOGGED (no WAL), a role check, and a 2 MiB body cap."""
+    with engine.connect() as conn:
+        persistence = conn.execute(
+            text("SELECT relpersistence FROM pg_class WHERE relname = 'response_cache'")
+        ).scalar_one()
+    assert persistence == "u"
+    insert = text(
+        "INSERT INTO response_cache (key, data_version, local_date, app_version, role, route, body)"
+        " VALUES (:k, 1, '2026-10-02', 'dev', :role, '/api/meta', :body)"
+    )
+    session.execute(insert, {"k": "ok", "role": "viewer", "body": b"{}"})
+    for bad in ({"role": "guest", "body": b"{}"}, {"role": "viewer", "body": b"x" * 2097153}):
+        with pytest.raises(IntegrityError), session.begin_nested():
+            session.execute(insert, {"k": "bad", **bad})
+
+
+def test_response_cache_is_never_a_live_table() -> None:
+    """D28: disposable. rebuild_live must never copy or swap it (explicit, not only implied by
+    the exact LIVE_TABLES tuple in test_rebuild_live.py)."""
+    from sunday_clays.domain.rebuild import LIVE_TABLES
+
+    assert "response_cache" not in LIVE_TABLES

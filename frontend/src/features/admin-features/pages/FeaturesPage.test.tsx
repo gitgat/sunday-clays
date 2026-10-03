@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { useFeatures } from '../../../lib/features';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
-import { featureSwitches } from '../mocks';
+import { featureSwitches, pageCacheStatus } from '../mocks';
 import { FeaturesPage } from './FeaturesPage';
 
 function rowOf(label: string): HTMLElement {
@@ -23,8 +23,11 @@ describe('FeaturesPage', () => {
   it('lists exactly the six switches with labels, descriptions and dates', async () => {
     renderWithProviders(<FeaturesPage />, { role: 'admin', route: '/admin/features' });
     expect(screen.getByRole('heading', { level: 1, name: 'Features' })).toBeInTheDocument();
-    const switches = await screen.findAllByRole('switch');
-    expect(switches.map((s) => s.textContent)).toEqual(featureSwitches.map((f) => f.label));
+    const launch = await screen.findByRole('region', { name: 'Launch switches' });
+    const switches = within(launch).getAllByRole('switch');
+    expect(switches.map((s) => s.textContent)).toEqual(
+      featureSwitches.filter((f) => f.kind === 'feature').map((f) => f.label),
+    );
     const first = rowOf('Link previews');
     expect(within(first).getByText('Changed Oct 2, 2026')).toBeInTheDocument();
     expect(switches[0]).toHaveAttribute('aria-checked', 'true');
@@ -116,5 +119,52 @@ describe('FeaturesPage', () => {
     server.use(http.get('*/api/admin/features', () => HttpResponse.error()));
     renderWithProviders(<FeaturesPage />, { role: 'admin' });
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the switches.');
+  });
+});
+
+describe('FeaturesPage infrastructure group', () => {
+  it('lists the page cache under Infrastructure with its status line and no badge', async () => {
+    renderWithProviders(<FeaturesPage />, { role: 'admin' });
+    const infra = await screen.findByRole('region', { name: 'Infrastructure' });
+    expect(
+      within(infra).getByText(
+        'Behind-the-scenes settings. They change how fast pages open, never what they show.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(infra).getByRole('switch', { name: 'Page cache' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    expect(
+      await within(infra).findByText(
+        '1,240 pages stored · 38 MB · last refreshed Oct 2, 2026 (27 pages in 41 s)',
+      ),
+    ).toBeInTheDocument();
+    expect(within(infra).queryByText('Admin preview')).not.toBeInTheDocument();
+  });
+
+  it('disables the toggle when the deployment forces the cache off', async () => {
+    server.use(
+      http.get('*/api/admin/page-cache', () =>
+        HttpResponse.json({ ...pageCacheStatus, enabled: false, forced_off: true }),
+      ),
+    );
+    renderWithProviders(<FeaturesPage />, { role: 'admin' });
+    const infra = await screen.findByRole('region', { name: 'Infrastructure' });
+    const status = await within(infra).findByText('Turned off on the server');
+    const toggle = within(infra).getByRole('switch', { name: 'Page cache' });
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAttribute('aria-describedby', status.id);
+    expect(status.id).not.toBe('');
+  });
+
+  it('shows plain "Status unavailable" while loading or when the status fails', async () => {
+    server.use(http.get('*/api/admin/page-cache', () => HttpResponse.error()));
+    renderWithProviders(<FeaturesPage />, { role: 'admin' });
+    const infra = await screen.findByRole('region', { name: 'Infrastructure' });
+    expect(await within(infra).findByText('Status unavailable')).toBeInTheDocument();
+    expect(within(infra).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(infra).getByRole('switch', { name: 'Page cache' })).toBeEnabled();
   });
 });
