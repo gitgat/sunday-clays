@@ -8,15 +8,17 @@ from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 import pandas as pd
-from fastapi import APIRouter, Depends, Path
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Path, Query
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics import frames
 from sunday_clays.analytics.leaderboards import active_shooter_ids
 from sunday_clays.analytics.streaks import streaks
+from sunday_clays.analytics.summary import shooter_summary
 from sunday_clays.api.routes._convert import opt_float, opt_int, opt_str, rows
+from sunday_clays.api.routes._features import feature_gate
 from sunday_clays.api.routes._filters import (
     check_window,
     in_window,
@@ -503,3 +505,58 @@ def get_shooter_splits(
     check_window(since, as_of)
     _profile(session, shooter_id)
     return splits(in_window(_shooter_rounds(session, shooter_id, round_types), since, as_of), by)
+
+
+class BestRoundOut(BaseModel):
+    score: int
+    event_date: date
+
+
+class ShooterSummaryCardOut(BaseModel):
+    """Plan 19 §3.6.1. JSON keys `from` and `to` match the query parameters."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    shooter_id: int
+    display_name: str
+    date_from: date | None = Field(alias="from")
+    date_to: date = Field(alias="to")
+    sundays: int  # appearances in [from, to], special included
+    special_sundays: int
+    rounds: int  # regular rounds in the window
+    average: float | None
+    best: BestRoundOut | None
+    pbs_set: int
+    trophies: int  # awards in the window, competition left out
+    trophy_names: list[str]  # up to 3, newest first
+    longest_streak: int  # Sundays inside the window only
+
+
+@router.get("/api/shooters/{id}/summary", dependencies=[feature_gate("summary_card")])
+def get_shooter_summary(
+    shooter_id: ShooterId,
+    session: SessionDep,
+    date_to: Annotated[date, Query(alias="to")],
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+) -> ShooterSummaryCardOut:
+    """The summary card for [from, to] (`from` absent: an open start). Every round type (D18)."""
+    check_window(date_from, date_to)
+    _profile(session, shooter_id)
+    s = shooter_summary(session, shooter_id, date_from, date_to)
+    return ShooterSummaryCardOut(
+        shooter_id=s.shooter_id,
+        display_name=s.display_name,
+        date_from=s.date_from,
+        date_to=s.date_to,
+        sundays=s.sundays,
+        special_sundays=s.special_sundays,
+        rounds=s.rounds,
+        average=s.average,
+        best=None
+        if s.best is None
+        else BestRoundOut(score=s.best.score, event_date=s.best.event_date),
+        pbs_set=s.pbs_set,
+        trophies=s.trophies,
+        trophy_names=list(s.trophy_names),
+        longest_streak=s.longest_streak,
+    )
