@@ -591,21 +591,38 @@ and just after local midnight (`page_warm`). It changes how fast an answer arriv
 says: every stored answer is keyed by the data version, the local date and the role.
 
 1. **After the deploy that ships it:** open `/admin/features` and check "Page cache" is on and its
-   status line shows a refresh with no failures ("… last refreshed <date> (27 pages in 41 s)"). In
+   status line shows a refresh and says nothing about failed or skipped pages ("… last refreshed
+   <date> (27 pages in 41 s)"). A line that adds "2 pages failed" or "1 skipped" means a warm-up
+   target is failing or timing out: the worker retries every 5 minutes, so read the worker's log
+   (`docker service logs sundayclays_worker`, lines starting `page_warm:`) to see which route. In
    the browser's network panel, a second load of Home shows `x-page-cache: hit` on
    `/api/insights/home`, and that request takes well under a second.
 2. **If a page looks wrong after an upload:** turn "Page cache" off on `/admin/features`. That
    clears everything stored, and every page then computes live. Turn it back on once the cause is
    understood; the next worker poll warms the pages again. If the admin page itself is
-   unavailable, set `PAGE_CACHE_ENABLED=false` on both the `api` and the `worker` services and
-   redeploy the stack (on `api` alone, the worker's in-process app would keep warming and
-   writing rows).
-3. **Backups:** `response_cache` is disposable. A restore needs no step for it, and
-   `pg_dump --exclude-table-data=response_cache` is safe if a smaller dump is wanted.
-4. **Separate operator item, not part of this release:** whether to constrain the `api` and
-   `worker` services to x86 nodes (a `node.platform.arch == x86_64` placement constraint in
-   `compose.swarm.yaml`) is the owner's own decision. This release does not change placement, the
-   images stay multi-arch, and the page cache must meet its targets on arm64 as well.
+   unavailable, set `PAGE_CACHE_ENABLED=false` on both services (on `api` alone, the worker's
+   in-process app would keep warming and writing rows):
+
+   ```bash
+   docker service update --env-add PAGE_CACHE_ENABLED=false sundayclays_api sundayclays_worker
+   ```
+
+   To undo it, once the cause is fixed:
+
+   ```bash
+   docker service update --env-rm PAGE_CACHE_ENABLED sundayclays_api sundayclays_worker
+   ```
+
+   This survives the deployer's image updates (they change only the image), but a hand
+   `docker stack deploy` of the compose file removes it.
+3. **Backups:** `response_cache` is disposable. The nightly dump keeps the table's definition but
+   not its rows (`pg_dump --exclude-table-data=response_cache`), `verify-restore.sh` leaves it
+   out of its row-count comparison, and a restore needs no step for it: the worker warms the
+   pages again.
+4. **Placement:** `api` and `worker` are already constrained to the x86 nodes (`x-x86` in
+   `compose.swarm.yaml`, checked by `scripts/check_stack.py`; see the Swarm notes above). The page
+   cache does not change that. The images stay multi-arch, and the page cache must still meet its
+   targets on arm64 if that constraint is ever lifted.
 
 ## Backups and restore
 
