@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 class LastWarmOut(BaseModel):
     data_version: int
     local_date: date
+    app_version: str | None = None  # None: a warm-up recorded before app_version was kept
     finished_at: datetime
     warmed: int
     skipped: int
@@ -32,6 +33,7 @@ class LastWarmOut(BaseModel):
 class CurrentKeyOut(BaseModel):
     data_version: int
     local_date: date
+    app_version: str
 
 
 class PageCacheStatusOut(BaseModel):
@@ -74,6 +76,7 @@ def get_page_cache_status(
         current=CurrentKeyOut(
             data_version=read_data_version(session),
             local_date=_filters.today_local(settings.timezone),
+            app_version=settings.app_version,
         ),
         targets=warm_targets(session, settings),
     )

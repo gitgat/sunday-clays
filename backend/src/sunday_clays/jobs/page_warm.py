@@ -104,14 +104,19 @@ def warm_targets(session: Session, settings: Settings) -> list[str]:
     ]
 
 
-def prune(session: Session, data_version: int, local_date: date) -> int:
-    """Drop rows of another data_version or local date, then the oldest beyond pc.PRUNE_TO_ROWS
-    (page_warm is the only pruner: the middleware stores or skips, it never prunes)."""
+def prune(session: Session, data_version: int, local_date: date, app_version: str) -> int:
+    """Drop rows of another data_version, local date or release (app_version: a deploy orphans
+    the previous release's keys, which would otherwise count toward the row cap), then the oldest
+    beyond pc.PRUNE_TO_ROWS (page_warm is the only pruner: the middleware stores or skips,
+    it never prunes)."""
     stale = cast(
         CursorResult[Any],
         session.execute(
-            text("DELETE FROM response_cache WHERE data_version <> :dv OR local_date <> :ld"),
-            {"dv": data_version, "ld": local_date},
+            text(
+                "DELETE FROM response_cache"
+                " WHERE data_version <> :dv OR local_date <> :ld OR app_version <> :av"
+            ),
+            {"dv": data_version, "ld": local_date, "av": app_version},
         ),
     ).rowcount
     extra = cast(
@@ -137,7 +142,8 @@ class WarmReport:
 
 _LAST_WARM = text(
     "INSERT INTO app_state (key, value) VALUES (:k, jsonb_build_object("
-    "'data_version', CAST(:dv AS int), 'local_date', CAST(:ld AS text), 'finished_at', now(), "
+    "'data_version', CAST(:dv AS int), 'local_date', CAST(:ld AS text), "
+    "'app_version', CAST(:av AS text), 'finished_at', now(), "
     "'warmed', CAST(:w AS int), 'skipped', CAST(:s AS int), 'failed', CAST(:f AS int), "
     "'seconds', CAST(:secs AS float8))) "
     "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
@@ -175,7 +181,7 @@ def run_page_warm(
         return WarmReport(0, 0, 0, 0.0)
     data_version = get_data_version(session)
     local_date = today_local(settings.timezone)
-    prune(session, data_version, local_date)
+    prune(session, data_version, local_date, settings.app_version)
     targets = warm_targets(session, settings)
     # Decision 9: commit the prune so no warm request waits on a row this job deleted, and end the
     # transaction warm_targets read in, so no idle-in-transaction connection is held for the budget.
@@ -221,6 +227,7 @@ def run_page_warm(
             "k": LAST_WARM_KEY,
             "dv": data_version,
             "ld": local_date.isoformat(),
+            "av": settings.app_version,
             "w": warmed,
             "s": skipped,
             "f": failed,

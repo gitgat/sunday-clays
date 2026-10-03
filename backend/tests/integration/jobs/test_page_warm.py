@@ -27,14 +27,16 @@ def cache_on(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
 
 
-def _put(session: Session, key: str, data_version: int, local_date: str) -> None:
+def _put(
+    session: Session, key: str, data_version: int, local_date: str, app_version: str = "dev"
+) -> None:
     session.execute(
         text(
             "INSERT INTO response_cache"
             " (key, data_version, local_date, app_version, role, route, body)"
-            " VALUES (:k, :dv, CAST(:ld AS date), 'dev', 'viewer', '/api/meta', '{}')"
+            " VALUES (:k, :dv, CAST(:ld AS date), :av, 'viewer', '/api/meta', '{}')"
         ),
-        {"k": key, "dv": data_version, "ld": local_date},
+        {"k": key, "dv": data_version, "ld": local_date, "av": app_version},
     )
 
 
@@ -81,10 +83,20 @@ def test_prune_drops_other_versions_and_dates_then_the_oldest(
             ),
             {"s": i, "k": f"keep-{i}"},
         )
-    deleted = page_warm.prune(fx_session, 7, date(2026, 10, 2))
+    deleted = page_warm.prune(fx_session, 7, date(2026, 10, 2), "dev")
     assert deleted == 3
     keys = set(fx_session.execute(text("SELECT key FROM response_cache")).scalars())
     assert keys == {"keep-1", "keep-2"}  # the oldest current row went last
+
+
+def test_prune_drops_the_previous_releases_rows_first(fx_session: Session) -> None:
+    """Same data_version and date, other app_version: dead keys after a deploy, so they go
+    before they can fill MAX_ROWS. Kills: pruning on data_version and date alone."""
+    _put(fx_session, "old-release", 7, "2026-10-02", app_version="rel-1")
+    _put(fx_session, "this-release", 7, "2026-10-02", app_version="rel-2")
+    assert page_warm.prune(fx_session, 7, date(2026, 10, 2), "rel-2") == 1
+    keys = set(fx_session.execute(text("SELECT key FROM response_cache")).scalars())
+    assert keys == {"this-release"}
 
 
 def _app() -> FastAPI:
@@ -119,6 +131,7 @@ def test_warm_stores_every_target_then_each_is_a_hit_with_the_same_body(
     assert last["local_date"] == _filters.today_local(get_settings().timezone).isoformat()
     assert last["warmed"] == len(targets)
     assert last["failed"] == 0
+    assert last["app_version"] == get_settings().app_version
 
 
 def test_a_zero_budget_skips_everything_and_still_completes(

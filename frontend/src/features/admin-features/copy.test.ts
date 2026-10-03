@@ -26,13 +26,30 @@ describe('page cache status line', () => {
   });
 
   it('says refreshing when the last warm-up is for an older version or date', () => {
-    const stale = { ...pageCacheStatus, current: { data_version: 413, local_date: '2026-10-02' } };
+    const stale = {
+      ...pageCacheStatus,
+      current: { ...pageCacheStatus.current, data_version: 413 },
+    };
     expect(cacheStatusText(stale)).toBe('Refreshing…');
     const tomorrow = {
       ...pageCacheStatus,
-      current: { data_version: 412, local_date: '2026-10-03' },
+      current: { ...pageCacheStatus.current, local_date: '2026-10-03' },
     };
     expect(cacheStatusText(tomorrow)).toBe('Refreshing…');
+  });
+
+  it('says refreshing after a deploy, and for a warm-up recorded before releases were kept', () => {
+    const deployed = {
+      ...pageCacheStatus,
+      current: { ...pageCacheStatus.current, app_version: 'sha-def5678' },
+    };
+    expect(cacheStatusText(deployed)).toBe('Refreshing…');
+    if (pageCacheStatus.last_warm === null) throw new Error('fixture has a warm-up');
+    const legacy = {
+      ...pageCacheStatus,
+      last_warm: { ...pageCacheStatus.last_warm, app_version: null },
+    };
+    expect(cacheStatusText(legacy)).toBe('Refreshing…');
   });
 
   it('adds failed and skipped counts, in plain words, only when above zero', () => {

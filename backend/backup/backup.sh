@@ -33,7 +33,8 @@ dump_once() {
   stamp="$(date -u +%Y%m%dT%H%M%SZ)" || return 1
   tmp="$BACKUP_DIR/sc-$stamp.dump.tmp"
   dump="$BACKUP_DIR/sc-$stamp.dump"
-  pg_dump --format=custom --file="$tmp" || return 1
+  # response_cache is a disposable UNLOGGED cache (Plan 19 D22): keep its definition, not its rows.
+  pg_dump --format=custom --exclude-table-data=response_cache --file="$tmp" || return 1
   pg_restore --list "$tmp" >/dev/null || return 1
   mv "$tmp" "$dump" || return 1
   python3 "$TOOLS" prune "$BACKUP_DIR" || return 1

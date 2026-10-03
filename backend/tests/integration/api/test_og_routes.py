@@ -146,11 +146,17 @@ def test_non_canonical_dates_404(fx_client: TestClient, fx_session: Session, day
     assert fx_client.get(f"/api/og/image/sunday/{day}.png").status_code == 404
 
 
-def _assert_name_free(page: str, names: list[str]) -> None:
-    for display_name in names:
-        for part in {display_name, *[p.strip() for p in display_name.split(",")]}:
-            if part:
-                assert not re.search(rf"\b{re.escape(part)}\b", page), part
+def _name_pattern(names: list[str]) -> re.Pattern[str]:
+    """One precompiled alternation of every display name and each comma-separated part of it
+    (longest first), so a page costs one scan instead of one regex compile per name."""
+    parts = {p for n in names for p in (n, *(x.strip() for x in n.split(","))) if p}
+    ordered = sorted(parts, key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(re.escape(p) for p in ordered) + r")\b")
+
+
+def _assert_name_free(page: str, names: re.Pattern[str]) -> None:
+    found = names.search(page)
+    assert found is None, found and found.group(0)
     assert not SCORE_NEAR_WORD.search(page)
 
 
@@ -162,9 +168,12 @@ def test_name_scan_every_sunday_and_every_shooter(
     session = cast(Session, request.getfixturevalue(f"{world}_session"))
     clear_cache()
     _on(session)
-    names = [
-        str(n) for n in session.execute(text("SELECT display_name FROM shooter_profiles")).scalars()
-    ]
+    names = _name_pattern(
+        [
+            str(n)
+            for n in session.execute(text("SELECT display_name FROM shooter_profiles")).scalars()
+        ]
+    )
     days = session.execute(text("SELECT event_date FROM events ORDER BY event_date")).scalars()
     ids = session.execute(text("SELECT shooter_id FROM shooter_profiles")).scalars()
     for day in days:

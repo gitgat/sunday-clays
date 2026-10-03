@@ -17,13 +17,18 @@ FORECAST_INTERVAL = timedelta(hours=6)
 ROLLUP_LOCAL_HOUR = 3  # Plan 16: page_view_rollup, once a local day, weather or not
 
 
-def _page_warm_due(session: Session, now: datetime, timezone: str) -> bool:
-    """The last warm-up's (data_version, local date) differs from now's, or it skipped or failed
-    a target (D35: a partial or failed warm-up is retried), and none was tried in 5 minutes."""
-    current = (get_data_version(session), now.astimezone(ZoneInfo(timezone)).date().isoformat())
+def _page_warm_due(session: Session, now: datetime, timezone: str, app_version: str) -> bool:
+    """The last warm-up's (data_version, local date, app_version) differs from now's, or it
+    skipped or failed a target (D35: a partial or failed warm-up is retried), and none was tried
+    in 5 minutes. app_version is in the cache key (D29), so a deploy makes every key cold."""
+    current = (
+        get_data_version(session),
+        now.astimezone(ZoneInfo(timezone)).date().isoformat(),
+        app_version,
+    )
     raw = session.scalar(select(AppState.value).where(AppState.key == LAST_WARM_KEY))
     if isinstance(raw, dict):
-        last = (raw.get("data_version"), raw.get("local_date"))
+        last = (raw.get("data_version"), raw.get("local_date"), raw.get("app_version"))
         incomplete = bool(raw.get("failed")) or bool(raw.get("skipped"))
     else:
         last, incomplete = None, True
@@ -43,16 +48,17 @@ def schedule_due(
     weather_enabled: bool,
     timezone: str = "America/Los_Angeles",
     page_cache_enabled: bool = False,
+    app_version: str = "dev",
 ) -> list[int]:
     """Enqueue page_view_rollup (daily after 03:00 local), page_warm (after every data_version
-    change and each local midnight, with the page cache on), and with weather on, weather_sync
-    (daily after 14:00 local) and forecast_refresh (every 6 h), when due."""
+    change, deploy and each local midnight, with the page cache on), and with weather on,
+    weather_sync (daily after 14:00 local) and forecast_refresh (every 6 h), when due."""
     local_now = now.astimezone(ZoneInfo(timezone))
     job_ids: list[int] = []
     if (
         page_cache_enabled
         and infrastructure_switch_on(session, "page_cache")
-        and _page_warm_due(session, now, timezone)
+        and _page_warm_due(session, now, timezone, app_version)
     ):
         job_ids.append(enqueue(session, "page_warm", dedupe_key="page_warm"))
     rollup_slot = local_now.replace(hour=ROLLUP_LOCAL_HOUR, minute=0, second=0, microsecond=0)
