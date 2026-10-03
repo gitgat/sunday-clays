@@ -21,6 +21,10 @@ def test_status_shape_for_an_admin(fx_admin_client: TestClient, fx_session: Sess
     assert body["enabled"] is False
     assert (body["rows"], body["bytes"], body["last_warm"]) == (0, 0, None)
     assert body["current"]["data_version"] == get_data_version(fx_session)
+    from sunday_clays.config import get_settings
+    from sunday_clays.jobs.page_warm import warm_targets
+
+    assert body["targets"] == warm_targets(fx_session, get_settings())
 
 
 def test_viewer_gets_403(fx_viewer_client: TestClient) -> None:

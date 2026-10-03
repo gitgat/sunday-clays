@@ -13,6 +13,7 @@ from sunday_clays.api.routes import _filters
 from sunday_clays.config import Settings, get_settings
 from sunday_clays.db import SessionDep
 from sunday_clays.domain.features import LAST_WARM_KEY, page_cache_on
+from sunday_clays.jobs.page_warm import warm_targets
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -40,6 +41,7 @@ class PageCacheStatusOut(BaseModel):
     bytes: int
     last_warm: LastWarmOut | None
     current: CurrentKeyOut
+    targets: list[str]  # warm_targets(): what page_warm requests
 
 
 def _last_warm(raw: object) -> LastWarmOut | None:
@@ -73,4 +75,5 @@ def get_page_cache_status(
             data_version=read_data_version(session),
             local_date=_filters.today_local(settings.timezone),
         ),
+        targets=warm_targets(session, settings),
     )
