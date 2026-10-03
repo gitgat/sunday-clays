@@ -1,6 +1,7 @@
 import { AppShell } from '../../../components/layout/AppShell';
 import { featureState, useFeatures, type FeatureKey } from '../../../lib/features';
 import { usePageViewBeacon } from '../../pageviews/beacon';
+import { usePwaLifecycle } from '../../pwa/lifecycle';
 import { useSession } from '../api';
 import { AccountPanel } from './AccountPanel';
 
@@ -12,6 +13,7 @@ import { AccountPanel } from './AccountPanel';
 export function SessionShell() {
   const { session } = useSession();
   usePageViewBeacon(session?.role ?? null);
+  usePwaLifecycle(); // Plan 19 D16: inside the session only, so /login never touches the worker
   const features = useFeatures();
   const role = session?.role ?? 'viewer';
   const switches = features.data;

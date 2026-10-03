@@ -6,7 +6,8 @@ import { ADMIN_STATE, VIEWER_STATE } from './e2e/authState';
  * E2E against the compose stack on http://localhost:8080 (compose.test.yaml in CI). A local run
  * against a stack on another host port (E2E_PORT) sets E2E_BASE_URL to match; see CONTRIBUTING.md.
  * Both projects are Chromium: WebKit drops Secure cookies on http://localhost, so an iPhone
- * preset would break login. Only Plan 01 T4, Plan 04 T1 and Plan 08 T5a edit this file (C10).
+ * preset would break login. Only Plan 01 T4, Plan 04 T1, Plan 08 T5a and Plan 19 T9
+ * (serviceWorkers) edit this file (C10).
  */
 export default defineConfig({
   testDir: './e2e',
@@ -17,6 +18,9 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:8080',
     trace: 'retain-on-failure',
+    // Plan 19 D24: page.route cannot see requests a service worker answers, and a cache-first
+    // /assets/* would carry state between tests. Only pwa.spec.ts opts back in.
+    serviceWorkers: 'block',
   },
   projects: [
     { name: 'setup', testMatch: /auth\.setup\.ts$/ },
