@@ -77,11 +77,15 @@ def test_crossing_dates_series_and_next() -> None:
 
 def test_newest_first_and_the_latest_tie_order() -> None:
     result = cm.compute_milestones(*world({0: [1], 1: [1, 2], 2: [1, 2, 3]}), sunday(2))
-    assert [(c.metric, c.threshold) for c in result.milestones[:4]] == [
+    assert [(c.metric, c.threshold) for c in result.milestones] == [
         ("sundays_held", 3),
         ("clays_thrown", 200),
         ("shooters", 3),
         ("rounds", 5),
+        ("sundays_held", 2),
+        ("clays_thrown", 100),
+        ("shooters", 2),
+        ("rounds", 3),
     ]
     assert result.latest == result.milestones[0]
 

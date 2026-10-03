@@ -31,7 +31,7 @@ export const explainers: Record<string, Explainer> = {
     what: "How the club's running totals have grown, Sunday by Sunday, with each round number marked.",
     read: [
       'A dot marks the Sunday a round number was passed.',
-      'A flat stretch means no Sundays were held.',
+      'A flat step on Clays thrown or Rounds is a special shoot: it counts as a Sunday held but adds no clays.',
     ],
     computed: [
       'Clays thrown: 50 for every regular round. Rounds: regular rounds only.',

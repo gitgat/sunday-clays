@@ -27,8 +27,14 @@ function MilestoneList({ data }: { data: ClubMilestones | undefined }) {
             const rows = data.milestones.filter((m) => m.metric === value);
             if (rows.length === 0) return null;
             return (
-              <section key={value} aria-label={label} className="flex flex-col gap-1">
-                <h4 className="text-sm font-medium text-text-muted">{label}</h4>
+              <section
+                key={value}
+                aria-labelledby={`milestones-${value}`}
+                className="flex flex-col gap-1"
+              >
+                <h4 id={`milestones-${value}`} className="text-sm font-medium text-text-muted">
+                  {label}
+                </h4>
                 <ul className="flex flex-col">
                   {rows.map((m) => (
                     <li key={`${m.metric}-${String(m.threshold)}`} className="flex flex-col">

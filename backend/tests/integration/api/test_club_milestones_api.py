@@ -22,7 +22,9 @@ def _on(session: Session) -> None:
 def test_viewer_gets_404_while_off_and_admin_gets_200(
     fx_viewer_client: TestClient, fx_admin_client: TestClient
 ) -> None:
-    assert fx_viewer_client.get("/api/club/milestones").json() == {"detail": "Not Found"}
+    off = fx_viewer_client.get("/api/club/milestones")
+    assert off.status_code == 404
+    assert off.json() == {"detail": "Not Found"}
     assert fx_admin_client.get("/api/club/milestones").status_code == 200
 
 
