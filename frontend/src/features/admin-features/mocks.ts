@@ -1,10 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import type { FeatureSwitch } from './api';
+import type { FeatureSwitch, PageCacheStatus } from './api';
 
-/** The six switches as the API lists them (labels and descriptions as in domain/features.py). */
+/** The six switches and the page cache as the API lists them (labels and descriptions as in domain/features.py). */
 export const featureSwitches: FeatureSwitch[] = [
   {
     key: 'link_previews',
+    kind: 'feature',
     label: 'Link previews',
     description:
       "Links shared in chat apps show the Sunday's date, how many shot and the round type. While off, every link shows the plain club preview.",
@@ -14,6 +15,7 @@ export const featureSwitches: FeatureSwitch[] = [
   },
   {
     key: 'tour_glossary',
+    kind: 'feature',
     label: 'Welcome tour and glossary',
     description:
       'A 5-step tour on a first visit to Home, the Glossary page, and "Words used here" links in chart explainers.',
@@ -23,6 +25,7 @@ export const featureSwitches: FeatureSwitch[] = [
   },
   {
     key: 'weekly_recap',
+    kind: 'feature',
     label: 'Weekly recap',
     description: 'Admin tool: paste-ready text and an image of a Sunday for the club email.',
     enabled: false,
@@ -31,6 +34,7 @@ export const featureSwitches: FeatureSwitch[] = [
   },
   {
     key: 'pwa',
+    kind: 'feature',
     label: 'Add to Home Screen',
     description: 'Lets phones install the app, and shows a small install tip on Home.',
     enabled: false,
@@ -39,6 +43,7 @@ export const featureSwitches: FeatureSwitch[] = [
   },
   {
     key: 'club_milestones',
+    kind: 'feature',
     label: 'Club milestones',
     description:
       'Club totals such as clays thrown and Sundays held, dated at the Sunday each round number was passed. Home card and Club page.',
@@ -48,13 +53,41 @@ export const featureSwitches: FeatureSwitch[] = [
   },
   {
     key: 'summary_card',
+    kind: 'feature',
     label: 'Summary card',
     description: 'A shareable card on every profile for the chosen time window.',
     enabled: false,
     updated_at: null,
     updated_on: null,
   },
+  {
+    key: 'page_cache',
+    kind: 'infrastructure',
+    label: 'Page cache',
+    description:
+      "Keeps each page's finished answer ready, so pages open fast. Refreshed after every upload and each midnight. Turn off only if a page looks wrong. Turning it off clears everything stored.",
+    enabled: true,
+    updated_at: null,
+    updated_on: null,
+  },
 ];
+
+export const pageCacheStatus: PageCacheStatus = {
+  enabled: true,
+  forced_off: false,
+  rows: 1240,
+  bytes: 38_000_000,
+  last_warm: {
+    data_version: 412,
+    local_date: '2026-10-02',
+    finished_at: '2026-10-02T07:00:41+00:00',
+    warmed: 27,
+    skipped: 0,
+    failed: 0,
+    seconds: 41.2,
+  },
+  current: { data_version: 412, local_date: '2026-10-02' },
+};
 
 /**
  * The switches every test sees unless it overrides them with server.use. The tour and the PWA are
@@ -68,6 +101,7 @@ export const handlers = [
     HttpResponse.json({ switches: Object.fromEntries(DEFAULT_ON.map((key) => [key, true])) }),
   ),
   http.get('*/api/admin/features', () => HttpResponse.json(featureSwitches)),
+  http.get('*/api/admin/page-cache', () => HttpResponse.json(pageCacheStatus)),
   http.put('*/api/admin/features/:key', async ({ params, request }) => {
     const row = featureSwitches.find((s) => s.key === params.key);
     if (row === undefined) {

@@ -26,7 +26,7 @@ def _put_raw(session: Session, key: str, raw_json: str) -> None:
 
 
 def test_a_missing_row_is_off(session: Session) -> None:
-    expected = {f.key: False for f in features.FEATURES}
+    expected = {f.key: f.default_on for f in features.FEATURES}  # only page_cache defaults on
     assert features.read_switches(session, _settings()) == expected
 
 
@@ -141,3 +141,73 @@ def test_two_concurrent_puts_of_one_key_are_last_writer_wins(committed_engine: E
     assert row.updated_at == last_started  # the later transaction's database now()
     assert sorted(a["enabled"] for a in audits) == [False, True]  # exactly two audit rows
     assert {a["key"] for a in audits} == {"weekly_recap"}
+
+
+def _cache_rows(session: Session) -> int:
+    return int(session.execute(text("SELECT count(*) FROM response_cache")).scalar_one())
+
+
+def _put_cache_row(session: Session, key: str) -> None:
+    session.execute(
+        text(
+            "INSERT INTO response_cache"
+            " (key, data_version, local_date, app_version, role, route, body)"
+            " VALUES (:k, 1, '2026-10-02', 'dev', 'viewer', '/api/meta', '{}')"
+        ),
+        {"k": key},
+    )
+
+
+def test_page_cache_missing_row_is_on_whatever_the_default_list_says(session: Session) -> None:
+    assert features.read_switches(session, _settings(""))["page_cache"] is True
+    assert features.read_switches(session, _settings("pwa"))["page_cache"] is True
+
+
+def test_page_cache_on_needs_the_switch_and_the_setting(session: Session) -> None:
+    on = Settings.model_construct(features_default_on="", timezone="UTC", page_cache_enabled=True)
+    off = Settings.model_construct(features_default_on="", timezone="UTC", page_cache_enabled=False)
+    assert features.page_cache_on(session, on) is True
+    assert features.page_cache_on(session, off) is False
+    features.set_switch(session, on, "page_cache", False)
+    assert features.page_cache_on(session, on) is False
+
+
+def test_page_cache_on_reads_only_its_own_row(
+    session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Kills reading every switch (read_switches) on the request path: a corrupt row of another
+    feature must not log a warning on every cached GET."""
+    on = Settings.model_construct(features_default_on="", timezone="UTC", page_cache_enabled=True)
+    _put_raw(session, "tour_glossary", '"on"')
+    with caplog.at_level(logging.WARNING, logger="sunday_clays.domain.features"):
+        assert features.page_cache_on(session, on) is True
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    _put_raw(session, "page_cache", '"on"')
+    assert features.infrastructure_switch_on(session, "page_cache") is False  # corrupt is off
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_flipping_page_cache_purges_the_table_either_way(session: Session, enabled: bool) -> None:
+    _put_cache_row(session, "a")
+    _put_cache_row(session, "b")
+    session.execute(
+        text("INSERT INTO app_state (key, value) VALUES (:k, '{\"data_version\": 1}'::jsonb)"),
+        {"k": features.LAST_WARM_KEY},
+    )
+    features.set_switch(session, _settings(), "page_cache", enabled)
+    assert _cache_rows(session) == 0
+    last_warm = session.execute(
+        text("SELECT count(*) FROM app_state WHERE key = :k"), {"k": features.LAST_WARM_KEY}
+    ).scalar_one()
+    assert last_warm == (0 if enabled else 1)  # "on" also forgets the last warm-up
+
+
+def test_flipping_a_feature_leaves_the_cache_alone(session: Session) -> None:
+    _put_cache_row(session, "a")
+    features.set_switch(session, _settings(), "summary_card", True)
+    assert _cache_rows(session) == 1
+
+
+def test_infrastructure_switch_on_refuses_a_launch_switch(session: Session) -> None:
+    with pytest.raises(ValueError, match="not an infrastructure switch"):
+        features.infrastructure_switch_on(session, "pwa")

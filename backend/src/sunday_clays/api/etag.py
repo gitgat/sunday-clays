@@ -16,6 +16,7 @@ from sunday_clays.api.routes import _filters
 from sunday_clays.auth.sessions import COOKIE_NAME
 from sunday_clays.config import get_settings
 from sunday_clays.db import get_session
+from sunday_clays.domain.features import page_cache_on
 
 NO_ETAG_PREFIXES: tuple[str, ...] = (
     "/api/health",
@@ -101,14 +102,16 @@ class _TagInputs(NamedTuple):
     local_date: str
 
 
-def _tag_inputs(app: FastAPI) -> _TagInputs:
-    """Everything the tag needs except the URL, read before the route runs (D2)."""
+def _tag_inputs(app: FastAPI) -> tuple[_TagInputs, bool]:
+    """Everything the tag needs except the URL, read before the route runs (D2), plus whether
+    the page cache is on (Plan 19 D31: same session, so the cache costs no extra connection)."""
     settings = _dependency(app, get_settings)()
     provider = cast(Callable[[], Iterator[Session]], _dependency(app, get_session))
     with contextlib.contextmanager(provider)() as session:
         data_version = cache.read_data_version(session)
+        cache_on = page_cache_on(session, settings)
     local_date = _filters.today_local(settings.timezone).isoformat()
-    return _TagInputs(settings.app_version, data_version, local_date)
+    return _TagInputs(settings.app_version, data_version, local_date), cache_on
 
 
 class CacheHeadersMiddleware(BaseHTTPMiddleware):
@@ -124,7 +127,10 @@ class CacheHeadersMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         inputs: _TagInputs | None = None
         if etag_eligible(request.method, path) and request.cookies.get(COOKIE_NAME):
-            inputs = await run_in_threadpool(_tag_inputs, cast(FastAPI, request.app))
+            inputs, cache_on = await run_in_threadpool(_tag_inputs, cast(FastAPI, request.app))
+            # Plan 19 D31: the page cache (the inner middleware) keys on these same values.
+            request.state.tag_inputs = inputs
+            request.state.page_cache_on = cache_on
         response = await call_next(request)
         cache_control = cache_control_for(path)
         if cache_control is not None:
