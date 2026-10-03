@@ -16,7 +16,22 @@ from fastapi.testclient import TestClient
 from sunday_clays.api.routes import discover_routers
 from sunday_clays.db import get_session
 
-PUBLIC = {("GET", "/api/health"), ("POST", "/api/auth/login"), ("POST", "/api/auth/logout")}
+PUBLIC = {
+    ("GET", "/api/health"),
+    ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/logout"),
+    # Plan 19 D6: link previews for crawlers, which cannot log in (no names, no scores)
+    *{
+        (method, path)
+        for method in ("GET", "HEAD")
+        for path in (
+            "/api/og/page/",
+            "/api/og/page/{path}",
+            "/api/og/image/generic.png",
+            "/api/og/image/sunday/{day}.png",
+        )
+    },
+}
 
 
 def _calls(app: FastAPI) -> list[tuple[str, str, str]]:

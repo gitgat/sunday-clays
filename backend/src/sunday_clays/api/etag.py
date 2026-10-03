@@ -23,7 +23,10 @@ NO_ETAG_PREFIXES: tuple[str, ...] = (
     "/api/admin/",
     "/api/predictions/",
     "/api/features/",
+    "/api/og/",  # Plan 19 D6: public previews set their own Cache-Control
 )
+# Plan 19: routes whose own Cache-Control must stand (the middleware sets none for them)
+OWN_CACHE_CONTROL_PREFIXES: tuple[str, ...] = ("/api/og/",)
 NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/", "/api/features/")
 # Plan 19 D3: switches change without a data_version bump. Matched exactly (plus the "/"
 # prefixes above), so a sibling such as /api/features-x is not swept in.
@@ -45,7 +48,12 @@ def etag_eligible(method: str, path: str) -> bool:
 
 
 def cache_control_for(path: str) -> str | None:
-    """`no-store` for auth, admin and bump counts, `private, no-cache` for other /api paths."""
+    """`no-store` for auth, admin and bump counts, `private, no-cache` for other /api paths.
+
+    None for link previews (their route sets public caching) and for non-API paths.
+    """
+    if path.startswith(OWN_CACHE_CONTROL_PREFIXES):
+        return None
     if (
         path == SWITCH_PATH
         or path.startswith(NO_STORE_PREFIXES)
