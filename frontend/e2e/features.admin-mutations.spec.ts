@@ -9,7 +9,7 @@ import { whenSettled } from './layout';
 // restores them. The e2e stack starts with every feature on (FEATURES_DEFAULT_ON).
 test.use({ storageState: ADMIN_STATE });
 
-/** The six launch switches. Infrastructure switches (the page cache) are never touched here. */
+/** The six launch switches. */
 const FEATURE_KEYS = [
   'link_previews',
   'tour_glossary',
@@ -18,6 +18,8 @@ const FEATURE_KEYS = [
   'club_milestones',
   'summary_card',
 ] as const;
+/** Put back in afterEach when a test flipped it (the page cache test does), even if that test fails. */
+const RESTORED_KEYS = [...FEATURE_KEYS, 'page_cache'] as const;
 const SIZES = [
   { width: 390, height: 844 },
   { width: 1440, height: 900 },
@@ -63,11 +65,11 @@ test.afterEach(async ({ baseURL }) => {
   const api = await pwRequest.newContext({ baseURL, storageState: ADMIN_STATE });
   const failures: string[] = [];
   try {
-    // Only the six launch switches, only those recorded in beforeEach, and only those a test
-    // changed: a blind PUT of every row would also store infrastructure switches that are meant
-    // to stay at their default. Each key gets its own attempt.
+    // Only the six launch switches and the page cache, only those recorded in beforeEach, and
+    // only those a test changed: a blind PUT of every row would also store infrastructure
+    // switches that are meant to stay at their default. Each key gets its own attempt.
     const now = await adminSwitches(api).catch(() => ({}) as Record<string, boolean>);
-    for (const key of FEATURE_KEYS) {
+    for (const key of RESTORED_KEYS) {
       const was = saved[key];
       if (was === undefined || now[key] === was) continue;
       try {
@@ -283,3 +285,28 @@ for (const size of SIZES) {
     expect((await request.get(`/api/og/image/sunday/${DAY}.png`)).status()).toBe(404);
   });
 }
+
+test('page cache off: viewers get the same Home, computed live; on again in afterEach', async ({
+  page,
+  request,
+  browser,
+}) => {
+  await setSwitch(request, 'page_cache', false);
+  for (const size of SIZES) {
+    const viewer = await viewerPage(browser, size);
+    await viewer.goto('/');
+    await whenSettled(viewer);
+    await expect(viewer.getByRole('heading', { name: 'Latest Sunday', exact: true })).toBeVisible();
+    const home = await viewer.request.get('/api/insights/home');
+    expect(home.status()).toBe(200);
+    expect(home.headers()['x-page-cache']).toBe('bypass');
+    await viewer.context().close();
+  }
+  await page.goto('/admin/features');
+  const infra = page.getByRole('region', { name: 'Infrastructure' });
+  await expect(infra.getByRole('switch', { name: 'Page cache' })).toHaveAttribute(
+    'aria-checked',
+    'false',
+  );
+  await expect(infra.getByText('Admin preview')).toHaveCount(0);
+});

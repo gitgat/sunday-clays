@@ -50,7 +50,9 @@ def worker_settings(
     monkeypatch.setattr(
         worker,
         "get_settings",
-        lambda: SimpleNamespace(weather_enabled=False, timezone="America/Los_Angeles"),
+        lambda: SimpleNamespace(
+            weather_enabled=False, timezone="America/Los_Angeles", page_cache_enabled=False
+        ),
     )
 
     # Plan 16: the real scheduler queues page_view_rollup from 03:00 local every day, which would
@@ -195,7 +197,9 @@ def test_run_worker_passes_the_timezone_and_weather_flag_to_the_scheduler(
 
     monkeypatch.setattr(worker, "process_one", once)
     worker.run_worker(stop, poll_seconds=0.01)
-    assert schedule_calls == [{"weather_enabled": False, "timezone": "America/Los_Angeles"}]
+    assert schedule_calls == [
+        {"weather_enabled": False, "timezone": "America/Los_Angeles", "page_cache_enabled": False}
+    ]
 
 
 def test_run_worker_keeps_the_heartbeat_fresh_during_a_long_job(

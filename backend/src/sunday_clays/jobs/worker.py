@@ -137,6 +137,7 @@ def run_worker(stop: threading.Event, poll_seconds: float = 2.0) -> None:
                     datetime.now(UTC),
                     weather_enabled=settings.weather_enabled,
                     timezone=settings.timezone,
+                    page_cache_enabled=settings.page_cache_enabled,
                 )
                 session.commit()
                 worked = process_one(session, weather_enabled=settings.weather_enabled)
