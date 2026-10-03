@@ -47,7 +47,9 @@ test('the club headline numbers follow the window, tagged with its dates', async
   await page.goto('/club');
   await expect(page.getByText(/^Last 8 weeks · /, { exact: false }).first()).toBeVisible();
   // The Rounds tile (the third stat) holds the windowed count.
-  const tile = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Club' }) });
+  const tile = page
+    .locator('header')
+    .filter({ has: page.getByRole('heading', { level: 1, name: 'Club', exact: true }) });
   await expect(tile).toContainText(count(windowed.n_rounds));
   await expect(tile).toContainText(count(windowed.clays_broken));
   await expectNoSideScroll(page);
