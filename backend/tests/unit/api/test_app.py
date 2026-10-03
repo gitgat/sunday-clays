@@ -32,3 +32,10 @@ def test_startup_fails_on_conflicting_secret_sources(
 
     with pytest.raises(ConfigError, match="SESSION_SECRET_FILE"), TestClient(create_app()):
         pass
+
+
+def test_og_is_the_only_new_public_module() -> None:
+    from sunday_clays.api.app import PUBLIC_ROUTE_MODULES, role_dependencies
+
+    assert frozenset({"health", "auth", "og"}) == PUBLIC_ROUTE_MODULES
+    assert role_dependencies("og") == []

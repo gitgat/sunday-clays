@@ -80,6 +80,8 @@ class Settings(BaseSettings):
     page_view_limit: int = 600  # Plan 16: page-view beacons per IP per 10 minutes
     # Plan 19 D4: comma-separated feature keys treated as on while their app_state row is missing
     features_default_on: str = ""
+    # Plan 19 D11: every absolute URL (og:url, og:image, recap link); never the Host header
+    public_base_url: str = "https://sundayclays.claysmasher.com"
     cookie_secure: bool = True
 
     @classmethod
