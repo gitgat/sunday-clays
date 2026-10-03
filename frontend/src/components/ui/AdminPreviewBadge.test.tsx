@@ -12,8 +12,9 @@ describe('AdminPreviewBadge', () => {
     off();
     renderWithProviders(<AdminPreviewBadge feature="summary_card" />, { role: 'admin' });
     const badge = await screen.findByText('Admin preview');
-    expect(badge).toHaveAttribute('title', ADMIN_PREVIEW_HINT);
-    expect(badge).toHaveAttribute('aria-description', ADMIN_PREVIEW_HINT);
+    const hint = screen.getByText(ADMIN_PREVIEW_HINT);
+    expect(hint).toHaveClass('sr-only');
+    expect(badge).toContainElement(hint);
   });
 
   it('renders nothing once the switch is on', async () => {

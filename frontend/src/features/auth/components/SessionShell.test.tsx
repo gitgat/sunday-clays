@@ -1,6 +1,8 @@
 import { act, screen, waitFor } from '@testing-library/react';
+import { Compass } from 'lucide-react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { NavItem } from '../../../app/registry';
 import { resetMeForTests } from '../../../lib/me';
 import { server } from '../../../test/msw/server';
 import { renderRoutes } from '../../../test/render';
@@ -8,6 +10,19 @@ import { stubViewport } from '../../../test/viewport';
 import { SESSION_QUERY_KEY } from '../api';
 import { RequireRole } from './RequireRole';
 import { SessionShell } from './SessionShell';
+
+// A launch-switched nav item: no real page is gated yet, so the registry gains a test one.
+vi.mock('../../../app/registry', async (importOriginal) => {
+  const actual = await importOriginal<{ navItems: NavItem[] }>();
+  const gated: NavItem = {
+    label: 'Gated page',
+    path: '/gated',
+    icon: Compass,
+    order: 135,
+    feature: 'summary_card',
+  };
+  return { ...actual, navItems: [...actual.navItems, gated] };
+});
 
 const ROUTES = [
   { path: '/login', element: <p>login page</p> },
@@ -180,5 +195,34 @@ describe('SessionShell page views', () => {
     await screen.findByText('profile page');
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(sent).toEqual([]);
+  });
+});
+
+describe('SessionShell launch switches', () => {
+  const off = () =>
+    server.use(http.get('*/api/features', () => HttpResponse.json({ switches: {} })));
+
+  it('lists a gated nav item for an admin while its switch is off', async () => {
+    stubViewport('desktop');
+    off();
+    renderRoutes(ROUTES, { route: '/', role: 'admin' });
+    expect(await screen.findByRole('link', { name: 'Gated page' })).toBeInTheDocument();
+  });
+
+  it('hides a gated nav item from a viewer while its switch is off', async () => {
+    stubViewport('desktop');
+    off();
+    renderRoutes(ROUTES, { route: '/', role: 'viewer' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('link', { name: 'Gated page' })).not.toBeInTheDocument();
+  });
+
+  it('lists a gated nav item for a viewer once its switch is on', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.get('*/api/features', () => HttpResponse.json({ switches: { summary_card: true } })),
+    );
+    renderRoutes(ROUTES, { route: '/', role: 'viewer' });
+    expect(await screen.findByRole('link', { name: 'Gated page' })).toBeInTheDocument();
   });
 });

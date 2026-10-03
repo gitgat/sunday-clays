@@ -14,10 +14,7 @@ function SwitchRow({
   pending: boolean;
 }) {
   return (
-    <li
-      aria-label={row.label}
-      className="flex flex-col gap-1 border-b border-outline-variant py-3 last:border-b-0"
-    >
+    <li className="flex flex-col gap-1 border-b border-outline-variant py-3 last:border-b-0">
       <Toggle label={row.label} checked={row.enabled} onChange={onChange} disabled={pending} />
       <p className="text-sm text-text-muted">{row.description}</p>
       <p className="text-xs text-text-muted">{changedText(row.updated_on)}</p>
@@ -43,9 +40,11 @@ export function FeaturesPage() {
         <h1 className="text-2xl font-medium">Features</h1>
         <p className="text-text-muted">{FEATURES_INTRO}</p>
       </header>
-      <p aria-live="polite" className="text-sm text-text-muted">
-        {failed ?? ''}
-      </p>
+      {failed === null ? null : (
+        <p role="alert" className="text-sm text-text">
+          {failed}
+        </p>
+      )}
       {query.isPending ? (
         <p role="status">Loading switches…</p>
       ) : query.isError ? (

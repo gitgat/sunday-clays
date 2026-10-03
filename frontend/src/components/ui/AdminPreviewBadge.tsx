@@ -7,12 +7,9 @@ export function AdminPreviewBadge({ feature }: { feature: FeatureKey }) {
   const { preview } = useFeature(feature);
   if (!preview) return null;
   return (
-    <span
-      title={ADMIN_PREVIEW_HINT}
-      aria-description={ADMIN_PREVIEW_HINT}
-      className="inline-flex items-center rounded-button border border-accent px-2 py-0.5 text-xs font-medium text-text"
-    >
+    <span className="inline-flex items-center rounded-button border border-accent px-2 py-0.5 text-xs font-medium text-text">
       Admin preview
+      <span className="sr-only"> {ADMIN_PREVIEW_HINT}</span>
     </span>
   );
 }

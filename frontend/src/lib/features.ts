@@ -4,8 +4,9 @@ import type { components } from '../api/schema';
 import { useSession, type Role } from '../features/auth/api';
 
 /**
- * A launch-switch key (Plan 19 D23), from the generated API schema. `page_cache` (Plan 19 T11) is an infrastructure switch that
- * `/api/features` never lists, so it is excluded here; until T11 the Exclude is a no-op.
+ * A launch-switch key (Plan 19 D23), from the generated API schema. `page_cache` (Plan 19 T11) is
+ * an infrastructure switch that `/api/features` never lists, so it is excluded here; until T11 the
+ * Exclude is a no-op.
  */
 export type FeatureKey = Exclude<components['schemas']['FeatureSwitchOut']['key'], 'page_cache'>;
 
@@ -13,8 +14,8 @@ export const FEATURES_QUERY_KEY = ['/api/features'] as const;
 
 /**
  * `on`: the switch is on for everyone. `visible`: this viewer sees the feature (on, or an admin
- * previewing it). `preview`: an admin sees it while it is off. `settled`: the switches are known;
- * code that acts on "off" (the PWA unregister, D16) checks `settled && !on`.
+ * previewing it). `preview`: an admin sees it while it is off. `settled`: the switches are known
+ * (a failed refetch keeps the last answer); code that acts on "off" (the PWA unregister, D16) checks `settled && !on`.
  */
 export interface FeatureState {
   visible: boolean;
@@ -42,7 +43,7 @@ export function useFeatures() {
   return useQuery({
     queryKey: FEATURES_QUERY_KEY,
     queryFn: async (): Promise<Record<string, boolean>> =>
-      (await unwrap(api.GET('/api/features'))).switches as Record<string, boolean>,
+      (await unwrap(api.GET('/api/features'))).switches,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
     enabled: session !== null,
@@ -52,5 +53,5 @@ export function useFeatures() {
 export function useFeature(key: FeatureKey): FeatureState {
   const { session } = useSession();
   const query = useFeatures();
-  return featureState(query.isSuccess ? query.data : undefined, session?.role ?? null, key);
+  return featureState(query.data, session?.role ?? null, key);
 }

@@ -1,7 +1,8 @@
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../test/msw/server';
+import { FEATURES_QUERY_KEY } from '../lib/features';
 import { renderWithProviders } from '../test/render';
 import { FeatureGate } from './FeatureGate';
 
@@ -48,5 +49,20 @@ describe('FeatureGate', () => {
       </FeatureGate>,
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load this page');
+  });
+
+  it('keeps showing the page when a later refetch of the switches fails', async () => {
+    const { queryClient } = renderWithProviders(
+      <FeatureGate feature="club_milestones">
+        <h1>Milestones</h1>
+      </FeatureGate>,
+    );
+    expect(await screen.findByRole('heading', { name: 'Milestones' })).toBeInTheDocument();
+    server.use(http.get('*/api/features', () => HttpResponse.error()));
+    await act(() => queryClient.refetchQueries({ queryKey: FEATURES_QUERY_KEY }));
+    expect(queryClient.getQueryState(FEATURES_QUERY_KEY)?.status).toBe('error');
+    await new Promise((resolve) => setTimeout(resolve, 50)); // let the error reach the hook
+    expect(screen.getByRole('heading', { name: 'Milestones' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

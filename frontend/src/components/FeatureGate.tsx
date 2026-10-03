@@ -10,7 +10,7 @@ import { useFeature, useFeatures, type FeatureKey } from '../lib/features';
 export function FeatureGate({ feature, children }: { feature: FeatureKey; children: ReactNode }) {
   const state = useFeature(feature);
   const query = useFeatures();
-  if (query.isError) {
+  if (query.isError && query.data === undefined) {
     return <p role="alert">Could not load this page. Reload to try again.</p>;
   }
   if (!state.settled) return null;
