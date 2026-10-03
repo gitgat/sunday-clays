@@ -41,7 +41,7 @@ describe('page cache status line', () => {
       'Off. Pages compute live and nothing is stored.',
     );
     expect(cacheStatusText({ ...pageCacheStatus, enabled: false, forced_off: true })).toBe(
-      'Off for this deployment (PAGE_CACHE_ENABLED=false)',
+      'Turned off on the server',
     );
   });
 

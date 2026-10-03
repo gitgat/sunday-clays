@@ -362,3 +362,73 @@ def test_a_leaders_404_is_not_shared_and_not_stored(
     assert len(calls) == 4
     with Session(committed_engine) as s:
         assert s.execute(text("SELECT count(*) FROM response_cache")).scalar_one() == 0
+
+
+def test_repeated_parameters_are_never_stored_or_cross_served(
+    cache_on: None, fx_viewer_client: TestClient, fx_session: Session
+) -> None:
+    """FastAPI answers with the last value; a key that sorts values would merge both orders."""
+    first = fx_viewer_client.get("/api/events?year=2025&year=2026")
+    second = fx_viewer_client.get("/api/events?year=2026&year=2025")
+    assert first.headers["x-page-cache"] == second.headers["x-page-cache"] == "bypass"
+    assert _rows(fx_session) == []
+    assert first.content != second.content  # 2026 vs 2025 answers differ
+
+
+def test_a_stored_row_is_never_served_without_a_valid_session(
+    cache_on: None,
+    fx_viewer_client: TestClient,
+    fx_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from sunday_clays.auth import sessions
+
+    url = "/api/shooters/3"
+    valid = fx_viewer_client.cookies.get(COOKIE_NAME)
+    assert valid is not None
+    assert fx_viewer_client.get(url).headers["x-page-cache"] == "miss"
+    assert len(_rows(fx_session)) == 1
+    assert fx_viewer_client.get(url).headers["x-page-cache"] == "hit"
+
+    fx_viewer_client.cookies.clear()
+    no_cookie = fx_viewer_client.get(url)
+    assert no_cookie.status_code == 401
+    assert no_cookie.headers.get("x-page-cache") != "hit"
+
+    fx_viewer_client.cookies.set(COOKIE_NAME, valid + "x")
+    forged = fx_viewer_client.get(url)
+    assert forged.status_code == 401
+    assert forged.headers.get("x-page-cache") != "hit"
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> "Later":
+            return cls.fromtimestamp((datetime.now(UTC) + timedelta(days=31)).timestamp(), tz)
+
+    monkeypatch.setattr(sessions, "datetime", Later)
+    fx_viewer_client.cookies.set(COOKIE_NAME, valid)
+    expired = fx_viewer_client.get(url)
+    assert expired.status_code == 401
+    assert expired.headers.get("x-page-cache") != "hit"
+
+
+def test_a_failed_store_still_serves_the_body_with_one_warning(
+    cache_on: None,
+    fx_viewer_client: TestClient,
+    fx_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def broken(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(pc, "_write", broken)
+    with caplog.at_level(logging.WARNING, logger="sunday_clays.api.page_cache"):
+        response = fx_viewer_client.get("/api/shooters/3")
+    assert response.status_code == 200
+    assert response.headers["x-page-cache"] == "miss"
+    (record,) = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert "/api/shooters/{id}" in record.getMessage()
+    assert _rows(fx_session) == []

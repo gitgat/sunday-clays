@@ -62,6 +62,9 @@ def test_undeclared_parameters_and_long_urls_bypass() -> None:
     assert pc.bypass_reason(route, "/api/events", [("_", "1")]) == "undeclared"
     long_value = "x" * pc.MAX_KEY_URL
     assert pc.bypass_reason(route, "/api/events", [("year", long_value)]) == "too_long"
+    # FastAPI answers with the last value, but the sorted key would merge the two orders
+    repeated = [("year", "2025"), ("year", "2026")]
+    assert pc.bypass_reason(route, "/api/events", repeated) == "repeated"
 
 
 def test_a_route_an_allowlisted_template_would_swallow_fails_startup() -> None:

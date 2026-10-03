@@ -120,7 +120,8 @@ class CacheHeadersMiddleware(BaseHTTPMiddleware):
     data_version and the local date are read once per eligible request, before the route
     runs, so the tag can only be older than the body, never newer. A request without a
     session cookie skips that read: every eligible path needs a viewer, so it can never be
-    a 200. The route always runs; nothing short-circuits.
+    a 200. The route runs unless the inner page cache (Plan 19) answers from a stored body; the
+    tag and the 304 are computed here either way.
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:

@@ -25,7 +25,7 @@ def _put_raw(session: Session, key: str, raw_json: str) -> None:
     )
 
 
-def test_a_missing_row_is_off(session: Session) -> None:
+def test_a_missing_row_is_the_default(session: Session) -> None:
     expected = {f.key: f.default_on for f in features.FEATURES}  # only page_cache defaults on
     assert features.read_switches(session, _settings()) == expected
 

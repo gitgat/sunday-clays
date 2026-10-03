@@ -151,7 +151,20 @@ describe('FeaturesPage infrastructure group', () => {
     );
     renderWithProviders(<FeaturesPage />, { role: 'admin' });
     const infra = await screen.findByRole('region', { name: 'Infrastructure' });
-    await within(infra).findByText('Off for this deployment (PAGE_CACHE_ENABLED=false)');
-    expect(within(infra).getByRole('switch', { name: 'Page cache' })).toBeDisabled();
+    const status = await within(infra).findByText('Turned off on the server');
+    const toggle = within(infra).getByRole('switch', { name: 'Page cache' });
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAttribute('aria-describedby', status.id);
+    expect(status.id).not.toBe('');
+  });
+
+  it('shows plain "Status unavailable" while loading or when the status fails', async () => {
+    server.use(http.get('*/api/admin/page-cache', () => HttpResponse.error()));
+    renderWithProviders(<FeaturesPage />, { role: 'admin' });
+    const infra = await screen.findByRole('region', { name: 'Infrastructure' });
+    expect(await within(infra).findByText('Status unavailable')).toBeInTheDocument();
+    expect(within(infra).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(infra).getByRole('switch', { name: 'Page cache' })).toBeEnabled();
   });
 });

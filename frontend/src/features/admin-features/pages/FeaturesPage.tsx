@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Toggle } from '../../../components/ui/Toggle';
 import {
@@ -22,6 +22,7 @@ function SwitchRow({
   status?: string;
   locked?: boolean;
 }) {
+  const statusId = useId();
   return (
     <li className="flex flex-col gap-1 border-b border-outline-variant py-3 last:border-b-0">
       <Toggle
@@ -29,10 +30,15 @@ function SwitchRow({
         checked={row.enabled}
         onChange={onChange}
         disabled={pending || locked}
+        describedBy={status === undefined ? undefined : statusId}
       />
       <p className="text-sm text-text-muted">{row.description}</p>
       <p className="text-xs text-text-muted">{changedText(row.updated_on)}</p>
-      {status !== undefined && <p className="text-xs text-text-muted">{status}</p>}
+      {status !== undefined && (
+        <p id={statusId} className="text-xs text-text-muted">
+          {status}
+        </p>
+      )}
     </li>
   );
 }
@@ -92,9 +98,11 @@ export function FeaturesPage() {
                     pending={mutation.isPending}
                     locked={row.key === 'page_cache' && cache.data?.forced_off === true}
                     status={
-                      row.key === 'page_cache' && cache.data
-                        ? cacheStatusText(cache.data)
-                        : undefined
+                      row.key !== 'page_cache'
+                        ? undefined
+                        : cache.data
+                          ? cacheStatusText(cache.data)
+                          : 'Status unavailable'
                     }
                     onChange={(enabled) => change(row, enabled)}
                   />

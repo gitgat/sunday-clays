@@ -14,7 +14,7 @@ export const INFRA_INTRO =
 
 /** The status line under "Page cache" (§3.7.6); dates come from the club-timezone local_date. */
 export function cacheStatusText(status: PageCacheStatus): string {
-  if (status.forced_off) return 'Off for this deployment (PAGE_CACHE_ENABLED=false)';
+  if (status.forced_off) return 'Turned off on the server';
   if (!status.enabled) return 'Off. Pages compute live and nothing is stored.';
   const warm = status.last_warm;
   if (warm === null) return 'Not refreshed yet';

@@ -5,15 +5,18 @@ export interface ToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  /** Id of the element that explains the switch (for example why it is disabled). */
+  describedBy?: string;
 }
 
-export function Toggle({ label, checked, onChange, disabled = false }: ToggleProps) {
+export function Toggle({ label, checked, onChange, disabled = false, describedBy }: ToggleProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       disabled={disabled}
+      aria-describedby={describedBy}
       onClick={() => onChange(!checked)}
       className="inline-flex min-h-11 items-center gap-3 text-sm text-text disabled:opacity-50"
     >

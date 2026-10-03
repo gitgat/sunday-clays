@@ -162,6 +162,9 @@ def bypass_reason(route: CachedRoute, path: str, query: Sequence[tuple[str, str]
     """None when the request may use the cache; else why not (never logged with the URL)."""
     if any(name not in route.query_names for name, _ in query):
         return "undeclared"
+    names = [name for name, _ in query]
+    if len(names) != len(set(names)):
+        return "repeated"  # FastAPI takes the last value; the sorted key would merge the orders
     if len(path) + sum(len(n) + len(v) + 2 for n, v in query) > MAX_KEY_URL:
         return "too_long"
     return None
