@@ -1,6 +1,6 @@
 import { toBlob } from 'html-to-image';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { shareElementAsImage } from './share';
+import { downloadElementAsImage, renderElementToPng, shareElementAsImage } from './share';
 
 vi.mock('html-to-image', () => ({ toBlob: vi.fn() }));
 
@@ -186,5 +186,30 @@ describe('Roboto embedding', () => {
     await shareElementAsImage(document.createElement('div'), 'b');
     expect(fetch).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('renderElementToPng and downloadElementAsImage', () => {
+  it('renders the element to a PNG blob with the share options', async () => {
+    const el = document.createElement('div');
+    await expect(renderElementToPng(el)).resolves.toBe(png);
+    expect(vi.mocked(toBlob).mock.calls[0]?.[0]).toBe(el);
+    expect(vi.mocked(toBlob).mock.calls[0]?.[1]?.skipFonts).toBe(true);
+  });
+
+  it('downloads and never opens the share sheet, even when sharing is possible', async () => {
+    vi.spyOn(navigator, 'canShare').mockReturnValue(true);
+    const share = vi.spyOn(navigator, 'share');
+    const names = captureDownloads();
+    await downloadElementAsImage(document.createElement('div'), 'card');
+    expect(names).toEqual(['card.png']);
+    expect(share).not.toHaveBeenCalled();
+  });
+
+  it('throws when nothing could be rendered', async () => {
+    vi.mocked(toBlob).mockResolvedValue(null);
+    await expect(renderElementToPng(document.createElement('div'))).rejects.toThrow(
+      'Could not render the image',
+    );
   });
 });
