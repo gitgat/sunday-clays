@@ -21,11 +21,11 @@ const STANDALONE = '(display-mode: standalone)';
 const BUTTON = 'inline-flex min-h-11 items-center justify-center rounded-button px-4 text-sm';
 
 /** An installed app opens on the viewer's own page, once per session (§3.4 launch behaviour). */
-function useLaunchRedirect(): void {
+function useLaunchRedirect(pwaVisible: boolean): void {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   useEffect(() => {
-    if (!window.matchMedia(STANDALONE).matches || pathname !== '/') return;
+    if (!pwaVisible || !window.matchMedia(STANDALONE).matches || pathname !== '/') return;
     try {
       if (sessionStorage.getItem(LAUNCHED_KEY) !== null) return;
       const me = getMe();
@@ -35,13 +35,13 @@ function useLaunchRedirect(): void {
     } catch {
       // storage blocked: stay on Home
     }
-  }, [navigate, pathname]);
+  }, [navigate, pathname, pwaVisible]);
 }
 
 /** Always mounts (the launch redirect runs first), then renders the install tip or nothing. */
 function InstallTip() {
-  useLaunchRedirect();
   const { visible } = useFeature('pwa');
+  useLaunchRedirect(visible);
   const tour = useFeature('tour_glossary');
   const tourDone = useTourDone();
   const touch = useIsTouch();

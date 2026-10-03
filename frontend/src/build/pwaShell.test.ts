@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { cacheNameFor, cachesToDelete, precacheList, pwaShell, swSource } from './pwaShell';
 
 const bundle = {
@@ -123,5 +123,111 @@ describe('pwaShell', () => {
     const none: { fileName: string; source: string }[] = [];
     hook.call({ emitFile: (f: { fileName: string; source: string }) => none.push(f) }, {}, {});
     expect(none.map((f) => f.fileName)).toEqual(['sw.js']); // still emits with no index.html
+  });
+});
+
+interface FakeEvent {
+  request: { method: string; url: string; mode: string };
+  respondWith: ReturnType<typeof vi.fn>;
+}
+
+/** Runs the emitted worker in a fake scope and returns a way to fire its fetch listener. */
+function runWorker(fetchImpl: (r: unknown) => Promise<Response>, cached: Map<string, Response>) {
+  const listeners: Record<string, (event: unknown) => void> = {};
+  const self = {
+    addEventListener: (type: string, fn: (event: unknown) => void) => {
+      listeners[type] = fn;
+    },
+    location: { origin: 'https://sc.test' },
+    skipWaiting: vi.fn(),
+    clients: { claim: vi.fn() },
+  };
+  const put = vi.fn().mockResolvedValue(undefined);
+  const match = vi.fn(async (request: string | { url: string }) =>
+    cached.get(typeof request === 'string' ? request : new URL(request.url).pathname),
+  );
+  const caches = {
+    match,
+    open: vi.fn().mockResolvedValue({ put }),
+    keys: vi.fn(),
+    delete: vi.fn(),
+  };
+  const fetchSpy = vi.fn(fetchImpl);
+  new Function('self', 'caches', 'fetch', swSource('sc-shell-t', ['/']))(self, caches, fetchSpy);
+  const fire = async (method: string, path: string, mode = 'cors') => {
+    const event: FakeEvent = {
+      request: { method, url: `https://sc.test${path}`, mode },
+      respondWith: vi.fn(),
+    };
+    listeners.fetch?.(event);
+    const answered = event.respondWith.mock.calls.length > 0;
+    const response = answered
+      ? await (event.respondWith.mock.calls[0]?.[0] as Promise<Response>)
+      : null;
+    return { answered, response };
+  };
+  return { fire, match, fetchSpy, put };
+}
+
+describe('emitted worker behaviour', () => {
+  const live = () => new Response('live');
+  const cachedIndex = new Response('cached-index');
+
+  it('navigations are network-first and read the cache only when the network fails', async () => {
+    const online = runWorker(async () => live(), new Map([['/index.html', cachedIndex]]));
+    const ok = await online.fire('GET', '/club', 'navigate');
+    expect(await ok.response?.text()).toBe('live');
+    expect(online.match).not.toHaveBeenCalled();
+
+    const offline = runWorker(
+      () => Promise.reject(new TypeError('offline')),
+      new Map([['/index.html', new Response('cached-index')]]),
+    );
+    const fallback = await offline.fire('GET', '/club', 'navigate');
+    expect(await fallback.response?.text()).toBe('cached-index');
+    expect(offline.fetchSpy).toHaveBeenCalledTimes(1);
+    expect(offline.match).toHaveBeenCalledWith('/index.html', { cacheName: 'sc-shell-t' });
+  });
+
+  it('an offline navigation with nothing cached is a network error, not a crash', async () => {
+    const offline = runWorker(() => Promise.reject(new TypeError('offline')), new Map());
+    const { response } = await offline.fire('GET', '/', 'navigate');
+    expect(response?.type).toBe('error');
+  });
+
+  it.each([
+    ['GET', '/api/x'],
+    ['GET', '/l/x'],
+    ['POST', '/assets/a.js'],
+    ['GET', '/trophies/t.png'],
+  ])('%s %s is left to the network (no respondWith)', async (method, path) => {
+    const worker = runWorker(async () => live(), new Map());
+    expect((await worker.fire(method, path)).answered).toBe(false);
+  });
+
+  it('serves /assets/* cache-first and stores a miss', async () => {
+    const hit = runWorker(
+      async () => live(),
+      new Map([['/assets/a.js', new Response('cached-js')]]),
+    );
+    expect(await (await hit.fire('GET', '/assets/a.js')).response?.text()).toBe('cached-js');
+    expect(hit.fetchSpy).not.toHaveBeenCalled();
+
+    const miss = runWorker(async () => live(), new Map());
+    expect(await (await miss.fire('GET', '/assets/b.js')).response?.text()).toBe('live');
+    expect(miss.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves icons network-first so a regenerated icon is never stale', async () => {
+    const worker = runWorker(
+      async () => live(),
+      new Map([['/icons/icon-192.png', new Response('old')]]),
+    );
+    expect(await (await worker.fire('GET', '/icons/icon-192.png')).response?.text()).toBe('live');
+    const offline = runWorker(
+      () => Promise.reject(new TypeError('offline')),
+      new Map([['/icons/icon-192.png', new Response('old')]]),
+    );
+    expect(await (await offline.fire('GET', '/icons/icon-192.png')).response?.text()).toBe('old');
   });
 });

@@ -1,7 +1,8 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetInstallPromptForTests } from '../../lib/installPrompt';
+import { markTourDone, resetTourForTests, TOUR_KEY } from '../tour/state';
 import { server } from '../../test/msw/server';
 import { renderWithProviders } from '../../test/render';
 import { homeWidget, LAUNCHED_KEY } from './homeWidget';
@@ -34,6 +35,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   resetInstallPromptForTests();
+  resetTourForTests();
+  localStorage.removeItem(TOUR_KEY);
   sessionStorage.clear();
 });
 
@@ -99,7 +102,20 @@ describe('install tip and launch redirect', () => {
     fireInstallPrompt();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(container).toBeEmptyDOMElement();
-    localStorage.setItem('sc.tour.v1', 'done');
+    act(() => markTourDone());
+    expect(
+      await screen.findByRole('heading', { name: 'Add Sunday Clays to your home screen' }),
+    ).toBeInTheDocument();
+  });
+
+  it('does not redirect an installed app while the pwa switch is off', async () => {
+    media({ '(display-mode: standalone)': true });
+    localStorage.setItem('sc.me', '3');
+    server.use(http.get('*/api/features', () => HttpResponse.json({ switches: {} })));
+    const { router } = renderWithProviders(<Component meId={3} />, { route: '/' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(router.state.location.pathname).toBe('/');
+    expect(sessionStorage.getItem(LAUNCHED_KEY)).toBeNull();
   });
 
   it('opens an installed app on the viewer’s own page once per session', async () => {

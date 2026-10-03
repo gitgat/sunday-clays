@@ -23,6 +23,10 @@ async function registerShell(): Promise<void> {
 }
 
 async function removeShell(): Promise<void> {
+  await removeShellUnsafe().catch(() => undefined); // a failed clean-up retries on the next load
+}
+
+async function removeShellUnsafe(): Promise<void> {
   if ('serviceWorker' in navigator) {
     const registrations = await navigator.serviceWorker.getRegistrations();
     await Promise.all(registrations.map((r) => r.unregister()));

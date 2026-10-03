@@ -17,6 +17,7 @@ interface AssetLike {
 }
 type BundleLike = Readonly<Record<string, ChunkLike | AssetLike>>;
 
+// '/' and '/manifest.webmanifest' are both served (the SPA catch-all and Caddy's manifest handle).
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png'];
 
 /** The entry chunk, its static imports (transitively) and their CSS; never a lazy route chunk. */
@@ -92,7 +93,14 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-  if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')) {
+  if (url.pathname.startsWith('/icons/')) {
+    // Icons have no hashed names: network first, so a regenerated icon is never stale.
+    event.respondWith(
+      fetch(request).catch(async () => (await caches.match(request, { cacheName: CACHE })) || Response.error()),
+    );
+    return;
+  }
+  if (url.pathname.startsWith('/assets/')) {
     event.respondWith((async () => {
       const hit = await caches.match(request);
       if (hit) return hit;

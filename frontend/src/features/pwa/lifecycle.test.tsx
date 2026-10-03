@@ -73,6 +73,18 @@ describe('usePwaLifecycle', () => {
     await waitFor(() => expect(document.querySelector('link[rel="manifest"]')).toBeNull());
   });
 
+  it('swallows a failure while removing the shell', async () => {
+    getRegistrations.mockRejectedValueOnce(new Error('boom'));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    switches(false);
+    renderHook(() => usePwaLifecycle(), { wrapper: wrapper('viewer') });
+    await waitFor(() => expect(getRegistrations).toHaveBeenCalled());
+    await settle();
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it('does nothing where service workers and caches do not exist', async () => {
     const bare: Record<string, unknown> = { ...navigator };
     delete bare.serviceWorker;

@@ -65,9 +65,11 @@ export async function promptInstall(): Promise<'accepted' | 'dismissed' | 'unava
   return outcome;
 }
 
-/** iPhone, iPad or iPod Safari (not Chrome or Firefox on iOS, which cannot add to home). */
+/** iPhone, iPad (also in desktop mode) or iPod Safari (not Chrome, Firefox or Edge on iOS, which cannot add to home). */
 export function isIosSafari(ua: string = navigator.userAgent): boolean {
-  return /iP(hone|ad|od)/.test(ua) && /Safari/.test(ua) && !/CriOS|FxiOS/.test(ua);
+  if (!/Safari/.test(ua) || /CriOS|FxiOS|EdgiOS/.test(ua)) return false;
+  // iPadOS Safari sends a desktop Macintosh user agent; only the touch screen gives it away.
+  return /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
 }
 
 export function resetInstallPromptForTests(): void {

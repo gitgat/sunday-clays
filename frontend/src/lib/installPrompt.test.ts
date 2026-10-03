@@ -74,7 +74,31 @@ describe('install prompt', () => {
       'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36',
       false,
     ],
+    [
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 EdgiOS/129.0 Mobile/15E148 Safari/605.1.15',
+      false,
+    ],
   ])('isIosSafari(%s) is %s', (ua, expected) => {
     expect(isIosSafari(ua)).toBe(expected);
+  });
+
+  describe('iPadOS desktop user agent', () => {
+    const MAC =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15';
+    const touch = (points: number) =>
+      Object.defineProperty(navigator, 'maxTouchPoints', { value: points, configurable: true });
+    afterEach(() => Reflect.deleteProperty(navigator, 'maxTouchPoints'));
+
+    it('counts a touch Macintosh Safari as iOS', () => {
+      touch(5);
+      expect(isIosSafari(MAC)).toBe(true);
+    });
+
+    it('does not count a real Mac, or a touch Mac in Chrome', () => {
+      touch(0);
+      expect(isIosSafari(MAC)).toBe(false);
+      touch(5);
+      expect(isIosSafari(MAC.replace('Version/17.0 Safari', 'CriOS/129.0 Safari'))).toBe(false);
+    });
   });
 });

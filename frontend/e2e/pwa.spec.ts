@@ -44,6 +44,16 @@ test('the worker installs a small shell and never caches /api', async ({ page })
   expect(after.filter((f) => f.endsWith('.js')).length).toBeGreaterThan(jsBefore); // lazy chunks at run time
 });
 
+test('offline, a navigation falls back to the cached shell', async ({ page, context }) => {
+  await page.goto('/');
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+  await page.reload(); // now controlled by the worker
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator('#root')).not.toBeEmpty(); // the shell rendered from cache
+  await context.setOffline(false);
+});
+
 test('logging out and loading /login keeps the registration', async ({ page, isMobile }) => {
   await page.goto('/');
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
