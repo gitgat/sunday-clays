@@ -27,7 +27,17 @@ export function useSetFeatureSwitch() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: SWITCHES_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: FEATURES_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ['/api/admin/page-cache'] }),
       ]);
     },
+  });
+}
+
+export type PageCacheStatus = JsonOf<paths['/api/admin/page-cache']['get']>;
+
+export function usePageCacheStatus() {
+  return useQuery({
+    queryKey: ['/api/admin/page-cache'],
+    queryFn: () => unwrap(api.GET('/api/admin/page-cache')),
   });
 }

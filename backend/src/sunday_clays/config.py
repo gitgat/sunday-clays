@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     features_default_on: str = ""
     # Plan 19 D11: every absolute URL (og:url, og:image, recap link); never the Host header
     public_base_url: str = "https://sundayclays.claysmasher.com"
+    # Plan 19 D36: operator hard override; false bypasses the page cache whatever the switch says
+    page_cache_enabled: bool = True
     cookie_secure: bool = True
 
     @classmethod

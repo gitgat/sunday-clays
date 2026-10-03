@@ -23,14 +23,15 @@ def test_the_lint_used_here_does_catch_the_banned_words() -> None:
     assert any(p.startswith("class") for p in lint_text("A class of shooter", named=False))
 
 
-def test_the_registry_holds_exactly_the_six_feature_keys_in_order() -> None:
-    assert [f.key for f in FEATURES] == [
-        "link_previews",
-        "tour_glossary",
-        "weekly_recap",
-        "pwa",
-        "club_milestones",
-        "summary_card",
+def test_the_registry_holds_six_features_then_the_page_cache_kill_switch() -> None:
+    assert [(f.key, f.kind, f.default_on) for f in FEATURES] == [
+        ("link_previews", "feature", False),
+        ("tour_glossary", "feature", False),
+        ("weekly_recap", "feature", False),
+        ("pwa", "feature", False),
+        ("club_milestones", "feature", False),
+        ("summary_card", "feature", False),
+        ("page_cache", "infrastructure", True),
     ]
 
 

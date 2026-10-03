@@ -30,8 +30,11 @@ FeatureKey = Literal[
     "pwa",
     "club_milestones",
     "summary_card",
+    "page_cache",
 ]
+FeatureKind = Literal["feature", "infrastructure"]
 KEY_PREFIX: Final = "feature."
+LAST_WARM_KEY: Final = "page_cache.last_warm"  # Plan 19 §3.7.1, written by the page_warm job
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,9 @@ class Feature:
     key: FeatureKey
     label: str
     description: str
+    kind: FeatureKind = "feature"
+    # infrastructure keys: the value of a missing row (FEATURES_DEFAULT_ON is never consulted)
+    default_on: bool = False
 
 
 FEATURES: Final[tuple[Feature, ...]] = (
@@ -75,7 +81,18 @@ FEATURES: Final[tuple[Feature, ...]] = (
         "Summary card",
         "A shareable card on every profile for the chosen time window.",
     ),
+    Feature(
+        "page_cache",
+        "Page cache",
+        "Keeps each page's finished answer ready, so pages open fast. Refreshed after every "
+        "upload and each midnight. Turn off only if a page looks wrong. Turning it off clears "
+        "everything stored.",
+        kind="infrastructure",
+        default_on=True,
+    ),
 )
+#: The launch-switch keys the SPA reads (GET /api/features); infrastructure keys are not listed.
+FEATURE_KEYS: Final[tuple[FeatureKey, ...]] = tuple(f.key for f in FEATURES if f.kind == "feature")
 _BY_KEY: Final[dict[str, Feature]] = {f.key: f for f in FEATURES}
 if set(_BY_KEY) != set(get_args(FeatureKey)):
     raise RuntimeError("FEATURES must list every FeatureKey once")  # pragma: no cover
@@ -83,6 +100,7 @@ if set(_BY_KEY) != set(get_args(FeatureKey)):
 
 class FeatureSwitchOut(BaseModel):
     key: FeatureKey
+    kind: FeatureKind
     label: str
     description: str
     enabled: bool
@@ -136,6 +154,8 @@ def _state(
     rows: dict[str, Any], default_on: frozenset[str], f: Feature
 ) -> tuple[bool, datetime | None]:
     if f.key not in rows:
+        if f.kind == "infrastructure":
+            return f.default_on, None
         return f.key in default_on, None
     stored = _stored(rows[f.key], f.key)
     return (False, None) if stored is None else stored
@@ -155,6 +175,7 @@ def switch_on(session: Session, settings: Settings, key: FeatureKey) -> bool:
 def _out(f: Feature, enabled: bool, updated: datetime | None, tz: str) -> FeatureSwitchOut:
     return FeatureSwitchOut(
         key=f.key,
+        kind=f.kind,
         label=f.label,
         description=f.description,
         enabled=enabled,
@@ -178,9 +199,44 @@ _UPSERT = text(
 )
 
 
-def set_switch(session: Session, settings: Settings, key: str, enabled: bool) -> FeatureSwitchOut:
-    """Upsert one switch; ``updated_at`` is the database's ``now()`` (D1)."""
+def infrastructure_switch_on(session: Session, key: FeatureKey) -> bool:
+    """One infrastructure switch, read by primary key (D31: "one primary-key lookup").
+
+    The one reader for ``page_cache``: the ETag middleware (through ``page_cache_on``), the admin
+    status route and the worker's scheduler (T12) all call it. It never reads
+    ``FEATURES_DEFAULT_ON`` (a missing row is ``default_on``), and it reads only its own row, so a
+    corrupt row of any other key logs nothing on the request path.
+    """
     f = feature(key)
+    if f.kind != "infrastructure":
+        raise ValueError(f"{key} is a launch switch, not an infrastructure switch")
+    row = session.execute(
+        text("SELECT value FROM app_state WHERE key = :k"), {"k": KEY_PREFIX + f.key}
+    ).first()
+    if row is None:
+        return f.default_on
+    stored = _stored(row[0], f.key)
+    return False if stored is None else stored[0]
+
+
+def page_cache_on(session: Session, settings: Settings) -> bool:
+    """The page cache runs only with ``PAGE_CACHE_ENABLED`` true AND the switch on (D36).
+    The setting is checked first, so with it false no query runs at all."""
+    return settings.page_cache_enabled and infrastructure_switch_on(session, "page_cache")
+
+
+def set_switch(session: Session, settings: Settings, key: str, enabled: bool) -> FeatureSwitchOut:
+    """Upsert one switch; ``updated_at`` is the database's ``now()`` (D1).
+
+    ``page_cache`` (D36): both directions empty ``response_cache`` in the same transaction (a
+    request that read "on" just before a switch-off may store one row after it); "on" also
+    forgets the last warm-up, so the next worker poll warms the pages from empty.
+    """
+    f = feature(key)
+    if f.key == "page_cache":
+        session.execute(text("DELETE FROM response_cache"))
+        if enabled:
+            session.execute(text("DELETE FROM app_state WHERE key = :k"), {"k": LAST_WARM_KEY})
     params = {"key": KEY_PREFIX + f.key, "enabled": enabled}
     value: dict[str, Any] = session.execute(_UPSERT, params).scalar_one()
     # the upsert just wrote this value, so it is well formed

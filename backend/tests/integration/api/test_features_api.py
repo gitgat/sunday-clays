@@ -13,7 +13,7 @@ from sunday_clays.domain.features import FEATURES
 from sunday_clays.models import Base
 
 AUDIT = Base.metadata.tables["audit_log"]
-ALL_KEYS = {f.key for f in FEATURES}
+ALL_KEYS = {f.key for f in FEATURES if f.kind == "feature"}  # /api/features never lists page_cache
 
 
 def _probe(app: FastAPI) -> None:
@@ -138,3 +138,14 @@ def test_gated_route_off_is_untagged_404_even_with_if_none_match(
     off = gated.get("/api/probe-gated", headers={"If-None-Match": on.headers["etag"]})
     assert off.status_code == 404
     assert "etag" not in off.headers
+
+
+def test_page_cache_is_never_in_api_features(
+    viewer_client: TestClient, admin_client: TestClient
+) -> None:
+    assert "page_cache" not in viewer_client.get("/api/features").json()["switches"]
+    assert "page_cache" not in admin_client.get("/api/features").json()["switches"]
+    rows = admin_client.get("/api/admin/features").json()
+    assert rows[-1]["key"] == "page_cache"
+    assert rows[-1]["kind"] == "infrastructure"
+    assert rows[-1]["enabled"] is True  # missing row: on

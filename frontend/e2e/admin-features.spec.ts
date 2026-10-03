@@ -21,9 +21,15 @@ test('the Features page lists the six launch switches', async ({ page }) => {
   for (const label of LABELS) {
     await expect(page.getByRole('switch', { name: label })).toBeVisible();
   }
-  await expect(page.getByRole('switch')).toHaveCount(LABELS.length);
+  const launch = page.getByRole('region', { name: 'Launch switches' });
+  await expect(launch.getByRole('switch')).toHaveCount(LABELS.length);
   await expect(
-    page.getByText(/^(Changed [A-Z][a-z]{2} \d{1,2}, \d{4}|Never changed)$/),
+    page
+      .getByRole('region', { name: 'Infrastructure' })
+      .getByRole('switch', { name: 'Page cache' }),
+  ).toBeVisible();
+  await expect(
+    launch.getByText(/^(Changed [A-Z][a-z]{2} \d{1,2}, \d{4}|Never changed)$/),
   ).toHaveCount(LABELS.length);
   await expectNoSideScroll(page);
   await expectTapTargets(page);

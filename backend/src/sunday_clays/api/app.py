@@ -1,6 +1,6 @@
 """FastAPI application factory. Never edit this file to add a route (C2 API routers)."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Final
 
@@ -10,6 +10,7 @@ from sunday_clays.api.bodylimit import BodySizeLimitMiddleware
 from sunday_clays.api.csrf import CsrfGuardMiddleware
 from sunday_clays.api.errors import install_error_handlers
 from sunday_clays.api.etag import CacheHeadersMiddleware
+from sunday_clays.api.page_cache import ALLOWLIST, PageCacheMiddleware, resolve_allowlist
 from sunday_clays.api.routes import discover_routers
 from sunday_clays.auth.deps import require_admin, require_viewer
 from sunday_clays.config import get_settings
@@ -35,7 +36,8 @@ def role_dependencies(module_name: str) -> list[Any]:
     return [Depends(require_viewer)]
 
 
-def create_app() -> FastAPI:
+def create_app(*, page_cache_allowlist: Sequence[str] = ALLOWLIST) -> FastAPI:
+    """``page_cache_allowlist``: tests that replace the routers pass ``()`` (Plan 19 D30)."""
     app = FastAPI(
         title="Sunday Clays API",
         version="1",
@@ -49,6 +51,7 @@ def create_app() -> FastAPI:
         app.include_router(router, dependencies=role_dependencies(name))
     app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(CsrfGuardMiddleware)
+    app.add_middleware(PageCacheMiddleware, routes=resolve_allowlist(app, page_cache_allowlist))
     # Last registered = outermost: 403/413 replies from inner middlewares also get
     # Cache-Control (Plan 06 T1, C8).
     app.add_middleware(CacheHeadersMiddleware)

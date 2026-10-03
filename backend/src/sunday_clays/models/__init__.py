@@ -19,6 +19,7 @@ from sunday_clays.models.live import (
     StationLayout,
 )
 from sunday_clays.models.ops import AppState, Job
+from sunday_clays.models.page_cache import ResponseCache
 from sunday_clays.models.page_views import (
     PageKindRollup,
     PageView,
@@ -64,6 +65,7 @@ __all__ = [
     "PageViewAttempt",
     "PageViewRollup",
     "RatingHistory",
+    "ResponseCache",
     "Round",
     "RoundMetric",
     "Rule",
