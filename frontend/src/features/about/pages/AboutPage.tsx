@@ -22,7 +22,7 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
 
 /** Plan 19 §4: shown only while `link_previews` is visible (it describes that feature). */
 export const LINK_PREVIEWS_LINE =
-  'Links shared in chat apps show only the club name, and for a Sunday its date, how many shot and the round type. Never names or scores.';
+  'Links shared in chat apps show only the club name, and for a Sunday its date (or a special shoot’s title), how many shot and the round type. Never shooter names or scores.';
 
 export const PRIVACY = [
   'No accounts. There are no logins beyond the club’s shared password.',

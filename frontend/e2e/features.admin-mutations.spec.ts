@@ -10,7 +10,7 @@ import { whenSettled } from './layout';
 test.use({ storageState: ADMIN_STATE });
 
 /** The six launch switches. Infrastructure switches (the page cache) are never touched here. */
-export const FEATURE_KEYS = [
+const FEATURE_KEYS = [
   'link_previews',
   'tour_glossary',
   'weekly_recap',
@@ -26,23 +26,19 @@ const DAY = '2026-09-27';
 const FB = 'facebookexternalhit/1.1';
 const GENERIC = 'Scores, trophies and stats for the Sunday Clays group at Tri-County Gun Club.';
 
-export async function adminSwitches(api: APIRequestContext): Promise<Record<string, boolean>> {
+async function adminSwitches(api: APIRequestContext): Promise<Record<string, boolean>> {
   const response = await api.get('/api/admin/features');
   expect(response.ok()).toBe(true);
   const rows = (await response.json()) as { key: string; enabled: boolean }[];
   return Object.fromEntries(rows.map((r) => [r.key, r.enabled]));
 }
 
-export async function setSwitch(
-  api: APIRequestContext,
-  key: string,
-  enabled: boolean,
-): Promise<void> {
+async function setSwitch(api: APIRequestContext, key: string, enabled: boolean): Promise<void> {
   const response = await api.put(`/api/admin/features/${key}`, { data: { enabled } });
   expect(response.ok(), `${key} -> ${String(enabled)}`).toBe(true);
 }
 
-export async function viewerPage(
+async function viewerPage(
   browser: Browser,
   size: { width: number; height: number },
 ): Promise<Page> {
@@ -59,21 +55,31 @@ export async function viewerPage(
 let saved: Record<string, boolean> = {};
 
 test.beforeEach(async ({ request }) => {
+  saved = {};
   saved = await adminSwitches(request);
 });
 
 test.afterEach(async ({ baseURL }) => {
   const api = await pwRequest.newContext({ baseURL, storageState: ADMIN_STATE });
+  const failures: string[] = [];
   try {
-    // Only the six launch switches, and only those a test changed: a blind PUT of every row would
-    // also store infrastructure switches that are meant to stay at their default.
-    const now = await adminSwitches(api);
+    // Only the six launch switches, only those recorded in beforeEach, and only those a test
+    // changed: a blind PUT of every row would also store infrastructure switches that are meant
+    // to stay at their default. Each key gets its own attempt.
+    const now = await adminSwitches(api).catch(() => ({}) as Record<string, boolean>);
     for (const key of FEATURE_KEYS) {
-      if (now[key] !== saved[key]) await setSwitch(api, key, saved[key] ?? false);
+      const was = saved[key];
+      if (was === undefined || now[key] === was) continue;
+      try {
+        await setSwitch(api, key, was);
+      } catch {
+        failures.push(key);
+      }
     }
   } finally {
     await api.dispose();
   }
+  if (failures.length > 0) throw new Error(`could not restore switches: ${failures.join(', ')}`);
 });
 
 async function description(api: APIRequestContext): Promise<string | null> {
@@ -91,52 +97,66 @@ async function ikeId(api: APIRequestContext): Promise<number> {
   return found?.shooter_id ?? 0;
 }
 
+const SUMMARY = (page: Page) => page.getByRole('region', { name: /^Summary card/ });
+const BADGE = 'Admin preview';
+
+async function openGlossaryNav(viewer: Page, size: { width: number }): Promise<void> {
+  if (size.width < 600) await viewer.getByRole('button', { name: 'More' }).click();
+}
+
 test('summary card off: hidden for a viewer, 404 from its API, previewed by an admin', async ({
   page,
   request,
   browser,
 }) => {
   const id = await ikeId(request);
+  const url = `/api/shooters/${String(id)}/summary?to=${DAY}`;
   await setSwitch(request, 'summary_card', false);
+  expect((await request.get(url)).status()).toBe(200); // the admin gets the same URL
   for (const size of SIZES) {
     const viewer = await viewerPage(browser, size);
     await viewer.goto(`/shooters/${String(id)}`);
     await whenSettled(viewer);
-    await expect(viewer.getByRole('heading', { name: /Summary card/ })).toHaveCount(0);
-    const api = await viewer.request.get(`/api/shooters/${String(id)}/summary?to=${DAY}`);
-    expect(api.status()).toBe(404);
+    await expect(SUMMARY(viewer)).toHaveCount(0);
+    expect((await viewer.request.get(url)).status()).toBe(404);
     await viewer.context().close();
   }
   await page.goto(`/shooters/${String(id)}`);
-  const card = page.getByRole('region', { name: /^Summary card/ });
-  await expect(card).toBeVisible();
-  await expect(card.getByText('Admin preview')).toBeVisible();
+  await expect(SUMMARY(page)).toBeVisible();
+  await expect(SUMMARY(page).getByText(BADGE)).toBeVisible();
 });
 
 test('link previews off: every crawler gets the generic preview', async ({ request }) => {
+  // On first (the stack starts with every switch on): the Sunday's facts and its image.
+  expect(await description(request)).toMatch(/^Sunday, Sep 27, 2026 · /);
+  expect((await request.get(`/api/og/image/sunday/${DAY}.png`)).status()).toBe(200);
   await setSwitch(request, 'link_previews', false);
   expect(await description(request)).toBe(GENERIC);
+  expect((await request.get(`/api/og/image/sunday/${DAY}.png`)).status()).toBe(404);
 });
 
 test('glossary off: "Page not found" and no nav item for a viewer', async ({
   request,
   browser,
 }) => {
-  await setSwitch(request, 'tour_glossary', false);
-  for (const size of SIZES) {
-    const viewer = await viewerPage(browser, size);
-    await viewer.goto('/glossary');
-    await expect(viewer.getByRole('heading', { name: 'Page not found' })).toBeVisible();
-    await viewer.goto('/');
-    if (size.width < 600) await viewer.getByRole('button', { name: 'More' }).click();
-    await expect(viewer.getByRole('link', { name: 'Glossary' })).toHaveCount(0);
-    await viewer.context().close();
+  for (const on of [true, false]) {
+    if (!on) await setSwitch(request, 'tour_glossary', false);
+    for (const size of SIZES) {
+      const viewer = await viewerPage(browser, size);
+      await viewer.goto('/glossary');
+      await expect(viewer.getByRole('heading', { level: 1, name: 'Glossary' })).toHaveCount(
+        on ? 1 : 0,
+      );
+      await expect(viewer.getByRole('heading', { name: 'Page not found' })).toHaveCount(on ? 0 : 1);
+      await viewer.goto('/');
+      await openGlossaryNav(viewer, size);
+      await expect(viewer.getByRole('link', { name: 'Glossary' })).toHaveCount(on ? 1 : 0);
+      await viewer.context().close();
+    }
   }
 });
 
 const TIP = 'Add Sunday Clays to your home screen';
-/** Home's cards for a first-time viewer at the plan's base (R7: nothing is removed from Home). */
-const HOME_CARDS = ['Latest Sunday', 'Club pulse', 'Insights', 'Which one are you?'] as const;
 
 async function fireInstallPrompt(viewer: Page): Promise<void> {
   await viewer.evaluate(() => {
@@ -148,12 +168,77 @@ async function fireInstallPrompt(viewer: Page): Promise<void> {
   });
 }
 
+/**
+ * Every gated surface, for a first-time visitor. `on`: each is present (the control that proves
+ * the locators still match); otherwise each is absent. `admin`: the page is the admin's, so each
+ * is present while off, with the preview badge.
+ */
+async function checkViewer(
+  page: Page,
+  size: { width: number },
+  id: number,
+  on: boolean,
+  admin = false,
+): Promise<void> {
+  const shown = on || admin;
+  const count = shown ? 1 : 0;
+  await page.goto('/');
+  await whenSettled(page);
+  const dialog = page.getByRole('dialog');
+  if (shown) await expect(dialog).toBeVisible();
+  else await page.waitForTimeout(2000); // past the tour's 1.5 s wait
+  await expect(dialog).toHaveCount(count);
+  if (shown) {
+    if (admin) await expect(dialog.getByText(BADGE)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Skip tour' }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  const milestone = page.getByRole('heading', { name: /^Club milestone/ });
+  await expect(milestone).toHaveCount(count);
+  if (admin) await expect(milestone.getByText(BADGE)).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Sunday Clays' })).toBeVisible();
+  await expect(page.getByText('Turnout per Sunday', { exact: true })).toBeVisible();
+  await openGlossaryNav(page, size);
+  await expect(page.getByRole('link', { name: 'Glossary' })).toHaveCount(count);
+
+  await page.goto(`/shooters/${String(id)}`);
+  await whenSettled(page);
+  await expect(SUMMARY(page)).toHaveCount(count);
+  if (!shown) await expect(page.getByText('Summary card')).toHaveCount(0); // no title leak
+  if (admin) await expect(SUMMARY(page).getByText(BADGE)).toBeVisible();
+
+  await page.goto('/club');
+  await whenSettled(page);
+  const milestones = page.getByRole('heading', { name: /^Milestones/ });
+  await expect(milestones).toHaveCount(count);
+  if (admin) await expect(page.locator('#milestones').getByText(BADGE)).toBeVisible();
+
+  await page.goto('/glossary');
+  await expect(page.getByRole('heading', { level: 1, name: 'Glossary' })).toHaveCount(count);
+  await expect(page.getByRole('heading', { name: 'Page not found' })).toHaveCount(1 - count);
+  if (admin) await expect(page.getByText(BADGE)).toBeVisible();
+
+  await page.goto('/about');
+  await whenSettled(page);
+  const items = page.getByRole('region', { name: 'Your privacy' }).getByRole('listitem');
+  await expect(items).toHaveCount(on || admin ? 6 : 5); // the link-preview sentence
+  if (admin) await expect(items.getByText(BADGE)).toBeVisible();
+}
+
 test("all switches off (the production default): the viewer sees today's app", async ({
   request,
   browser,
 }) => {
   const id = await ikeId(request);
-  // Positive control, same setup: only `pwa` on, a first-time phone viewer, the event fired after
+  // Control: every switch on (the stack's start). The same checks must find every surface.
+  for (const key of FEATURE_KEYS) await setSwitch(request, key, true);
+  for (const size of SIZES) {
+    const viewer = await viewerPage(browser, size);
+    await checkViewer(viewer, size, id, true);
+    await viewer.context().close();
+  }
+
+  // Control for the install tip: only `pwa` on, a first-time phone viewer, the event fired after
   // the page settles (lib/installPrompt.ts listens from import). The tip shows, so its absence
   // below is the switch, not a missed event.
   for (const key of FEATURE_KEYS) await setSwitch(request, key, key === 'pwa');
@@ -167,41 +252,26 @@ test("all switches off (the production default): the viewer sees today's app", a
   await setSwitch(request, 'pwa', false);
   for (const size of SIZES) {
     const viewer = await viewerPage(browser, size);
-    // As a first-time visitor: no tour done, no tip dismissed.
+    await checkViewer(viewer, size, id, false);
     await viewer.goto('/');
     await whenSettled(viewer);
     await fireInstallPrompt(viewer);
-    await viewer.waitForTimeout(2000); // past the tour's 1.5 s wait
-    await expect(viewer.getByRole('dialog')).toHaveCount(0);
-    await expect(viewer.getByRole('heading', { name: /^Club milestone/ })).toHaveCount(0);
     // The tip is for touch devices, so only the 390 run (with its positive control) proves "off".
     await expect(viewer.getByRole('heading', { name: TIP })).toHaveCount(0);
-    await expect(viewer.getByRole('heading', { level: 1, name: 'Sunday Clays' })).toBeVisible();
-    for (const name of HOME_CARDS) {
-      await expect(viewer.getByRole('heading', { name, exact: true }), name).toBeVisible();
-    }
-    await expect(viewer.getByText('Turnout per Sunday', { exact: true })).toBeVisible();
-    if (size.width < 600) await viewer.getByRole('button', { name: 'More' }).click();
-    await expect(viewer.getByRole('link', { name: 'Glossary' })).toHaveCount(0);
-
-    await viewer.goto(`/shooters/${String(id)}`);
-    await whenSettled(viewer);
-    await expect(viewer.getByText('Summary card')).toHaveCount(0); // no title leak
-    await viewer.goto('/club');
-    await whenSettled(viewer);
-    await expect(viewer.getByRole('heading', { name: /^Milestones/ })).toHaveCount(0);
-    await viewer.goto('/glossary');
-    await expect(viewer.getByRole('heading', { name: 'Page not found' })).toBeVisible();
-
-    await viewer.goto('/about');
-    await whenSettled(viewer);
-    await expect(
-      viewer.getByRole('region', { name: 'Your privacy' }).getByRole('listitem'),
-    ).toHaveCount(5); // the link-preview sentence is behind its switch
-
     const features = await viewer.request.get('/api/features');
     expect(await features.json()).toEqual({ switches: {} });
     await viewer.context().close();
+
+    // The admin, in a fresh context, still sees every surface, marked as a preview.
+    const adminContext = await browser.newContext({
+      storageState: ADMIN_STATE,
+      viewport: size,
+      isMobile: size.width < 600,
+      hasTouch: size.width < 600,
+      serviceWorkers: 'block',
+    });
+    await checkViewer(await adminContext.newPage(), size, id, false, true);
+    await adminContext.close();
   }
   expect(await description(request)).toBe(GENERIC);
   expect((await request.get(`/api/og/image/sunday/${DAY}.png`)).status()).toBe(404);

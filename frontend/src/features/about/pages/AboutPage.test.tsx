@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -56,8 +56,17 @@ describe('AboutPage', () => {
     expect(screen.getByText(/ClaySmasher/)).toBeInTheDocument();
   });
 
-  it('lists five privacy points while link previews are off', () => {
+  it('lists five privacy points while link previews are off', async () => {
+    let asked = false;
+    server.use(
+      http.get('*/api/features', () => {
+        asked = true;
+        return HttpResponse.json({ switches: { link_previews: false } });
+      }),
+    );
     renderWithProviders(<AboutPage />, { route: '/about' });
+    await waitFor(() => expect(asked).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 50)); // let the answer reach the query
     const section = screen.getByRole('region', { name: 'Your privacy' });
     expect(within(section).getByRole('list')).toBeInTheDocument();
     expect(within(section).getAllByRole('listitem')).toHaveLength(5);

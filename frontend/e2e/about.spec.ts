@@ -34,6 +34,10 @@ test('About opens from the nav and shows what, who, source and privacy', async (
     page.getByRole('region', { name: 'Your privacy' }).getByRole('listitem'),
   ).toHaveCount(6); // the e2e stack turns every feature on (FEATURES_DEFAULT_ON), link previews too
 
+  await expect(
+    page.getByRole('region', { name: 'Your privacy' }).getByText(/^Links shared in chat apps/),
+  ).toContainText('(or a special shoot’s title)');
+
   for (const [name, href] of [
     [/Read more on tcgc\.org/, 'https://tcgc.org/sunday-clays/'],
     [/gitgat\.com/, 'https://gitgat.com'],
