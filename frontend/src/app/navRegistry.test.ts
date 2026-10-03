@@ -23,6 +23,7 @@ const FIXED_ORDER: Record<string, number> = {
   'admin-identity': 910,
   'admin-ops': 920,
   'admin-analytics': 930,
+  'admin-recap': 935,
   'admin-features': 940,
 };
 /** C10: exactly these features are mobile tabs. */
