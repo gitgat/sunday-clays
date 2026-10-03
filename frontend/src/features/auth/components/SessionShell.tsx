@@ -14,7 +14,7 @@ export function SessionShell() {
   usePageViewBeacon(session?.role ?? null);
   const features = useFeatures();
   const role = session?.role ?? 'viewer';
-  const switches = features.isSuccess ? features.data : undefined;
+  const switches = features.data;
   const featureVisible = (key: FeatureKey) => featureState(switches, role, key).visible;
   return (
     <AppShell

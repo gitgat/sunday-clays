@@ -7,6 +7,7 @@ import { resetMeForTests } from '../../../lib/me';
 import { server } from '../../../test/msw/server';
 import { renderRoutes } from '../../../test/render';
 import { stubViewport } from '../../../test/viewport';
+import { FEATURES_QUERY_KEY } from '../../../lib/features';
 import { SESSION_QUERY_KEY } from '../api';
 import { RequireRole } from './RequireRole';
 import { SessionShell } from './SessionShell';
@@ -224,5 +225,19 @@ describe('SessionShell launch switches', () => {
     );
     renderRoutes(ROUTES, { route: '/', role: 'viewer' });
     expect(await screen.findByRole('link', { name: 'Gated page' })).toBeInTheDocument();
+  });
+
+  it('keeps a gated nav item listed when a later refetch of the switches fails', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.get('*/api/features', () => HttpResponse.json({ switches: { summary_card: true } })),
+    );
+    const { queryClient } = renderRoutes(ROUTES, { route: '/', role: 'viewer' });
+    expect(await screen.findByRole('link', { name: 'Gated page' })).toBeInTheDocument();
+    server.use(http.get('*/api/features', () => HttpResponse.error()));
+    await act(() => queryClient.refetchQueries({ queryKey: FEATURES_QUERY_KEY }));
+    expect(queryClient.getQueryState(FEATURES_QUERY_KEY)?.status).toBe('error');
+    await new Promise((resolve) => setTimeout(resolve, 50)); // let the error reach the shell
+    expect(screen.getByRole('link', { name: 'Gated page' })).toBeInTheDocument();
   });
 });

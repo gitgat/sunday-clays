@@ -15,7 +15,8 @@ export const FEATURES_QUERY_KEY = ['/api/features'] as const;
 /**
  * `on`: the switch is on for everyone. `visible`: this viewer sees the feature (on, or an admin
  * previewing it). `preview`: an admin sees it while it is off. `settled`: the switches are known
- * (a failed refetch keeps the last answer); code that acts on "off" (the PWA unregister, D16) checks `settled && !on`.
+ * (a failed refetch keeps the last answer); code that acts on "off" (the PWA unregister, D16)
+ * checks `settled && !on`.
  */
 export interface FeatureState {
   visible: boolean;
