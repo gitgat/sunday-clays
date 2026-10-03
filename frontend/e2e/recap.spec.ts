@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { ADMIN_STATE } from './authState';
 import { expect, test } from './fixtures';
 import { expectNoSideScroll } from './layout';
@@ -20,6 +21,11 @@ test('the recap defaults to the latest Sunday and copies and downloads', async (
   expect(copied.startsWith('Sunday Clays · Sunday, September 27, 2026')).toBe(true);
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download image' }).click();
-  expect((await download).suggestedFilename()).toBe('sunday-clays-recap-2026-09-27.png');
+  const saved = await download;
+  expect(saved.suggestedFilename()).toBe('sunday-clays-recap-2026-09-27.png');
+  // The PNG is drawn from the fixed 600 px card at 2x, on a phone as on a desktop.
+  const path = await saved.path();
+  const header = readFileSync(path).subarray(16, 20);
+  expect(header.readUInt32BE(0)).toBe(1200);
   await expectNoSideScroll(page);
 });

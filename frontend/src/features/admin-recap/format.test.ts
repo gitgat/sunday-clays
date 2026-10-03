@@ -55,6 +55,21 @@ Welcome to our first-timers
 
 See every score: https://sundayclays.claysmasher.com/l/events/2026-09-20`;
 
+const SPECIAL_MARKDOWN = `**Sunday Clays · Sunday, September 20, 2026**
+
+3-Bird Shoot (special shoot, 60 targets)
+
+40 shooters came out.
+
+3-Bird Shoot trophy: 12 earned it for the first time today. 58 shooters hold it now.
+
+Top score: 55 of 60.
+
+**Welcome to our first-timers**
+- Kim, Pat
+
+[See every score](https://sundayclays.claysmasher.com/l/events/2026-09-20)`;
+
 describe('recap formatting', () => {
   it('regular, plain text', () => expect(formatRecap(regularRecap).text).toBe(REGULAR_TEXT));
   it('regular, Markdown', () => expect(formatRecap(regularRecap).markdown).toBe(REGULAR_MARKDOWN));
@@ -125,6 +140,13 @@ describe('recap formatting', () => {
     );
   });
 
+  it('escapes backticks and a leading # or > in a label', () => {
+    expect(escapeMarkdown('`code`')).toBe('\\`code\\`');
+    expect(escapeMarkdown('# Big')).toBe('\\# Big');
+    expect(escapeMarkdown('> Big')).toBe('\\> Big');
+    expect(escapeMarkdown('Big # shoot')).toBe('Big # shoot');
+  });
+
   it('escapes Markdown characters in a label', () => {
     expect(escapeMarkdown('*Big* [shoot]_x')).toBe('\\*Big\\* \\[shoot\\]\\_x');
     const odd = {
@@ -151,5 +173,9 @@ describe('recap formatting', () => {
     expect(formatRecap(one).text).not.toContain('Podium');
     const noTop = { ...specialRecap, top_score: null };
     expect(formatRecap(noTop).text).not.toContain('Top score');
+  });
+
+  it('special, Markdown: the title, label and intro lines are separate paragraphs', () => {
+    expect(formatRecap(specialRecap).markdown).toBe(SPECIAL_MARKDOWN);
   });
 });

@@ -4,9 +4,8 @@ import { Select } from '../../../components/ui/Select';
 import { Tabs } from '../../../components/ui/Tabs';
 import { downloadElementAsImage } from '../../../lib/share';
 import { optionalIsoDateCodec, useUrlState } from '../../../lib/useUrlState';
-import { useAllSundays } from '../../events/api';
 import { formatDay } from '../../home/format';
-import { useRecap } from '../api';
+import { useRecap, useRecapSundays } from '../api';
 import { RecapImageCard } from '../components/RecapImageCard';
 import { formatRecap, recapFilename } from '../format';
 
@@ -30,7 +29,7 @@ async function copy(text: string, area: HTMLTextAreaElement | null): Promise<boo
 
 /** Admin tool (Plan 19 §3.3.2): one Sunday as paste-ready text, Markdown and an image. */
 export function RecapPage() {
-  const sundays = useAllSundays();
+  const sundays = useRecapSundays();
   const held = useMemo(
     () =>
       (sundays.data ?? [])
@@ -39,7 +38,8 @@ export function RecapPage() {
     [sundays.data],
   );
   const [chosen, setChosen] = useUrlState<string | null>('date', optionalIsoDateCodec, null);
-  const date = chosen ?? held[0]?.event_date ?? null; // a date from the data, never "today" (D26)
+  // A held Sunday from the data (never "today", D26); a ?date= that is not one falls back.
+  const date = held.some((e) => e.event_date === chosen) ? chosen : (held[0]?.event_date ?? null);
   const recap = useRecap(date);
   const [tab, setTab] = useState<Tab>('text');
   const [message, setMessage] = useState('');
@@ -58,7 +58,10 @@ export function RecapPage() {
         <Select
           label="Sunday"
           value={date}
-          onChange={(value) => setChosen(value)}
+          onChange={(value) => {
+            setMessage('');
+            setChosen(value);
+          }}
           options={held.map((e) => ({
             value: e.event_date,
             label:
@@ -68,13 +71,27 @@ export function RecapPage() {
           }))}
         />
       )}
-      {recap.isError ? (
+      {sundays.isError ? (
+        <p role="alert">Could not load the Sundays.</p>
+      ) : sundays.isPending ? (
+        <p role="status">Loading the recap…</p>
+      ) : date === null ? (
+        <p>No Sunday has full results yet.</p>
+      ) : recap.isError ? (
         <p role="alert">Could not build the recap for this Sunday.</p>
       ) : formatted === null || recap.data === undefined ? (
         <p role="status">Loading the recap…</p>
       ) : (
         <>
-          <Tabs label="Format" tabs={TABS} value={tab} onChange={(next) => setTab(next)} />
+          <Tabs
+            label="Format"
+            tabs={TABS}
+            value={tab}
+            onChange={(next) => {
+              setMessage('');
+              setTab(next);
+            }}
+          />
           <textarea
             ref={areaRef}
             readOnly
@@ -115,8 +132,15 @@ export function RecapPage() {
               {message}
             </span>
           </div>
-          <div ref={cardRef} className="overflow-x-auto">
+          <div className="overflow-x-auto">
             <RecapImageCard recap={recap.data} />
+          </div>
+          {/* The PNG is drawn from this fixed 600 px copy, so a phone gets the same image as a
+              desktop. It sits off screen (fixed, so it adds no scroll) and is hidden from readers. */}
+          <div aria-hidden="true" className="pointer-events-none fixed top-0 -left-[10000px]">
+            <div ref={cardRef} className="w-[600px]">
+              <RecapImageCard recap={recap.data} />
+            </div>
           </div>
         </>
       )}

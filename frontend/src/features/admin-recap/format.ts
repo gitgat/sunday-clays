@@ -25,7 +25,7 @@ function shooters(n: number): string {
 }
 
 export function escapeMarkdown(text: string): string {
-  return text.replace(/([*_[\]])/g, '\\$1');
+  return text.replace(/([*_`[\]])/g, '\\$1').replace(/^([#>])/gm, '\\$1');
 }
 
 export function recapFilename(date: string): string {
@@ -119,8 +119,8 @@ export function formatRecap(r: Recap): { text: string; markdown: string } {
   ].join('\n\n');
 
   const markdown = [
-    [`**${md(title)}**`, ...(labelLine === null ? [] : [md(labelLine)])].join('\n'),
-    intro.map(md).join('\n'),
+    [`**${md(title)}**`, ...(labelLine === null ? [] : [md(labelLine)])].join('\n\n'),
+    intro.map(md).join('\n\n'),
     ...sections.map((s) =>
       [`**${md(s.heading)}**`, ...s.lines.map((l) => `- ${md(l)}`)].join('\n'),
     ),

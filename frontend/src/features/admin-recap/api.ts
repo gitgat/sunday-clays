@@ -14,3 +14,14 @@ export function useRecap(date: string | null) {
         : () => unwrap(api.GET('/api/admin/recap/{date}', { params: { path: { date } } })),
   });
 }
+
+/**
+ * Every Sunday under every round type. The page declares no filters, so a stray `?rt=` in the
+ * URL must not narrow the list (same query key as `useAllSundays` with no filter active).
+ */
+export function useRecapSundays() {
+  return useQuery({
+    queryKey: ['/api/events', { year: null, round_type: [] }],
+    queryFn: () => unwrap(api.GET('/api/events', { params: { query: {} } })),
+  });
+}
