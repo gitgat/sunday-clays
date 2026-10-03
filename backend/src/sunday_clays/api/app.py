@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-PUBLIC_ROUTE_MODULES: Final = frozenset({"health", "auth"})
+PUBLIC_ROUTE_MODULES: Final = frozenset({"health", "auth", "og"})  # og: Plan 19 D6
 
 
 def role_dependencies(module_name: str) -> list[Any]:
