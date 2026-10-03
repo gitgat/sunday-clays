@@ -6,13 +6,21 @@ from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
 from sunday_clays.analytics import frames
+from sunday_clays.analytics.club_milestones import Metric, club_milestones
 from sunday_clays.analytics.cohorts import cohort_tables, first_round_scores
 from sunday_clays.api.routes._convert import opt_float, opt_int, opt_str, rows
-from sunday_clays.api.routes._filters import check_window, in_window, round_type_param
+from sunday_clays.api.routes._features import feature_gate
+from sunday_clays.api.routes._filters import (
+    check_window,
+    in_window,
+    latest_scored_day,
+    round_type_param,
+)
+from sunday_clays.config import Settings, get_settings
 from sunday_clays.db import SessionDep
 from sunday_clays.domain.round_type import RoundType
 
@@ -259,3 +267,47 @@ def club_first_rounds(
         median=float(np.median(scores)) if scores else None,
         counts=[int(c) for c in np.bincount(scores, minlength=TARGETS_PER_ROUND + 1)],
     )
+
+
+class ClubMilestoneOut(BaseModel):
+    metric: Metric
+    threshold: int
+    event_date: date
+    label: str
+    first_on_record: bool
+
+
+class NextMilestoneOut(BaseModel):
+    metric: Metric
+    threshold: int
+    current: int
+    remaining: int
+    label: str
+
+
+class ClubTotalsOut(BaseModel):
+    event_date: date
+    clays_thrown: int
+    sundays_held: int
+    shooters: int
+    rounds: int
+
+
+class ClubMilestonesOut(BaseModel):
+    as_of: date
+    milestones: list[ClubMilestoneOut]  # newest first
+    latest: ClubMilestoneOut | None
+    next: list[NextMilestoneOut]  # one per metric not yet past its table
+    series: list[ClubTotalsOut]  # one row per evaluation Sunday <= as_of
+
+
+@router.get("/api/club/milestones", dependencies=[feature_gate("club_milestones")])
+def get_club_milestones(
+    session: SessionDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    as_of: date | None = None,
+) -> ClubMilestonesOut:
+    """Plan 19 §3.5: club round numbers, dated at the Sunday each was first reached. Ignores the
+    round-type filter; `as_of` defaults to the latest scored Sunday."""
+    result = club_milestones(session, as_of or latest_scored_day(session, settings.timezone))
+    return ClubMilestonesOut.model_validate(result, from_attributes=True)

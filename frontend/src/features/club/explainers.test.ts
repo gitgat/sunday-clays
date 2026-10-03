@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { allStrings, BANNED_WORDS } from '../../test/language';
 import { explainers } from './explainers';
 
 const sources = import.meta.glob<string>(['./**/*.tsx', '!./**/*.test.tsx'], {
@@ -34,6 +35,7 @@ describe('club explainers', () => {
       .map(([key]) => key);
     expect(windowed.sort()).toEqual([
       'att',
+      'ctot',
       'diff',
       'first-rounds',
       'scores',
@@ -69,5 +71,24 @@ describe('club explainers', () => {
     const text = JSON.stringify(explainers.conv);
     expect(text).toContain('Of the guests first seen each year');
     expect(text).not.toContain('can top 100');
+  });
+});
+
+describe('club milestone explainers (Plan 19)', () => {
+  it('have the three new entries with their scopes and glossary terms', () => {
+    expect(explainers['club-milestone']?.scope).toBe('all-time');
+    expect(explainers['club-milestones']?.scope).toBe('all-time');
+    expect(explainers.ctot?.scope).toBe('windowed');
+    expect(explainers['club-milestone']?.terms).toEqual([
+      'held-sunday',
+      'special-shoot',
+      'clays-thrown',
+    ]);
+    expect(explainers.ctot?.terms).toEqual(['clays-thrown', 'special-shoot', 'held-sunday']);
+  });
+
+  it('use no banned word', () => {
+    const entries = ['club-milestone', 'club-milestones', 'ctot'].map((key) => explainers[key]);
+    for (const text of allStrings(entries)) expect(text).not.toMatch(BANNED_WORDS);
   });
 });

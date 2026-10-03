@@ -114,3 +114,18 @@ export function useClubFirstRounds(window: WindowRange | null) {
     enabled: window !== null,
   });
 }
+
+export type ClubMilestones = JsonOf<paths['/api/club/milestones']['get']>;
+export type Milestone = ClubMilestones['milestones'][number];
+export type NextMilestone = ClubMilestones['next'][number];
+export type ClubTotals = ClubMilestones['series'][number];
+export type MilestoneMetric = Milestone['metric'];
+
+/** Plan 19 §3.5: asked only while the feature is visible, so a viewer never meets the 404. */
+export function useClubMilestones(enabled: boolean) {
+  return useQuery({
+    queryKey: ['/api/club/milestones'],
+    queryFn: () => unwrap(api.GET('/api/club/milestones')),
+    enabled,
+  });
+}
