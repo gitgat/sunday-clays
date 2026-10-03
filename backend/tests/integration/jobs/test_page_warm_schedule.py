@@ -24,21 +24,39 @@ def _warm_jobs(session: Session) -> int:
 
 
 def _last_warm(
-    session: Session, data_version: int, local_date: str, *, skipped: int = 0, failed: int = 0
+    session: Session,
+    data_version: int,
+    local_date: str,
+    *,
+    skipped: int = 0,
+    failed: int = 0,
+    app_version: str = "dev",
 ) -> None:
     session.execute(
         text(
             "INSERT INTO app_state (key, value) VALUES (:k, jsonb_build_object("
             "'data_version', CAST(:dv AS int), 'local_date', CAST(:ld AS text), "
-            "'skipped', CAST(:s AS int), 'failed', CAST(:f AS int))) "
+            "'app_version', CAST(:av AS text), 'skipped', CAST(:s AS int), "
+            "'failed', CAST(:f AS int))) "
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
         ),
-        {"k": LAST_WARM_KEY, "dv": data_version, "ld": local_date, "s": skipped, "f": failed},
+        {
+            "k": LAST_WARM_KEY,
+            "dv": data_version,
+            "ld": local_date,
+            "s": skipped,
+            "f": failed,
+            "av": app_version,
+        },
     )
 
 
-def _due(session: Session, now: datetime = NOW, enabled: bool = True) -> None:
-    schedule_due(session, now, weather_enabled=False, page_cache_enabled=enabled)
+def _due(
+    session: Session, now: datetime = NOW, enabled: bool = True, app_version: str = "dev"
+) -> None:
+    schedule_due(
+        session, now, weather_enabled=False, page_cache_enabled=enabled, app_version=app_version
+    )
 
 
 def test_never_warmed_is_due(session: Session) -> None:
@@ -49,6 +67,30 @@ def test_never_warmed_is_due(session: Session) -> None:
 def test_a_new_data_version_is_due(session: Session) -> None:
     _last_warm(session, get_data_version(session), "2026-10-02")
     bump_data_version(session)
+    _due(session)
+    assert _warm_jobs(session) == 1
+
+
+def test_a_new_app_version_is_due_after_a_deploy(session: Session) -> None:
+    """The cache key holds app_version (D29): a deploy orphans every warmed key, so the same
+    data_version and date with a different release must warm again. Kills: comparing only
+    (data_version, local_date)."""
+    _last_warm(session, get_data_version(session), "2026-10-02", app_version="rel-1")
+    _due(session, app_version="rel-1")
+    assert _warm_jobs(session) == 0
+    _due(session, app_version="rel-2")
+    assert _warm_jobs(session) == 1
+
+
+def test_a_last_warm_from_before_app_version_was_recorded_is_due(session: Session) -> None:
+    session.execute(
+        text(
+            "INSERT INTO app_state (key, value) VALUES (:k, jsonb_build_object("
+            "'data_version', CAST(:dv AS int), 'local_date', '2026-10-02', "
+            "'skipped', 0, 'failed', 0))"
+        ),
+        {"k": LAST_WARM_KEY, "dv": get_data_version(session)},
+    )
     _due(session)
     assert _warm_jobs(session) == 1
 
@@ -130,17 +172,36 @@ def test_warm_waits_for_the_recompute_commit_then_warms_the_new_version(
     with Session(committed_engine) as s:
         now = datetime.now(UTC)
         before = get_data_version(s)
-        _last_warm(s, before, now.astimezone(ZoneInfo(timezone)).date().isoformat())
+        _last_warm(
+            s,
+            before,
+            now.astimezone(ZoneInfo(timezone)).date().isoformat(),
+            app_version=get_settings().app_version,
+        )
         enqueue(s, "recompute", dedupe_key="recompute")
         s.commit()
-        schedule_due(s, now, weather_enabled=False, timezone=timezone, page_cache_enabled=True)
+        schedule_due(
+            s,
+            now,
+            weather_enabled=False,
+            timezone=timezone,
+            page_cache_enabled=True,
+            app_version=get_settings().app_version,
+        )
         assert _warm_jobs(s) == 0  # the recompute has not run: nothing to warm yet
         s.commit()
         assert worker.process_one(s, weather_enabled=False)  # runs the recompute, commits the bump
         after = get_data_version(s)
         assert after > before
         assert _warm_jobs(s) == 0  # the handlers enqueue nothing themselves (D35)
-        schedule_due(s, now, weather_enabled=False, timezone=timezone, page_cache_enabled=True)
+        schedule_due(
+            s,
+            now,
+            weather_enabled=False,
+            timezone=timezone,
+            page_cache_enabled=True,
+            app_version=get_settings().app_version,
+        )
         s.commit()
         assert _warm_jobs(s) == 1
         while worker.process_one(s, weather_enabled=False):
