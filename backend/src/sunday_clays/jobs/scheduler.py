@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from sunday_clays.analytics.pipeline import get_data_version
 from sunday_clays.domain.features import LAST_WARM_KEY, infrastructure_switch_on
+from sunday_clays.jobs.page_warm import RETRY_AFTER  # D35: the one 5-minute gap
 from sunday_clays.jobs.queue import enqueue
 from sunday_clays.models import AppState, Job
 
 WEATHER_SYNC_LOCAL_HOUR = 14
 FORECAST_INTERVAL = timedelta(hours=6)
 ROLLUP_LOCAL_HOUR = 3  # Plan 16: page_view_rollup, once a local day, weather or not
-PAGE_WARM_RETRY = timedelta(minutes=5)  # Plan 19 D35: a failed or partial warm-up waits this long
 
 
 def _page_warm_due(session: Session, now: datetime, timezone: str) -> bool:
@@ -28,7 +28,7 @@ def _page_warm_due(session: Session, now: datetime, timezone: str) -> bool:
     else:
         last, incomplete = None, True
     stale = last != current or incomplete
-    return stale and not _created_since(session, "page_warm", now - PAGE_WARM_RETRY)
+    return stale and not _created_since(session, "page_warm", now - RETRY_AFTER)
 
 
 def _created_since(session: Session, kind: str, since: datetime) -> bool:

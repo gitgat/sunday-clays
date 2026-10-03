@@ -1,10 +1,12 @@
 """page_warm (Plan 19 §3.7.5, D34, D35; §5.1, §5.2)."""
 
+import logging
 import time
 from datetime import date
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -214,3 +216,39 @@ def test_warming_stores_only_viewer_rows(
     page_warm.run_page_warm(fx_session, get_settings(), cast(FastAPI, fx_viewer_client.app))
     roles = set(fx_session.execute(text("SELECT DISTINCT role FROM response_cache")).scalars())
     assert roles == {"viewer"}
+
+
+class _Flaky(TestClient):
+    """A client whose `/api/events` request raises and whose `/api/club/trends` answers 500."""
+
+    def get(self, url: Any, *args: Any, **kwargs: Any) -> Any:
+        if str(url) == "/api/events":
+            raise RuntimeError("boom /api/events")
+        if str(url) == "/api/club/trends":
+            return httpx.Response(500)
+        return super().get(url, *args, **kwargs)
+
+
+def test_a_raising_or_500_target_counts_as_failed_and_logs_no_path(
+    cache_on: None,
+    fx_viewer_client: TestClient,
+    fx_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kills: aborting the job on the first exception, counting a 500 as warmed, and logging the
+    exception message (which can carry a path); the route template is logged, never the path."""
+    monkeypatch.setattr(page_warm, "TestClient", _Flaky)
+    monkeypatch.setattr(
+        page_warm,
+        "warm_targets",
+        lambda _s, _settings: ["/api/events", "/api/club/trends", "/api/records"],
+    )
+    with caplog.at_level(logging.WARNING, logger="sunday_clays.jobs.page_warm"):
+        report = page_warm.run_page_warm(
+            fx_session, get_settings(), cast(FastAPI, fx_viewer_client.app)
+        )
+    assert (report.warmed, report.failed) == (1, 2)
+    assert "RuntimeError" in caplog.text
+    assert "status 500" in caplog.text
+    assert "boom" not in caplog.text

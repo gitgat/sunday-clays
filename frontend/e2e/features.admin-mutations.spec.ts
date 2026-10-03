@@ -68,10 +68,17 @@ test.afterEach(async ({ baseURL }) => {
     // Only the six launch switches and the page cache, only those recorded in beforeEach, and
     // only those a test changed: a blind PUT of every row would also store infrastructure
     // switches that are meant to stay at their default. Each key gets its own attempt.
-    const now = await adminSwitches(api).catch(() => ({}) as Record<string, boolean>);
+    // If the current values cannot be read, nothing can be confirmed as changed: restore nothing
+    // blindly (a blind PUT of page_cache would clear the cache and its last warm-up), fail once.
+    let now: Record<string, boolean> | null = null;
+    try {
+      now = await adminSwitches(api);
+    } catch {
+      failures.push('(could not read the current switches)');
+    }
     for (const key of RESTORED_KEYS) {
       const was = saved[key];
-      if (was === undefined || now[key] === was) continue;
+      if (now === null || was === undefined || now[key] === was) continue;
       try {
         await setSwitch(api, key, was);
       } catch {
@@ -291,6 +298,11 @@ test('page cache off: viewers get the same Home, computed live; on again in afte
   request,
   browser,
 }) => {
+  const first = await viewerPage(browser, SIZES[1]);
+  const before = await first.request.get('/api/insights/home');
+  expect(before.status()).toBe(200);
+  const beforeBody = await before.text();
+  await first.context().close();
   await setSwitch(request, 'page_cache', false);
   for (const size of SIZES) {
     const viewer = await viewerPage(browser, size);
@@ -300,6 +312,7 @@ test('page cache off: viewers get the same Home, computed live; on again in afte
     const home = await viewer.request.get('/api/insights/home');
     expect(home.status()).toBe(200);
     expect(home.headers()['x-page-cache']).toBe('bypass');
+    expect(await home.text()).toBe(beforeBody);
     await viewer.context().close();
   }
   await page.goto('/admin/features');

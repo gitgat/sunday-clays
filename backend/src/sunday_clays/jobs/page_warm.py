@@ -106,7 +106,7 @@ def warm_targets(session: Session, settings: Settings) -> list[str]:
 
 def prune(session: Session, data_version: int, local_date: date) -> int:
     """Drop rows of another data_version or local date, then the oldest beyond pc.PRUNE_TO_ROWS
-    (the one constant, shared with the middleware's own prune)."""
+    (page_warm is the only pruner: the middleware stores or skips, it never prunes)."""
     stale = cast(
         CursorResult[Any],
         session.execute(
@@ -188,21 +188,32 @@ def run_page_warm(
         cookies={COOKIE_NAME: issue_session(settings, "viewer")},
     )
     warmed = failed = skipped = 0
-    with _quiet_http_logs():
-        for index, target in enumerate(targets):
-            if clock() - started >= budget_s:
-                skipped = len(targets) - index
-                break
-            try:
-                ok = client.get(target).status_code == 200
-            except Exception:
-                ok = False
-            if ok:
-                warmed += 1
-            else:
-                failed += 1
-                route = pc.match_route(routes, urlsplit(target).path)
-                logger.warning("page_warm: a target failed (%s)", route.template if route else "?")
+    try:
+        with _quiet_http_logs():
+            for index, target in enumerate(targets):
+                if clock() - started >= budget_s:
+                    skipped = len(targets) - index
+                    break
+                try:
+                    status = client.get(target).status_code
+                    reason = f"status {status}"
+                    ok = status == 200
+                except Exception as exc:
+                    reason = type(exc).__name__  # never str(exc): it can carry the path
+                    ok = False
+                if ok:
+                    warmed += 1
+                else:
+                    failed += 1
+                    route = pc.match_route(routes, urlsplit(target).path)
+                    logger.warning(
+                        "page_warm: a target failed (%s: %s)",
+                        route.template if route else "?",
+                        reason,
+                    )
+    finally:
+        client.close()
+
     seconds = round(clock() - started, 1)
     session.execute(
         _LAST_WARM,
