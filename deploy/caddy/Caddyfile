@@ -17,7 +17,7 @@
 # Security headers for every response, including the error responses Caddy generates itself.
 (security_headers) {
 	header {
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 		X-Content-Type-Options nosniff
 		Referrer-Policy same-origin
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
@@ -37,6 +37,71 @@
 	encode zstd gzip
 
 	import security_headers
+
+	# Plan 19 link previews (D7). Chat-app crawlers cannot log in, so on any SPA path they get a
+	# name-free meta page from /api/og/page/<path>. In-app browsers (FBAN/FBAV, LinkedInApp,
+	# "Twitter for iPhone", Discord's desktop client "discord/") are people and must not match.
+	@crawler {
+		method GET HEAD
+		header_regexp User-Agent (?i)(facebookexternalhit|Twitterbot|Slackbot|Discordbot|WhatsApp|TelegramBot|LinkedInBot|Applebot|SkypeUriPreview)
+		not path /api/* /assets/* /trophies/* /icons/* /sw.js /manifest.webmanifest
+	}
+	# An expression, not path_regexp: path_regexp matches a cleaned path with "//" merged to "/".
+	@share_unsafe expression `{http.request.uri.path}.matches("^/l/[/\\\\]")`
+
+	# Share links: "/l/<path>" previews for crawlers and redirects people to "/<path>" (query kept).
+	# Caddy runs `handle` before `route`, and sorts sibling handles (path matchers first), so the
+	# crawler check is repeated FIRST inside this block's `route`, where the written order holds.
+	handle /l/* {
+		route {
+			handle @crawler {
+				request_body {
+					max_size 264KiB
+				}
+				rewrite * /api/og/page{path}?{query}
+				import api
+			}
+			# "/l//evil.com" or "/l/\evil.com" would become a protocol-relative Location: refuse it.
+			handle @share_unsafe {
+				redir * / 302
+			}
+			handle {
+				# `redir` sorts before `uri` inside a handle, so a nested route keeps the written order.
+				route {
+					uri strip_prefix /l
+					redir * {uri} 302
+				}
+			}
+		}
+	}
+
+	# Crawlers on every other SPA path (named-matcher handles sort after the path handles below).
+	handle @crawler {
+		request_body {
+			max_size 264KiB
+		}
+		rewrite * /api/og/page{path}?{query}
+		import api
+	}
+
+	# Plan 19 PWA (§3.4): the service worker and manifest always revalidate; icons cache a day.
+	handle /sw.js {
+		root * /srv
+		header Cache-Control "no-cache"
+		header Service-Worker-Allowed "/"
+		file_server
+	}
+	handle /manifest.webmanifest {
+		root * /srv
+		header Content-Type "application/manifest+json"
+		header Cache-Control "no-cache"
+		file_server
+	}
+	handle /icons/* {
+		root * /srv
+		header Cache-Control "public, max-age=86400"
+		file_server
+	}
 
 	# Body limits sit just above the API's own (10 MiB + 64 KiB upload, 256 KiB otherwise), so a
 	# body the API accepts is never cut off here. IEC units: Caddy reads 256KB as 256,000 bytes but
@@ -70,9 +135,11 @@
 	}
 
 	# Everything else: the file if it exists, else index.html (SPA deep links); always revalidated.
+	# Vary: User-Agent, because crawlers get the meta page at the same URL (Plan 19 §3.1.3).
 	handle {
 		root * /srv
 		header Cache-Control "no-cache"
+		header Vary User-Agent
 		try_files {path} /index.html
 		file_server
 	}

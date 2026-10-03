@@ -28,8 +28,11 @@ from sunday_clays.config import Settings
 CADDYFILE = Path(__file__).resolve().parents[4] / "deploy" / "caddy" / "Caddyfile"
 UNITS = {"B": 1, "KB": 1000, "KiB": 1024, "MB": 1000**2, "MiB": 1024**2}
 # A top-level `handle <path> { ... }` of the site block (tab-indented, as `caddy fmt` writes it).
-HANDLE_BLOCK = re.compile(r"^\thandle (\S+) \{\n(.*?)^\t\}$", re.MULTILINE | re.DOTALL)
-BODY_LIMIT = re.compile(r"request_body \{\s+max_size (\d+)([A-Za-z]+)\s+\}")
+# Path handles only: the named-matcher `handle @crawler` and `/l/*` (Plan 19) cap a body of their
+# own, one level deeper than a limit the API route needs, and are pinned by the tests below.
+HANDLE_BLOCK = re.compile(r"^\thandle (/\S+) \{\n(.*?)^\t\}$", re.MULTILINE | re.DOTALL)
+# Only a direct child of the handle (two tabs): the `/l/*` route nests a copy for crawlers.
+BODY_LIMIT = re.compile(r"^\t\trequest_body \{\s+max_size (\d+)([A-Za-z]+)\s+\}", re.MULTILINE)
 LENGTH_GUARD = re.compile(
     r"@(\w+) expression `\{http\.request\.header\.Content-Length\} != \"\" "
     r"&& int\(\{http\.request\.header\.Content-Length\}\) > (\d+)`\s+error @\1 413\s"
@@ -93,3 +96,30 @@ def test_caddys_own_413_answers_exactly_what_the_api_answers() -> None:
     # Every route that takes a body is under /api/auth/ or /api/admin/: the API sends no-store.
     assert caddy.group("cache_control") == cache_control_for("/api/auth/login")
     assert caddy.group("cache_control") == cache_control_for(IMPORTS_PATH)
+
+
+def _site_block() -> str:
+    text = CADDYFILE.read_text()
+    return text[text.index(":80 {") :]
+
+
+def test_crawlers_and_share_links_are_routed_before_the_spa() -> None:
+    """Plan 19 D7: the crawler check and /l/ handling exist, and /l/ checks crawlers first."""
+    site = _site_block()
+    share = site[site.index("\thandle /l/* {") :]
+    share = share[: share.index("\n\t}\n")]
+    assert share.index("handle @crawler") < share.index("handle @share_unsafe")
+    assert share.index("handle @share_unsafe") < share.index("uri strip_prefix /l")
+    assert "\thandle @crawler {" in site  # crawlers on every other SPA path
+    assert "rewrite * /api/og/page{path}?{query}" in site
+
+
+def test_the_spa_varies_by_user_agent_and_the_csp_allows_the_pwa() -> None:
+    site = _site_block()
+    catch_all = site[site.rindex("\thandle {") :]
+    assert "header Vary User-Agent" in catch_all
+    csp = CADDYFILE.read_text()
+    assert "manifest-src 'self'" in csp
+    assert "worker-src 'self'" in csp
+    for path in ("/sw.js", "/manifest.webmanifest", "/icons/*"):
+        assert f"\thandle {path} {{" in site, path

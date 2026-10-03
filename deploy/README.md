@@ -91,9 +91,13 @@ itself warns):
    - `docker service update --force cloudflared_cloudflared`.
 4. Cloudflare dashboard for `claysmasher.com`:
    - SSL/TLS → Edge Certificates → **Always Use HTTPS** on.
-   - Leave the default cache behaviour: the API sends `private, no-cache` and `/api/*` has no
-     cacheable extension; `/assets/*` is immutable and may be cached.
-   - Do **not** add Cloudflare Access.
+   - Leave the default cache behaviour. The API sends `private, no-cache`, except the link-preview
+     images under `/api/og/image/` (`.png`, cached at the edge: generic one day, Sunday images one
+     hour). The preview page sends `private, no-cache` and `Vary: User-Agent`. `/assets/*` is
+     immutable and may be cached. Do **not** add a Cache Everything rule. Turning `link_previews`
+     off stops new Sunday previews at once, but an image already at the edge can be served for up
+     to an hour, and a preview already posted in a chat stays as it is.
+   - Do **not** add Cloudflare Access (if it is ever added, see "Link previews and Cloudflare").
 5. Check the result:
    - `curl -sI https://sundayclays.claysmasher.com/` returns 200 with Caddy's
      `Content-Security-Policy` header.
@@ -103,6 +107,38 @@ itself warns):
    - LAN spoof check (internal Traefik must strip the header): from the LAN, send a wrong password
      with `curl -H 'CF-Connecting-IP: 203.0.113.9' -d '<wrong password>' https://sundayclays.claysmasher.com/api/<login path>`.
      The newest `login_attempts.ip` must be the LAN client's address, not `203.0.113.9`.
+
+### Link previews and Cloudflare
+
+Chat apps fetch a shared link with a crawler that cannot log in. Caddy sends known crawlers
+(`deploy/caddy/user-agents.tsv`) on any SPA path to a name-free preview page, and `/l/<path>` is
+the app's share prefix: crawlers get the preview, people get a 302 to `/<path>`.
+
+1. Today there is no Cloudflare Access, so no Cloudflare change is needed. Check it with
+   `curl -s -A 'facebookexternalhit/1.1' https://sundayclays.claysmasher.com/events/<latest Sunday> | grep -E 'og:(description|url)'`,
+   which must print the Sunday line and an `og:url` of
+   `https://sundayclays.claysmasher.com/l/events/<latest Sunday>`. Check
+   `curl -sI https://sundayclays.claysmasher.com/api/og/image/generic.png` for `200` and
+   `content-type: image/png`.
+2. Caching: see step 4 above (no Cache Everything rule; Sunday images can live at the edge for an
+   hour after `link_previews` is turned off).
+3. If Cloudflare Access is ever put in front of `sundayclays.claysmasher.com`, add this bypass
+   **before** enabling the Access app for the host:
+   - Zero Trust → Access → Applications → **Add an application** → **Self-hosted**.
+   - Name `sundayclays-link-previews`. Session duration: default.
+   - Application domain 1: subdomain `sundayclays`, domain `claysmasher.com`, path `l/*`.
+   - Application domain 2: subdomain `sundayclays`, domain `claysmasher.com`, path `api/og/*`.
+   - Policy: name `bypass-previews`, **Action: Bypass**, **Include: Everyone**. No other rules.
+   - Save. Access evaluates the most specific path first, so these two paths stay public while the
+     host-wide app gates everything else.
+   - Verify: `curl -s -A 'WhatsApp/2.23' https://sundayclays.claysmasher.com/l/events/<latest Sunday> | grep -E 'og:(title|url)'`
+     prints the title and an `og:url` under `/l/`; `curl -sI -A 'facebookexternalhit/1.1' <that og:url>`
+     returns 200 (not the Access redirect); and
+     `curl -sI https://sundayclays.claysmasher.com/events/<latest Sunday>` returns the Access
+     redirect (302 to `*.cloudflareaccess.com`).
+   - Only `/l/…` links preview while Access is on. The app's own share links already use `/l/`.
+4. Leave Bot Fight Mode off (it is off today). It challenges unverified preview fetchers such as
+   WhatsApp's.
 
 On the LAN the site answers at `https://sundayclays.thehalf.io` (router `sundayclays-lan`, the
 fleet's `*.thehalf.io` wildcard DNS and certificate) and at `sundayclays.claysmasher.com` through
