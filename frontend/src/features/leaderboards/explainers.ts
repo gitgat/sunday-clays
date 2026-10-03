@@ -1,4 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
+import { mergeTerms } from '../glossary/terms';
 import type { LeaderboardMetric, LeaderboardPeriod } from './api';
 
 const FILTERS_APPLY = 'The round-type and gauge filters apply.';
@@ -127,6 +128,7 @@ export const explainers: Record<string, Explainer> = {
       'It ignores the round-type and gauge filters; the Members/Guests filter applies. The time window at the top picks the dates.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
 };
 
@@ -148,5 +150,10 @@ export function boardExplainer(metric: LeaderboardMetric, kind: BoardKind): Expl
   return {
     ...base,
     computed: [...base.computed, ...measure, PERIOD_COMPUTED[kind], WINDOW_LINE],
+    terms: mergeTerms(
+      base.terms,
+      'time-window',
+      ...(measure.some((line) => /round-type/.test(line)) ? (['round-types'] as const) : []),
+    ),
   };
 }

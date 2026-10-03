@@ -1,4 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
+import { mergeTerms } from '../glossary/terms';
 import { formatEventDate } from './format';
 
 /** The dates a records view covers; a missing start is the first Sunday. */
@@ -25,6 +26,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies: Super Sporting counts only Super Sporting Sundays.',
     ],
     scope: 'windowed',
+    terms: ['round-types'],
   },
   'rec-streaks': {
     what: 'The most Sundays in a row that someone has shot without missing one.',
@@ -39,6 +41,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies, so a Super Sporting streak only looks at Super Sporting Sundays.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'streak'],
   },
   'rec-highest': {
     what: 'The highest single rounds shot in the time window.',
@@ -48,6 +51,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
 };
 
@@ -77,5 +81,6 @@ export function recordsExplainer(key: string, range: RecordsRange): Explainer {
       `Only Sundays from ${rangeWords(range)} count. The time window at the top picks them.`,
       ...(streaks ? ['A run that began before the start date counts from the start date.'] : []),
     ],
+    terms: mergeTerms(base.terms, 'time-window'),
   };
 }

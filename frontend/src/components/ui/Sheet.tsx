@@ -18,7 +18,7 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** Wraps Tab at either end of the dialog, including Shift+Tab from the panel itself. */
-function trapTab(event: KeyboardEvent<HTMLDivElement>) {
+export function trapTab(event: KeyboardEvent<HTMLDivElement>) {
   const items = [...event.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)];
   const index = items.findIndex((el) => el === document.activeElement);
   const atEdge = event.shiftKey ? index <= 0 : index === items.length - 1;
@@ -28,7 +28,7 @@ function trapTab(event: KeyboardEvent<HTMLDivElement>) {
 }
 
 /** Makes every other child of <body> inert; returns the undo (only for elements it changed). */
-function inertOthers(keep: Element | null): () => void {
+export function inertOthers(keep: Element | null): () => void {
   const changed = [...document.body.children].filter(
     (el) => el !== keep && !el.hasAttribute('inert'),
   );

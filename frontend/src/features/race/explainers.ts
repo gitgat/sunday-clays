@@ -1,4 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
+import { mergeTerms } from '../glossary/terms';
 import type { RaceMode } from './labels';
 
 /**
@@ -20,6 +21,7 @@ export const explainers: Record<string, Explainer> = {
       'One step per Sunday with scores inside the time window: that Sunday’s top ten for the chosen measure, worked out the same way as on Leaderboards.',
       'A new Sunday every 1.2 seconds. Bars start at zero, so close values look alike; the number at the end of each bar tells them apart.',
     ],
+    terms: ['time-window'],
   },
   'race-bump': {
     what: 'Each shooter’s place after every Sunday of the race, so you can see who climbed and who slid.',
@@ -47,7 +49,12 @@ const MODE_COMPUTED: Record<RaceMode, string> = {
 /** A race chart's explainer for the chosen points rule; both charts follow the time window. */
 export function raceExplainer(key: 'race-bars' | 'race-bump', mode: RaceMode): Explainer {
   const base = explainers[key] as Explainer;
-  return { ...base, computed: [...base.computed, MODE_COMPUTED[mode]], scope: 'windowed' };
+  return {
+    ...base,
+    computed: [...base.computed, MODE_COMPUTED[mode]],
+    terms: mergeTerms(base.terms, 'time-window'),
+    scope: 'windowed',
+  };
 }
 
 const POINTS =

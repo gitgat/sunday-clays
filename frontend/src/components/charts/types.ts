@@ -47,6 +47,8 @@ export interface Explainer {
   scope?: 'windowed' | 'all-time' | 'lifetime' | 'year';
   /** Plan 19 D13: glossary terms the copy uses; shown as "Words used here" links. */
   terms?: readonly GlossaryTermId[];
+  /** Terms the text names on purpose without linking (the glossary lint skips them). */
+  noTerms?: readonly GlossaryTermId[];
 }
 
 /** What fullscreen and the CSV show instead of the inline data. Every field is optional. */

@@ -45,6 +45,7 @@ export const analyticsExplainers = {
       'Devices that bumped counts each device once.',
       'Everyone’s bumps count, admins included.',
     ],
+    terms: ['fist-bump'],
   },
   uptake: {
     what: 'How many devices answered “Which one are you?”, week by week.',

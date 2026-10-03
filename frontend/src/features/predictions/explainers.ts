@@ -20,5 +20,6 @@ export const explainers = {
       'Predicted field median = the middle expected score among those shooters, counting each in proportion to their chance of coming. Expected turnout = the chances of coming, added up.',
       'Recomputed after every analytics run, and the forecast refreshes twice a day.',
     ],
+    terms: ['difficulty', 'field-median'],
   },
 } as const satisfies Record<string, Explainer>;
