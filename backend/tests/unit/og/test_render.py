@@ -4,8 +4,11 @@ import io
 import struct
 from datetime import date
 
+import pytest
 from PIL import Image, ImageDraw
+from sqlalchemy.orm import Session
 
+from sunday_clays.analytics import cache
 from sunday_clays.domain.round_type import RoundType
 from sunday_clays.og import render
 from sunday_clays.og.facts import GENERIC, PreviewFacts
@@ -60,3 +63,29 @@ def test_a_60_character_label_renders() -> None:
     assert len(label) == 60
     facts = PreviewFacts("special", date(2026, 9, 20), 40, RoundType.SPORTING, label)
     assert Image.open(io.BytesIO(render.render_card(facts))).size == (1200, 630)
+
+
+def test_public_cards_never_evict_analytics_memo_entries(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """card_png is public, so it has its own bounded cache. Kills: decorating it with
+    cached_by_data_version (every distinct card then takes a slot of the shared 256-entry memo)."""
+    cache.clear_cache()
+    render._cached_card.cache_clear()
+    monkeypatch.setattr(render, "render_card", lambda facts: f"png-{facts.n_shooters}".encode())
+
+    @cache.cached_by_data_version
+    def analytics_value(session: Session) -> int:
+        calls.append(1)
+        return 1
+
+    calls: list[int] = []
+    analytics_value(session)
+    for n in range(cache.MAX_ENTRIES + 50):
+        facts = PreviewFacts("sunday", date(2026, 9, 27), n, RoundType.SPORTING)
+        assert render.card_png(session, facts) == f"png-{n}".encode()
+    analytics_value(session)
+    assert calls == [1]  # still a memo hit
+    assert render._cached_card.cache_info().currsize <= render.CARD_CACHE_SIZE
+    cache.clear_cache()
+    render._cached_card.cache_clear()  # drop the stub bytes

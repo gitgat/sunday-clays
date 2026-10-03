@@ -1,5 +1,6 @@
 """The 1200x630 preview card (§3.1.4): fixed fonts, colours and coordinates, no metadata (D8)."""
 
+import functools
 import io
 from pathlib import Path
 from typing import Final
@@ -7,7 +8,7 @@ from typing import Final
 from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy.orm import Session
 
-from sunday_clays.analytics.cache import cached_by_data_version
+from sunday_clays.analytics.cache import _database_name, read_data_version
 from sunday_clays.og.facts import PreviewFacts
 from sunday_clays.og.html import image_lines
 from sunday_clays.og.logo import GREEN, draw_mark
@@ -64,7 +65,18 @@ def render_card(facts: PreviewFacts) -> bytes:
     return out.getvalue()
 
 
-@cached_by_data_version
-def card_png(session: Session, facts: PreviewFacts) -> bytes:
-    """The memoized card (per process, LRU 256, keyed by data_version; nothing on disk)."""
+CARD_CACHE_SIZE: Final = 64
+
+
+@functools.lru_cache(maxsize=CARD_CACHE_SIZE)
+def _cached_card(facts: PreviewFacts, database: str, data_version: int) -> bytes:
     return render_card(facts)
+
+
+def card_png(session: Session, facts: PreviewFacts) -> bytes:
+    """The card, in its own LRU of 64 per process, keyed by (facts, database, data_version).
+
+    Deliberately not ``cached_by_data_version``: these routes are public, so their entries must
+    never share (and evict from) the 256-entry analytics memo. Nothing is written to disk.
+    """
+    return _cached_card(facts, _database_name(session), read_data_version(session))
