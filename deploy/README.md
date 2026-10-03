@@ -620,7 +620,7 @@ says: every stored answer is keyed by the data version, the local date and the r
    out of its row-count comparison, and a restore needs no step for it: the worker warms the
    pages again.
 4. **Placement:** `api` and `worker` are already constrained to the x86 nodes (`x-x86` in
-   `compose.swarm.yaml`, checked by `scripts/check_stack.py`; see the Swarm notes above). The page
+   `compose.swarm.yaml`, checked by `scripts/check_stack.py`; see the placement note near the top of this file). The page
    cache does not change that. The images stay multi-arch, and the page cache must still meet its
    targets on arm64 if that constraint is ever lifted.
 
