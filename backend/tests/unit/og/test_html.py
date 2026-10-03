@@ -66,10 +66,27 @@ def test_image_url_carries_the_data_version_only_for_a_sunday() -> None:
 
 @pytest.mark.parametrize(
     ("raw", "stripped"),
-    [("/", ""), ("", ""), ("l/events/2026-09-27", "events/2026-09-27"), ("/events/x", "events/x")],
+    [
+        ("/", ""),
+        ("", ""),
+        ("l/events/2026-09-27", "events/2026-09-27"),
+        ("/events/x", "events/x"),
+        ("l//evil.com", "evil.com"),
+        ("l/\\evil.com", "evil.com"),
+        ("\\evil.com", "evil.com"),
+    ],
 )
 def test_page_path_strips_the_share_prefix(raw: str, stripped: str) -> None:
     assert page_path(raw) == stripped
+
+
+@pytest.mark.parametrize(
+    "raw", ["l//evil.com", "l/\\evil.com", "\\evil.com", "//evil.com", "l/\\/evil.com"]
+)
+def test_render_page_never_links_off_site(raw: str) -> None:
+    page = render_page(GENERIC, raw, BASE, 1)
+    assert 'href="//' not in page
+    assert 'href="/\\' not in page
 
 
 def test_golden_sunday_page() -> None:

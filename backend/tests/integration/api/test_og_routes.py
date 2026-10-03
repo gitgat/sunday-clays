@@ -112,7 +112,38 @@ def test_a_session_cookie_changes_nothing(
     _on(fx_session)
     fx_client.cookies.clear()
     path = f"/api/og/page/events/{LATEST}"
-    assert fx_viewer_client.get(path).content == fx_client.get(path).content
+    anonymous = fx_client.get(path)
+    assert anonymous.status_code == 200
+    assert anonymous.headers["content-type"].startswith("text/html")
+    assert "· Sporting" in anonymous.text or "· Super Sporting" in anonymous.text
+    viewer = fx_viewer_client.get(path)
+    assert viewer.status_code == 200
+    assert viewer.content == anonymous.content
+
+
+@pytest.mark.parametrize("path", ["/api/og/page/l//evil.com", "/api/og/page/l/%5Cevil.com"])
+def test_page_never_renders_an_off_site_link(fx_client: TestClient, path: str) -> None:
+    page = fx_client.get(path).text
+    assert 'href="//' not in page
+    assert 'href="/\\' not in page
+
+
+def test_404s_are_never_cached(fx_client: TestClient, fx_session: Session) -> None:
+    for path in (f"/api/og/image/sunday/{LATEST}.png", "/api/og/image/sunday/nope.png"):
+        response = fx_client.get(path)
+        assert response.status_code == 404
+        assert response.headers["cache-control"] == "no-store"
+    _on(fx_session)
+    for path in ("/api/og/image/sunday/1999-01-03.png", "/api/og/image/sunday/nope.png"):
+        response = fx_client.get(path)
+        assert response.status_code == 404
+        assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("day", ["20260927", "2026-W39-7"])
+def test_non_canonical_dates_404(fx_client: TestClient, fx_session: Session, day: str) -> None:
+    _on(fx_session)
+    assert fx_client.get(f"/api/og/image/sunday/{day}.png").status_code == 404
 
 
 def _assert_name_free(page: str, names: list[str]) -> None:

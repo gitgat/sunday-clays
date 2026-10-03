@@ -29,8 +29,10 @@ _EVENT_PATH: Final = re.compile(r"^events/(\d{4}-\d{2}-\d{2})/?$")
 
 def page_path(path: str) -> str:
     """The SPA path without its leading slash and without a leading ``l/`` share prefix."""
-    stripped = path.lstrip("/")
-    return stripped.removeprefix("l/") if stripped.startswith("l/") else stripped
+    stripped = path.lstrip("/\\")
+    if stripped.startswith("l/"):
+        stripped = stripped.removeprefix("l/").lstrip("/\\")
+    return "" if stripped.startswith(("/", "\\")) else stripped
 
 
 def facts_for_path(session: Session, path: str, switch_on: bool) -> PreviewFacts:

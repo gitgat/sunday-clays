@@ -21,6 +21,7 @@ router = APIRouter()
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 GET_HEAD: Final = ["GET", "HEAD"]
+NOT_FOUND: Final = {"Cache-Control": "no-store"}  # a 404 must never sit in the Cloudflare cache
 NOINDEX: Final = {"X-Robots-Tag": "noindex, nofollow"}
 PAGE_HEADERS: Final = {"Cache-Control": "private, no-cache", "Vary": "User-Agent", **NOINDEX}
 SUNDAY_PNG_HEADERS: Final = {"Cache-Control": "public, max-age=3600", **NOINDEX}
@@ -65,12 +66,14 @@ def og_sunday_image(
     ``?v=<data_version>`` is a cache-buster only and is never read.
     """
     if not switch_on(session, settings, "link_previews"):
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, headers=NOT_FOUND)
     try:
         event_date = date.fromisoformat(day)
     except ValueError:
-        raise HTTPException(status_code=404) from None
+        raise HTTPException(status_code=404, headers=NOT_FOUND) from None
+    if event_date.isoformat() != day:  # '20260927' and '2026-W39-7' parse but are not canonical
+        raise HTTPException(status_code=404, headers=NOT_FOUND)
     facts = facts_for_path(session, f"events/{event_date.isoformat()}", True)
     if facts.kind == "generic":
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, headers=NOT_FOUND)
     return _answer(request, card_png(session, facts), "image/png", SUNDAY_PNG_HEADERS)
