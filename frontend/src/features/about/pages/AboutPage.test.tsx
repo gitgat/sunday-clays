@@ -1,6 +1,8 @@
-import { screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
+import { beforeEach, describe, expect, it } from 'vitest';
 
+import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import { AboutPage } from './AboutPage';
 
@@ -9,6 +11,10 @@ function external(name: RegExp | string): HTMLElement {
 }
 
 describe('AboutPage', () => {
+  beforeEach(() => {
+    server.use(http.get('*/api/features', () => HttpResponse.json({ switches: {} })));
+  });
+
   it('has the page title and the four sections in order', () => {
     renderWithProviders(<AboutPage />, { route: '/about' });
     expect(screen.getByRole('heading', { level: 1, name: 'About' })).toBeInTheDocument();
@@ -50,11 +56,42 @@ describe('AboutPage', () => {
     expect(screen.getByText(/ClaySmasher/)).toBeInTheDocument();
   });
 
-  it('lists five privacy points', () => {
+  it('lists five privacy points while link previews are off', async () => {
+    let asked = false;
+    server.use(
+      http.get('*/api/features', () => {
+        asked = true;
+        return HttpResponse.json({ switches: { link_previews: false } });
+      }),
+    );
     renderWithProviders(<AboutPage />, { route: '/about' });
+    await waitFor(() => expect(asked).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 50)); // let the answer reach the query
     const section = screen.getByRole('region', { name: 'Your privacy' });
     expect(within(section).getByRole('list')).toBeInTheDocument();
     expect(within(section).getAllByRole('listitem')).toHaveLength(5);
+    expect(within(section).queryByText(/Links shared in chat apps/)).not.toBeInTheDocument();
+  });
+
+  it('adds the link-preview sentence once link previews are on', async () => {
+    server.use(
+      http.get('*/api/features', () => HttpResponse.json({ switches: { link_previews: true } })),
+    );
+    renderWithProviders(<AboutPage />, { route: '/about' });
+    const section = screen.getByRole('region', { name: 'Your privacy' });
+    expect(await within(section).findByText(/Links shared in chat apps/)).toBeInTheDocument();
+    expect(within(section).getAllByRole('listitem')).toHaveLength(6);
+    expect(within(section).queryByText('Admin preview')).not.toBeInTheDocument();
+  });
+
+  it('shows an admin the sentence with the preview badge while off', async () => {
+    server.use(
+      http.get('*/api/features', () => HttpResponse.json({ switches: { link_previews: false } })),
+    );
+    renderWithProviders(<AboutPage />, { route: '/about', role: 'admin' });
+    const section = screen.getByRole('region', { name: 'Your privacy' });
+    expect(await within(section).findByText(/Links shared in chat apps/)).toBeInTheDocument();
+    expect(within(section).getByText('Admin preview')).toBeInTheDocument();
   });
 
   it('never uses he, she, his or her', () => {
