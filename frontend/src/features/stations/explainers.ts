@@ -76,7 +76,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
   stera: {
     what: 'How this station has played in each of its setups, split on the dates it was reset or rebuilt.',
@@ -91,7 +91,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
   stwind: {
     what: 'How this station plays on calm, breezy and gusty days.',
@@ -107,7 +107,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
   'station-leaders': {
     what: 'The shooters who break the highest share of this station’s targets. The first ten show; “Show all” lists the rest.',
@@ -121,7 +121,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
   stdelta: {
     what: 'How many percentage points better or worse than the field you shoot each station.',
@@ -137,7 +137,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
   'stdelta-table': {
     what: 'Every station you have shot: your hit %, the field’s hit % on the same Sundays, the gap and how many rounds it rests on.',
@@ -151,6 +151,6 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
 };

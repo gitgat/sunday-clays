@@ -1,6 +1,6 @@
 import type { Metric } from '../../components/charts/explore';
 import type { Explainer } from '../../components/charts/types';
-import { mergeTerms } from '../glossary/triggers';
+import { mergeTerms } from '../glossary/terms';
 
 type MetricCopy = Pick<Explainer, 'what' | 'computed' | 'terms'> & { read: readonly string[] };
 
@@ -128,7 +128,11 @@ export function explorerExplainer(metric: Metric, scope: Explainer['scope']): Ex
         : 'Every Sunday on record. Fullscreen and the CSV download can hold up to 5,000 rows.',
       'Filters and the round-type filter apply. At most 500 groups are shown on the page, and up to 5,000 in fullscreen and the CSV download.',
     ],
-    terms: mergeTerms(copy.terms, ...(scope === 'windowed' ? (['time-window'] as const) : [])),
+    terms: mergeTerms(
+      copy.terms,
+      'round-types',
+      ...(scope === 'windowed' ? (['time-window'] as const) : []),
+    ),
     ...(scope === undefined ? {} : { scope }),
   };
 }

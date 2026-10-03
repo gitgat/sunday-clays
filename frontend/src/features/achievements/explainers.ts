@@ -16,7 +16,7 @@ export const explainers: Record<string, Explainer> = {
       'Every round counts; the round-type filter does not change it.',
     ],
     scope: 'all-time',
-    terms: ['rarity', 'trophy-tiers'],
+    terms: ['rarity', 'round-types', 'trophy-tiers'],
   },
   // Trophy page chart (urlKey "holders").
   holders: {

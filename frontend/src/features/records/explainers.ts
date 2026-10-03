@@ -1,5 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
-import { mergeTerms } from '../glossary/triggers';
+import { mergeTerms } from '../glossary/terms';
 import { formatEventDate } from './format';
 
 /** The dates a records view covers; a missing start is the first Sunday. */
@@ -51,7 +51,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
 };
 

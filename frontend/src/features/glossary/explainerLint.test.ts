@@ -98,4 +98,9 @@ describe('glossary trigger lint', () => {
     );
     expect(problems).toEqual([]);
   });
+
+  it('skips a term the explainer opts out of', () => {
+    const bare: Explainer = { what: 'Your percentile on the day.', computed: ['x'] };
+    expect(missingTerms({ ...bare, noTerms: ['percentile'] })).toEqual([]);
+  });
 });

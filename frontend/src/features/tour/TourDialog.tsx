@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ADMIN_PREVIEW_HINT } from '../../components/ui/AdminPreviewBadge';
+import { AdminPreviewBadge } from '../../components/ui/AdminPreviewBadge';
 import { cx } from '../../components/ui/cx';
 import { inertOthers, trapTab } from '../../components/ui/Sheet';
 import { useMediaQuery } from '../../lib/useMediaQuery';
@@ -124,15 +124,7 @@ export function TourDialog({
           >
             {step.title}
           </h2>
-          {preview && (
-            <span
-              title={ADMIN_PREVIEW_HINT}
-              aria-description={ADMIN_PREVIEW_HINT}
-              className="rounded-button border border-accent px-2 py-0.5 text-xs font-medium text-accent"
-            >
-              Admin preview
-            </span>
-          )}
+          {preview && <AdminPreviewBadge feature="tour_glossary" />}
         </header>
         <p id={bodyId} className="text-sm text-text-muted">
           {step.body}

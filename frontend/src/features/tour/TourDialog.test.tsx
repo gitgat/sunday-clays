@@ -136,7 +136,7 @@ describe('TourDialog', () => {
     renderWithProviders(<TourDialog steps={TOUR_STEPS} preview onClose={() => undefined} />, {
       role: 'admin',
     });
-    expect(screen.getByText('Admin preview')).toBeInTheDocument();
+    expect(await screen.findByText('Admin preview')).toBeInTheDocument();
   });
   it('wraps Tab from the last control to the first', async () => {
     const { user } = renderWithProviders(

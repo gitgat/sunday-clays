@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HomePage } from '../home/pages/HomePage';
@@ -65,9 +65,19 @@ describe('tour home widget', () => {
     const marker = document.createElement('div');
     marker.dataset.tour = 'sunday';
     document.body.appendChild(marker);
-    renderWithProviders(<HomePage widgets={[homeWidget]} />);
-    expect(await screen.findByRole('dialog', {}, { timeout: 500 })).toBeInTheDocument();
-    marker.remove();
+    try {
+      renderWithProviders(<HomePage widgets={[homeWidget]} />);
+      expect(await screen.findByRole('dialog', {}, { timeout: 500 })).toBeInTheDocument();
+    } finally {
+      marker.remove();
+    }
+  });
+
+  it('opens for an admin while the feature is off, with the Admin preview badge', async () => {
+    server.use(http.get('*/api/features', () => HttpResponse.json({ switches: {} })));
+    renderWithProviders(<HomePage widgets={[homeWidget]} />, { role: 'admin' });
+    const dialog = await screen.findByRole('dialog', {}, { timeout: 3000 });
+    expect(within(dialog).getByText('Admin preview')).toBeInTheDocument();
   });
 
   it('opens after the wait even when the latest-Sunday card never appears', async () => {

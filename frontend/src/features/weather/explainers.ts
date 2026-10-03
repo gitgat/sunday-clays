@@ -22,7 +22,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
-    terms: ['difficulty', 'held-sunday', 'time-window'],
+    terms: ['difficulty', 'held-sunday', 'round-types', 'time-window'],
   },
   wr: {
     what: 'The typical score on Sundays, grouped by the direction the wind blew from.',
@@ -36,7 +36,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
-    terms: ['held-sunday', 'time-window'],
+    terms: ['held-sunday', 'round-types', 'time-window'],
   },
   wb: {
     what: 'The average score in each kind of weather or time of year.',
@@ -51,7 +51,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
-    terms: ['held-sunday', 'time-window'],
+    terms: ['held-sunday', 'round-types', 'time-window'],
   },
   wt: {
     what: 'How many people came out in each kind of weather or time of year.',
@@ -66,7 +66,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter does not apply.',
     ],
     scope: 'windowed',
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
   ws: {
     what: 'How much each shooter’s scores have tended to move in warmer, windier or wetter weather, beyond how hard the day was.',
@@ -83,7 +83,7 @@ export const explainers: Record<string, Explainer> = {
       'It looks at all history, whatever time window is chosen.',
     ],
     scope: 'all-time',
-    terms: ['time-window'],
+    terms: ['round-types', 'time-window'],
   },
   conditions: {
     what: 'Pick a range of weather and see how the Sundays that fit it compare with every Sunday in the same time window.',
@@ -96,7 +96,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
-    terms: ['difficulty', 'field-median', 'held-sunday', 'time-window'],
+    terms: ['difficulty', 'field-median', 'held-sunday', 'round-types', 'time-window'],
   },
   'profile-sensitivity': {
     what: 'How your scores have moved with weather, beyond how hard each day was.',
@@ -110,5 +110,6 @@ export const explainers: Record<string, Explainer> = {
       'Estimates are pulled toward zero when you have few rounds. Every round counts, all history is used and the round-type filter does not apply.',
     ],
     scope: 'all-time',
+    terms: ['round-types'],
   },
 };

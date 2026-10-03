@@ -1,5 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
-import { mergeTerms } from '../glossary/triggers';
+import { mergeTerms } from '../glossary/terms';
 import type { RaceMode } from './labels';
 
 /**

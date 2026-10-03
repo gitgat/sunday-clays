@@ -9,7 +9,8 @@ test('a hash link scrolls to its term', async ({ page }) => {
 test('an explainer on a profile links to the glossary', async ({ page }) => {
   await page.goto('/shooters/3');
   // Charts load lazily and swap in: open an explainer only once the page has settled.
-  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Loading charts' })).toHaveCount(0);
   const about = page.getByRole('button', { name: 'About this chart' }).first();
   await about.click();
   const words = page.getByText('Words used here:').first();
