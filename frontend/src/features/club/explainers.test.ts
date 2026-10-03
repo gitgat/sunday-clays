@@ -83,12 +83,26 @@ describe('club milestone explainers (Plan 19)', () => {
       'held-sunday',
       'special-shoot',
       'clays-thrown',
+      'round-types',
     ]);
-    expect(explainers.ctot?.terms).toEqual(['clays-thrown', 'special-shoot', 'held-sunday']);
+    expect(explainers.ctot?.terms).toEqual([
+      'clays-thrown',
+      'special-shoot',
+      'held-sunday',
+      'round-types',
+    ]);
   });
 
   it('use no banned word', () => {
     const entries = ['club-milestone', 'club-milestones', 'ctot'].map((key) => explainers[key]);
     for (const text of allStrings(entries)) expect(text).not.toMatch(BANNED_WORDS);
+  });
+
+  it('says the round-type filter does not apply on every milestone explainer', () => {
+    for (const key of ['club-milestone', 'club-milestones', 'ctot']) {
+      const entry = explainers[key];
+      expect(entry?.computed.join(' '), key).toContain('The round-type filter does not apply.');
+      expect(entry?.terms, key).toContain('round-types');
+    }
   });
 });

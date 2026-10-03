@@ -13,6 +13,7 @@ import {
 import { getMe } from '../../lib/me';
 import { useIsTouch, useMediaQuery } from '../../lib/useMediaQuery';
 import type { HomeWidget } from '../home/widgets';
+import { HOME_TITLE_ID } from '../tour/homeWidget';
 import { useTourDone } from '../tour/state';
 import { ANDROID_BODY, GOT_IT, INSTALL, IOS_BODY, NOT_NOW, TIP_TITLE } from './copy';
 
@@ -28,14 +29,21 @@ function useLaunchRedirect(pwaVisible: boolean): void {
     if (!pwaVisible || !window.matchMedia(STANDALONE).matches || pathname !== '/') return;
     try {
       if (sessionStorage.getItem(LAUNCHED_KEY) !== null) return;
+      // Decided once per page load, redirect or not: a name picked later is not a launch.
+      sessionStorage.setItem(LAUNCHED_KEY, '1');
       const me = getMe();
       if (me === null) return;
       void navigate(`/shooters/${String(me)}`, { replace: true });
-      sessionStorage.setItem(LAUNCHED_KEY, '1');
     } catch {
       // storage blocked: stay on Home
     }
   }, [navigate, pathname, pwaVisible]);
+}
+
+/** Dismissing unmounts the card that holds focus, so focus goes to the Home heading. */
+function dismissAndRefocus(): void {
+  dismissInstall();
+  document.getElementById(HOME_TITLE_ID)?.focus();
 }
 
 /** Always mounts (the launch redirect runs first), then renders the install tip or nothing. */
@@ -81,7 +89,7 @@ function InstallTip() {
               <button
                 type="button"
                 className={`${BUTTON} border border-outline-variant`}
-                onClick={dismissInstall}
+                onClick={dismissAndRefocus}
               >
                 {NOT_NOW}
               </button>
@@ -90,7 +98,7 @@ function InstallTip() {
             <button
               type="button"
               className={`${BUTTON} border border-outline-variant`}
-              onClick={dismissInstall}
+              onClick={dismissAndRefocus}
             >
               {GOT_IT}
             </button>

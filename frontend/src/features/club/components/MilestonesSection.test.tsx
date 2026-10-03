@@ -53,4 +53,11 @@ describe('MilestonesSection', () => {
     renderWithProviders(<MilestonesSection />, { route: '/club' });
     expect(await screen.findByText('No milestones yet.')).toBeInTheDocument();
   });
+
+  it('shows one alert, and no loading status, when the request fails', async () => {
+    server.use(http.get('*/api/club/milestones', () => new HttpResponse(null, { status: 500 })));
+    renderWithProviders(<MilestonesSection />, { route: '/club' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the milestones.');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
 });

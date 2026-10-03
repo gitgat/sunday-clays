@@ -4,6 +4,7 @@ import { AdminPreviewBadge } from '../../components/ui/AdminPreviewBadge';
 import { cx } from '../../components/ui/cx';
 import { inertOthers, trapTab } from '../../components/ui/Sheet';
 import { useMediaQuery } from '../../lib/useMediaQuery';
+import { placeDialog } from './placement';
 import type { TourStep } from './steps';
 import { firstVisible, PHONE_QUERY, REDUCED_MOTION_QUERY } from './target';
 
@@ -77,12 +78,7 @@ export function TourDialog({
       ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'
       : '';
   const beside =
-    !phone && box !== null
-      ? {
-          left: Math.max(16, Math.min(box.right + 16, window.innerWidth - 376)),
-          top: Math.max(16, Math.min(box.top, window.innerHeight - 280)),
-        }
-      : undefined;
+    !phone && box !== null ? placeDialog(box, window.innerWidth, window.innerHeight) : undefined;
 
   return createPortal(
     <div ref={rootRef}>

@@ -35,6 +35,20 @@ describe('page cache status line', () => {
     expect(cacheStatusText(tomorrow)).toBe('Refreshing…');
   });
 
+  it('adds failed and skipped counts, in plain words, only when above zero', () => {
+    const with_ = (failed: number, skipped: number) =>
+      cacheStatusText({
+        ...pageCacheStatus,
+        last_warm: { ...(pageCacheStatus.last_warm as object), failed, skipped } as never,
+      });
+    const base = '1,240 pages stored · 38 MB · last refreshed Oct 2, 2026 (27 pages in 41 s)';
+    expect(with_(0, 0)).toBe(base);
+    expect(with_(2, 1)).toBe(`${base} · 2 pages failed, 1 skipped`);
+    expect(with_(1, 0)).toBe(`${base} · 1 page failed`);
+    expect(with_(0, 3)).toBe(`${base} · 3 skipped`);
+    expect(with_(2, 1)).not.toMatch(BANNED_WORDS);
+  });
+
   it('says never refreshed, off, and forced off', () => {
     expect(cacheStatusText({ ...pageCacheStatus, last_warm: null })).toBe('Not refreshed yet');
     expect(cacheStatusText({ ...pageCacheStatus, enabled: false })).toBe(

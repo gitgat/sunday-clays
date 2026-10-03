@@ -13,12 +13,16 @@ import { LazyChart } from './LazyChart';
 // ChartFrame pulls in ECharts, so the chart loads in its own chunk like the Club page's others.
 const loadTotals = () => import('./TotalsChart');
 
-function MilestoneList({ data }: { data: ClubMilestones | undefined }) {
+function MilestoneList({ data, failed }: { data: ClubMilestones | undefined; failed: boolean }) {
   return (
     <Card title="Club milestones">
       <AboutBlock explainer={explainers['club-milestones']} label="About club milestones" />
       {data === undefined ? (
-        <p role="status">Loading milestones…</p>
+        failed ? (
+          <p role="alert">Could not load the milestones.</p>
+        ) : (
+          <p role="status">Loading milestones…</p>
+        )
       ) : data.milestones.length === 0 ? (
         <p>No milestones yet.</p>
       ) : (
@@ -81,7 +85,7 @@ export function MilestonesSection() {
       </div>
       <CardHeadingLevel value={3}>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <MilestoneList data={query.data} />
+          <MilestoneList data={query.data} failed={query.isError} />
           {query.data !== undefined && query.data.series.length > 0 && (
             <LazyChart title="Club totals over time" load={loadTotals} />
           )}
