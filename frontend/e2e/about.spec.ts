@@ -32,7 +32,7 @@ test('About opens from the nav and shows what, who, source and privacy', async (
   }
   await expect(
     page.getByRole('region', { name: 'Your privacy' }).getByRole('listitem'),
-  ).toHaveCount(5);
+  ).toHaveCount(6); // the e2e stack turns every feature on (FEATURES_DEFAULT_ON), link previews too
 
   for (const [name, href] of [
     [/Read more on tcgc\.org/, 'https://tcgc.org/sunday-clays/'],
