@@ -7,6 +7,40 @@ import type { Explainer } from '../../components/charts/types';
  * count have scores (domain/rebuild.py).
  */
 export const explainers: Record<string, Explainer> = {
+  // Club milestones (Plan 19)
+  'club-milestone': {
+    what: "The club's most recent round number, such as total clays thrown or Sundays held.",
+    computed: [
+      'We add up every Sunday on record since Jan 5, 2020, in date order, and note the Sunday each total first reached a round number.',
+      'Special shoots count as a Sunday held and add their shooters, but not their clays or rounds.',
+    ],
+    scope: 'all-time',
+    terms: ['held-sunday', 'special-shoot', 'clays-thrown'],
+  },
+  'club-milestones': {
+    what: 'Every round number the club has passed, with the Sunday it was passed on.',
+    computed: [
+      'Totals add up every Sunday on record, in date order.',
+      'A milestone is dated at the first Sunday its total reached the round number.',
+      'Special shoots count as a Sunday held and add their shooters, but not their clays or rounds.',
+    ],
+    scope: 'all-time',
+    terms: ['held-sunday', 'special-shoot', 'clays-thrown'],
+  },
+  ctot: {
+    what: "How the club's running totals have grown, Sunday by Sunday, with each round number marked.",
+    read: [
+      'A dot marks the Sunday a round number was passed.',
+      'A flat stretch means no Sundays were held.',
+    ],
+    computed: [
+      'Clays thrown: 50 for every regular round. Rounds: regular rounds only.',
+      'Sundays held and Shooters include special shoots.',
+      'Totals start at the first Sunday on record, Jan 5, 2020.',
+    ],
+    scope: 'windowed',
+    terms: ['clays-thrown', 'special-shoot', 'held-sunday'],
+  },
   // Charts
   att: {
     what: 'For every Sunday on record, how many people came (head count) next to how many rounds were scored.',

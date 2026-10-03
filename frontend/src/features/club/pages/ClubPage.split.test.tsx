@@ -62,7 +62,7 @@ describe('ClubPage code splitting', { timeout: 15_000 }, () => {
     expect(screen.queryAllByRole('button', { name: 'CSV' })).toHaveLength(0);
 
     echarts.release();
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(11), {
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(12), {
       timeout: 5000,
     });
     // The turnout card waits for the window's anchor, then runs its query.
