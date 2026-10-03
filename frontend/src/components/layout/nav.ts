@@ -1,9 +1,18 @@
 import type { NavItem } from '../../app/registry';
+import type { FeatureKey } from '../../lib/features';
 
-/** Items the current role may see, in C10 `order`. */
-export function visibleNav(items: readonly NavItem[], isAdmin: boolean): NavItem[] {
+/**
+ * Items the current role may see, in C10 `order`. An item naming a launch switch (`feature`) shows
+ * only when `featureVisible(feature)` is true; without the check every gated item is hidden.
+ */
+export function visibleNav(
+  items: readonly NavItem[],
+  isAdmin: boolean,
+  featureVisible: (key: FeatureKey) => boolean = () => false,
+): NavItem[] {
   return items
     .filter((item) => isAdmin || item.adminOnly !== true)
+    .filter((item) => item.feature === undefined || featureVisible(item.feature))
     .sort((a, b) => a.order - b.order);
 }
 

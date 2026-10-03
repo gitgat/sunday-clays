@@ -43,11 +43,16 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, Boundar
   }
 }
 
+/** "Page not found": unknown paths, and gated pages while their launch switch is off (D21). */
+export function NotFoundView() {
+  return <Fallback title="Page not found" message="That page does not exist." />;
+}
+
 /** errorElement for the root route: 404 for unknown paths, a generic message otherwise. */
 export function RouteErrorPage() {
   const error = useRouteError();
   if (isRouteErrorResponse(error) && error.status === 404) {
-    return <Fallback title="Page not found" message="That page does not exist." />;
+    return <NotFoundView />;
   }
   return (
     <Fallback

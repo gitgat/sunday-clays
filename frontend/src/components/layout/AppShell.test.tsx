@@ -398,3 +398,19 @@ describe('AppShell keeps the global round-type filter while navigating', () => {
     expect(router.state.location).toMatchObject({ pathname: '/', search: '?rt=sporting' });
   });
 });
+
+describe('AppShell launch switches', () => {
+  const GATED: NavItem[] = [
+    ...ITEMS,
+    { label: 'Glossary', path: '/glossary', icon: Compass, order: 135, feature: 'tour_glossary' },
+  ];
+
+  it('lists a gated nav item only when featureVisible says so', () => {
+    stubViewport('desktop');
+    const { unmount } = renderShell('/', { items: GATED });
+    expect(screen.queryByRole('link', { name: 'Glossary' })).not.toBeInTheDocument();
+    unmount();
+    renderShell('/', { items: GATED, featureVisible: () => true });
+    expect(screen.getByRole('link', { name: 'Glossary' })).toBeInTheDocument();
+  });
+});
