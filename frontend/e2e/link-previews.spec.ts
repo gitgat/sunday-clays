@@ -79,6 +79,8 @@ test.describe('link previews', () => {
     const page = await request.head(`/l/events/${DAY}`, { headers: { 'User-Agent': FB } });
     expect(page.status()).toBe(200);
     expect(page.headers()['content-type']).toMatch(/^text\/html/);
+    // the meta page is private; the SPA fallback answers plain no-cache
+    expect(page.headers()['cache-control']).toBe('private, no-cache');
     const image = await request.head('/api/og/image/generic.png');
     expect(image.status()).toBe(200);
     expect(image.headers()['content-type']).toBe('image/png');
@@ -93,7 +95,7 @@ test.describe('link previews', () => {
   });
 
   test('the open-redirect guard sends unsafe share paths home', async ({ request }) => {
-    for (const path of ['/l//evil.com', '/l/%2F%2Fevil.com', '/l/%5Cevil.com']) {
+    for (const path of ['/l//evil.com', '/L//evil.com', '/l/%2F%2Fevil.com', '/l/%5Cevil.com']) {
       const response = await get(request, path, BROWSER);
       expect(response.status(), path).toBe(302);
       expect(response.headers()['location'], path).toBe('/');
@@ -127,6 +129,7 @@ test.describe('link previews', () => {
     const anonymous = await pwRequest.newContext({ baseURL });
     try {
       const withCookie = await (await get(request, `/events/${DAY}`, FB)).text();
+      expect(meta(withCookie, 'og:title')).toBe('Sunday Clays · Tri-County Gun Club');
       const without = await (await get(anonymous, `/events/${DAY}`, FB)).text();
       expect(withCookie).toBe(without);
       for (const name of ['Finnegan', 'Stockton', 'Hadley', 'Kaplan']) {

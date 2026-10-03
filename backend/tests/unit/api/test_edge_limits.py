@@ -28,11 +28,8 @@ from sunday_clays.config import Settings
 CADDYFILE = Path(__file__).resolve().parents[4] / "deploy" / "caddy" / "Caddyfile"
 UNITS = {"B": 1, "KB": 1000, "KiB": 1024, "MB": 1000**2, "MiB": 1024**2}
 # A top-level `handle <path> { ... }` of the site block (tab-indented, as `caddy fmt` writes it).
-# Path handles only: the named-matcher `handle @crawler` and `/l/*` (Plan 19) cap a body of their
-# own, one level deeper than a limit the API route needs, and are pinned by the tests below.
-HANDLE_BLOCK = re.compile(r"^\thandle (/\S+) \{\n(.*?)^\t\}$", re.MULTILINE | re.DOTALL)
-# Only a direct child of the handle (two tabs): the `/l/*` route nests a copy for crawlers.
-BODY_LIMIT = re.compile(r"^\t\trequest_body \{\s+max_size (\d+)([A-Za-z]+)\s+\}", re.MULTILINE)
+HANDLE_BLOCK = re.compile(r"^\thandle (\S+) \{\n(.*?)^\t\}$", re.MULTILINE | re.DOTALL)
+BODY_LIMIT = re.compile(r"request_body \{\s+max_size (\d+)([A-Za-z]+)\s+\}")
 LENGTH_GUARD = re.compile(
     r"@(\w+) expression `\{http\.request\.header\.Content-Length\} != \"\" "
     r"&& int\(\{http\.request\.header\.Content-Length\}\) > (\d+)`\s+error @\1 413\s"
@@ -112,6 +109,9 @@ def test_crawlers_and_share_links_are_routed_before_the_spa() -> None:
     assert share.index("handle @share_unsafe") < share.index("uri strip_prefix /l")
     assert "\thandle @crawler {" in site  # crawlers on every other SPA path
     assert "rewrite * /api/og/page{path}?{query}" in site
+    # Crawler handles take GET/HEAD only, so they carry no body cap of their own (the limit tests
+    # above would otherwise have to guard them): only /api/* and the imports route cap a body.
+    assert site.count("request_body {") == 2
 
 
 def test_the_spa_varies_by_user_agent_and_the_csp_allows_the_pwa() -> None:

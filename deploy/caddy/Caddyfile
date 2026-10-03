@@ -47,7 +47,7 @@
 		not path /api/* /assets/* /trophies/* /icons/* /sw.js /manifest.webmanifest
 	}
 	# An expression, not path_regexp: path_regexp matches a cleaned path with "//" merged to "/".
-	@share_unsafe expression `{http.request.uri.path}.matches("^/l/[/\\\\]")`
+	@share_unsafe expression `{http.request.uri.path}.matches("(?i)^/l/[/\\\\]")`
 
 	# Share links: "/l/<path>" previews for crawlers and redirects people to "/<path>" (query kept).
 	# Caddy runs `handle` before `route`, and sorts sibling handles (path matchers first), so the
@@ -55,9 +55,6 @@
 	handle /l/* {
 		route {
 			handle @crawler {
-				request_body {
-					max_size 264KiB
-				}
 				rewrite * /api/og/page{path}?{query}
 				import api
 			}
@@ -77,9 +74,6 @@
 
 	# Crawlers on every other SPA path (named-matcher handles sort after the path handles below).
 	handle @crawler {
-		request_body {
-			max_size 264KiB
-		}
 		rewrite * /api/og/page{path}?{query}
 		import api
 	}
