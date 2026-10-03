@@ -604,13 +604,16 @@ says: every stored answer is keyed by the data version, the local date and the r
    in-process app would keep warming and writing rows):
 
    ```bash
-   docker service update --env-add PAGE_CACHE_ENABLED=false sundayclays_api sundayclays_worker
+   # one service per command: docker service update takes exactly one SERVICE
+   docker service update --env-add PAGE_CACHE_ENABLED=false sundayclays_api
+   docker service update --env-add PAGE_CACHE_ENABLED=false sundayclays_worker
    ```
 
    To undo it, once the cause is fixed:
 
    ```bash
-   docker service update --env-rm PAGE_CACHE_ENABLED sundayclays_api sundayclays_worker
+   docker service update --env-rm PAGE_CACHE_ENABLED sundayclays_api
+   docker service update --env-rm PAGE_CACHE_ENABLED sundayclays_worker
    ```
 
    This survives the deployer's image updates (they change only the image), but a hand
