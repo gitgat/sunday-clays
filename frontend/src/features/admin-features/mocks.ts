@@ -87,6 +87,7 @@ export const pageCacheStatus: PageCacheStatus = {
     seconds: 41.2,
   },
   current: { data_version: 412, local_date: '2026-10-02' },
+  targets: ['/api/insights/home', '/api/events/2026-09-27', '/api/events'],
 };
 
 /**

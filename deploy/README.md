@@ -583,6 +583,30 @@ docker secret ls --format '{{.Name}}' | grep -E '^sundayclays_.+_v1$' | grep -v 
 - Rotating `viewer_password_hash` or `admin_password_hash` signs out that role only; rotating
   `session_secret` signs out everyone.
 
+## Page cache
+
+The busiest pages answer from a stored, finished response (the `response_cache` table, UNLOGGED,
+in the existing Postgres). The worker refreshes it after every upload, rule change or recompute,
+and just after local midnight (`page_warm`). It changes how fast an answer arrives, never what it
+says: every stored answer is keyed by the data version, the local date and the role.
+
+1. **After the deploy that ships it:** open `/admin/features` and check "Page cache" is on and its
+   status line shows a refresh with no failures ("… last refreshed <date> (27 pages in 41 s)"). In
+   the browser's network panel, a second load of Home shows `x-page-cache: hit` on
+   `/api/insights/home`, and that request takes well under a second.
+2. **If a page looks wrong after an upload:** turn "Page cache" off on `/admin/features`. That
+   clears everything stored, and every page then computes live. Turn it back on once the cause is
+   understood; the next worker poll warms the pages again. If the admin page itself is
+   unavailable, set `PAGE_CACHE_ENABLED=false` on both the `api` and the `worker` services and
+   redeploy the stack (on `api` alone, the worker's in-process app would keep warming and
+   writing rows).
+3. **Backups:** `response_cache` is disposable. A restore needs no step for it, and
+   `pg_dump --exclude-table-data=response_cache` is safe if a smaller dump is wanted.
+4. **Separate operator item, not part of this release:** whether to constrain the `api` and
+   `worker` services to x86 nodes (a `node.platform.arch == x86_64` placement constraint in
+   `compose.swarm.yaml`) is the owner's own decision. This release does not change placement, the
+   images stay multi-arch, and the page cache must meet its targets on arm64 as well.
+
 ## Backups and restore
 
 - The `backup` service writes a verified custom-format dump at container start and daily at 02:30
