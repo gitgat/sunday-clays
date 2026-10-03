@@ -20,6 +20,7 @@ function SummarySection({ shooterId }: { shooterId: number }) {
   const query = useShooterSummary(shooterId, range, visible && ready);
   const cardRef = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
   if (!visible) return null; // a bare section: no title, no gap
   const data = query.data;
   const filename =
@@ -59,10 +60,14 @@ function SummarySection({ shooterId }: { shooterId: number }) {
                 onClick={() => {
                   setFailed(false);
                   const el = cardRef.current;
-                  if (el !== null)
-                    void downloadElementAsImage(el, filename).catch(() => setFailed(true));
+                  if (el === null) return;
+                  setBusy(true);
+                  void downloadElementAsImage(el, filename)
+                    .catch(() => setFailed(true))
+                    .finally(() => setBusy(false));
                 }}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-button border border-outline-variant px-4"
+                disabled={busy}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-button border border-outline-variant px-4 disabled:opacity-60"
               >
                 <Download aria-hidden="true" className="size-4" />
                 Download image

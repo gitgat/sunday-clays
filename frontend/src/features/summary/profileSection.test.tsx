@@ -96,6 +96,34 @@ describe('summary profile section', () => {
     });
   });
 
+  it('disables Download image while the image is being made, so a double tap saves once', async () => {
+    seen();
+    let finish: () => void = () => undefined;
+    const download = vi.spyOn(share, 'downloadElementAsImage').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { user } = renderWithProviders(<Component shooterId={3} />, {
+      route: '/shooters/3?w=3m',
+    });
+    const button = await screen.findByRole('button', { name: 'Download image' });
+    await user.dblClick(button);
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(button).toBeDisabled();
+    finish();
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
+  });
+
+  it('names the card by the shooter heading', async () => {
+    seen();
+    renderWithProviders(<Component shooterId={3} />, { route: '/shooters/3?w=3m' });
+    expect(await screen.findByRole('article', { name: 'Hadley, Ike' })).toBeInTheDocument();
+  });
+
   it('renders nothing at all (no heading) for a viewer while off', async () => {
     server.use(http.get('*/api/features', () => HttpResponse.json({ switches: {} })));
     const { container } = renderWithProviders(<Component shooterId={3} />);

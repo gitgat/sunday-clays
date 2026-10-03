@@ -72,12 +72,6 @@ export function resetFontCache(): void {
   robotoCss = undefined;
 }
 
-/**
- * Renders `el` to a PNG and hands it to the Web Share API when the browser can share files,
- * otherwise downloads it. Resolves 'cancelled' when the user dismisses the share sheet. A
- * NotAllowedError also downloads: Safari drops the tap's transient activation during the async
- * render, so it refuses the share even though canShare said yes.
- */
 function pngName(filename: string): string {
   return filename.endsWith('.png') ? filename : `${filename}.png`;
 }
@@ -102,6 +96,12 @@ export async function downloadElementAsImage(el: HTMLElement, filename: string):
   downloadBlob(await renderElementToPng(el), pngName(filename));
 }
 
+/**
+ * Renders `el` to a PNG and hands it to the Web Share API when the browser can share files,
+ * otherwise downloads it. Resolves 'cancelled' when the user dismisses the share sheet. A
+ * NotAllowedError also downloads: Safari drops the tap's transient activation during the async
+ * render, so it refuses the share even though canShare said yes.
+ */
 export async function shareElementAsImage(
   el: HTMLElement,
   filename: string,

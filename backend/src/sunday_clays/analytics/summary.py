@@ -116,6 +116,7 @@ def compute_summary(
         ),
         key=lambda item: (-item[0].toordinal(), item[1]),
     )
+    # date_from=None (an open start) is a stable cache key on purpose.
     return ShooterSummary(
         shooter_id=shooter_id,
         display_name=display_name,

@@ -12,12 +12,10 @@ export function useShooterSummary(id: number, range: WindowRange | null, enabled
     range === null ? null : { ...(range.from === null ? {} : { from: range.from }), to: range.to };
   return useQuery({
     queryKey: ['/api/shooters/{id}/summary', id, query],
-    queryFn: () =>
-      unwrap(
-        api.GET('/api/shooters/{id}/summary', {
-          params: { path: { id }, query: query as { from?: string; to: string } },
-        }),
-      ),
+    queryFn: () => {
+      if (query === null) throw new Error('The time window is not known yet');
+      return unwrap(api.GET('/api/shooters/{id}/summary', { params: { path: { id }, query } }));
+    },
     enabled: enabled && query !== null,
   });
 }

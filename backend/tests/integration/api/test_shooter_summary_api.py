@@ -62,7 +62,8 @@ def test_the_special_sunday_extends_a_streak(
         URL.format(id=_id(fx_special_session, "Hadley, Ike")), params=params
     ).json()
     assert special["sundays"] == plain["sundays"] + 1
-    assert special["longest_streak"] >= plain["longest_streak"]
+    assert plain["longest_streak"] == 2
+    assert special["longest_streak"] == 3  # the special Sunday extends the run by one
     assert special["rounds"] == plain["rounds"]
 
 

@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { ShooterSummary } from '../api';
 import { summaryLines } from '../format';
 
@@ -9,10 +10,16 @@ export function SummaryCard({
   summary: ShooterSummary;
   windowText: string;
 }) {
+  const titleId = useId();
   return (
-    <article className="flex max-w-[480px] flex-col gap-2 rounded-card bg-surface p-4 text-text">
+    <article
+      aria-labelledby={titleId}
+      className="flex max-w-[480px] flex-col gap-2 rounded-card bg-surface p-4 text-text"
+    >
       <p className="text-sm text-accent">Sunday Clays · Tri-County Gun Club</p>
-      <h3 className="break-words text-xl font-bold">{summary.display_name}</h3>
+      <h3 id={titleId} className="break-words text-xl font-bold">
+        {summary.display_name}
+      </h3>
       <p className="text-sm text-text-muted">{windowText}</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
         {summaryLines(summary).map(([label, value, extra]) => (
