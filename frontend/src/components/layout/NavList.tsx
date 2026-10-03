@@ -4,7 +4,7 @@ import { useRoundTypeLink } from '../../lib/roundTypes';
 import { cx } from '../ui/cx';
 
 function NavListLink({
-  item: { path, label, icon: Icon },
+  item: { path, label, icon: Icon, tourId },
   onNavigate,
 }: {
   item: NavItem;
@@ -15,6 +15,7 @@ function NavListLink({
     <NavLink
       to={to}
       end={path === '/'}
+      data-tour={tourId}
       onClick={onNavigate}
       className={({ isActive }) =>
         cx(

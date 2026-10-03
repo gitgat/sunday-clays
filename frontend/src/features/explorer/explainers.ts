@@ -1,7 +1,8 @@
 import type { Metric } from '../../components/charts/explore';
 import type { Explainer } from '../../components/charts/types';
+import { mergeTerms } from '../glossary/terms';
 
-type MetricCopy = Pick<Explainer, 'what' | 'computed'> & { read: readonly string[] };
+type MetricCopy = Pick<Explainer, 'what' | 'computed' | 'terms'> & { read: readonly string[] };
 
 /**
  * What each Explorer metric measures (.superpowers/sdd/explainers/club-explorer.md, checked
@@ -18,6 +19,7 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
       'Each round’s score is one value: every round, second rounds on doubleheader Sundays too.',
       'Sporting and super sporting mix unless the round-type filter is set.',
     ],
+    terms: ['round-types'],
   },
   adjusted: {
     what: 'A score compared with how the whole field shot that Sunday, in targets.',
@@ -29,6 +31,7 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
       'Score minus the middle score (median) of every round shot that Sunday, all shooters.',
       'Only Sundays with full results have a middle score; other rounds are left out.',
     ],
+    terms: ['held-sunday'],
   },
   residual: {
     what: 'How many targets better or worse a round was than we expected from that shooter that Sunday.',
@@ -40,6 +43,7 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
       'Expected score = the shooter’s rating going in, lowered on a hard Sunday and raised on an easy one (judged from everyone else’s scores).',
       'Vs expected = actual score minus expected score. Sundays with full results only.',
     ],
+    terms: ['held-sunday'],
   },
   rating: {
     what: 'Our estimate of skill: roughly what a shooter would break out of 50 on a typical recent Sunday.',
@@ -74,6 +78,7 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
       'One value per Sunday: its head count. Sundays without one are skipped; Sundays with no scores count.',
       'Only date, weather and round-type filters apply, and it splits only by date, round type or weather.',
     ],
+    terms: ['round-types'],
   },
   wins: {
     what: 'How many Sundays a shooter (or group) won.',
@@ -103,6 +108,7 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
       'One value per Sunday with full results: the Sunday page’s difficulty.',
       'Only date, weather and round-type filters apply, and it splits only by date, round type or weather.',
     ],
+    terms: ['difficulty', 'held-sunday', 'round-types'],
   },
 };
 
@@ -122,6 +128,11 @@ export function explorerExplainer(metric: Metric, scope: Explainer['scope']): Ex
         : 'Every Sunday on record. Fullscreen and the CSV download can hold up to 5,000 rows.',
       'Filters and the round-type filter apply. At most 500 groups are shown on the page, and up to 5,000 in fullscreen and the CSV download.',
     ],
+    terms: mergeTerms(
+      copy.terms,
+      'round-types',
+      ...(scope === 'windowed' ? (['time-window'] as const) : []),
+    ),
     ...(scope === undefined ? {} : { scope }),
   };
 }
@@ -146,4 +157,5 @@ export const CHOICES_EXPLAINER: Explainer = {
     'Status uses each shooter’s status today, not on the day. Weather is 10 a.m. to noon: temperature bands under 40, 40–55, 55–70, 70–85, 85+ °F; wind by gust under 10, 10–20, 20+ mph; rain dry under 0.02 in.',
     'Minimum score (set by an insight link, cleared with its chip) keeps only rounds at or above it.',
   ],
+  terms: ['percentile', 'round-types'],
 };

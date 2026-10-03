@@ -22,7 +22,7 @@ export function NextTrophy({ meId }: { meId: number | null }) {
     .sort((a, b) => b.fraction - a.fraction || a.code.localeCompare(b.code))
     .slice(0, 3);
   return (
-    <section aria-label="Your next trophy" className="flex flex-col gap-3">
+    <section aria-label="Your next trophy" data-tour="trophies" className="flex flex-col gap-3">
       <h3 className="text-lg font-medium">Your next trophy</h3>
       <AboutBlock explainer={explainers['next-trophy']} label="About your next trophy" />
       {next.length === 0 ? (

@@ -197,3 +197,12 @@ describe('HomePage', () => {
     await chartLoaded();
   });
 });
+
+describe('HomePage tour targets', () => {
+  it('marks the latest Sunday card and the Personal panel', async () => {
+    const { container } = renderWithProviders(<HomePage widgets={[]} />);
+    expect(container.querySelector('aside[data-tour="you"]')).not.toBeNull();
+    await screen.findByRole('heading', { name: 'Latest Sunday' });
+    expect(container.querySelector('section[data-tour="sunday"]')).not.toBeNull();
+  });
+});

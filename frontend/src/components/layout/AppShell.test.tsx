@@ -414,3 +414,17 @@ describe('AppShell launch switches', () => {
     expect(screen.getByRole('link', { name: 'Glossary' })).toBeInTheDocument();
   });
 });
+
+describe('AppShell tour targets', () => {
+  it('puts a nav item tourId on its link as data-tour', () => {
+    stubViewport('desktop');
+    renderShell('/', {
+      items: [
+        ...ITEMS,
+        { label: 'Trophies', path: '/trophies', icon: Trophy, order: 70, tourId: 'trophies' },
+      ],
+    });
+    expect(screen.getByRole('link', { name: 'Trophies' })).toHaveAttribute('data-tour', 'trophies');
+    expect(screen.getByRole('link', { name: 'Explorer' })).not.toHaveAttribute('data-tour');
+  });
+});

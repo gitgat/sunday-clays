@@ -27,6 +27,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
+    terms: ['time-window'],
   },
   sthit: {
     what: 'The share of targets broken at each station, with a tick above and below each bar showing a likely range.',
@@ -43,6 +44,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
+    terms: ['field-adjusted', 'time-window'],
   },
   sttime: {
     what: 'One line per station: the share of its targets broken on each Sunday.',
@@ -58,6 +60,7 @@ export const explainers: Record<string, Explainer> = {
       SHEETS_ONLY,
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   stmatrix: {
     what: 'A grid: each row is a shooter, each column a station, and each square is that shooter’s hit % at that station.',
@@ -73,6 +76,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
+    terms: ['round-types', 'time-window'],
   },
   stera: {
     what: 'How this station has played in each of its setups, split on the dates it was reset or rebuilt.',
@@ -87,6 +91,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
+    terms: ['round-types', 'time-window'],
   },
   stwind: {
     what: 'How this station plays on calm, breezy and gusty days.',
@@ -102,6 +107,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
+    terms: ['round-types', 'time-window'],
   },
   'station-leaders': {
     what: 'The shooters who break the highest share of this station’s targets. The first ten show; “Show all” lists the rest.',
@@ -115,6 +121,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
+    terms: ['round-types', 'time-window'],
   },
   stdelta: {
     what: 'How many percentage points better or worse than the field you shoot each station.',
@@ -130,6 +137,7 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
+    terms: ['round-types', 'time-window'],
   },
   'stdelta-table': {
     what: 'Every station you have shot: your hit %, the field’s hit % on the same Sundays, the gap and how many rounds it rests on.',
@@ -143,5 +151,6 @@ export const explainers: Record<string, Explainer> = {
       WINDOW,
       SHEETS_ONLY,
     ],
+    terms: ['round-types', 'time-window'],
   },
 };

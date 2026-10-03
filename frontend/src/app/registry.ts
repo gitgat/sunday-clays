@@ -12,6 +12,8 @@ export interface NavItem {
   adminOnly?: boolean;
   /** Plan 19 D21: hidden unless this launch switch's feature is visible to the viewer. */
   feature?: FeatureKey;
+  /** Plan 19 tour: rendered as `data-tour` on the nav link (the "trophies" step). */
+  tourId?: string;
 }
 
 /** What every src/features/<name>/routes.tsx exports. */

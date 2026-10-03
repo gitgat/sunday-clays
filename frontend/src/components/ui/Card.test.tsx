@@ -56,3 +56,12 @@ describe('Card', () => {
     expect(screen.getByRole('region', { name: 'Plain' })).not.toHaveClass('scroll-mt-28');
   });
 });
+
+describe('Card tour target', () => {
+  it('renders data-tour only when given', () => {
+    const { container, rerender } = render(<Card title="x" tour="sunday" />);
+    expect(container.querySelector('section')).toHaveAttribute('data-tour', 'sunday');
+    rerender(<Card title="x" />);
+    expect(container.querySelector('section')).not.toHaveAttribute('data-tour');
+  });
+});

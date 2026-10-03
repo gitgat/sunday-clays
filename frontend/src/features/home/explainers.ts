@@ -18,6 +18,7 @@ const explainers = {
       'The round-type filter applies. Sundays with attendance but no scores are left out.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
   pulseHeld: {
     what: 'How many Sundays in the time window have full results.',
@@ -26,6 +27,7 @@ const explainers = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['held-sunday', 'round-types', 'time-window'],
   },
   pulseTurnout: {
     what: 'The typical crowd: the average number of people per scored Sunday in the time window.',
@@ -34,6 +36,7 @@ const explainers = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
   pulseHigh: {
     what: 'The best single round anyone shot in the time window, out of 50.',
@@ -42,6 +45,7 @@ const explainers = {
       'It is one round, not an average. The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
   latestShooters: {
     what: 'How many people have at least one recorded score at the latest Sunday.',
@@ -49,6 +53,7 @@ const explainers = {
       'Counts shooters with a recorded round, not everyone who came, so it can be lower than the head count.',
       'The round-type filter does not apply.',
     ],
+    terms: ['round-types'],
   },
   latestMedian: {
     what: 'The middle score at the latest Sunday: half the rounds were this or better, half this or worse.',
@@ -56,6 +61,7 @@ const explainers = {
       'Every round that day counts, second rounds included. Sorted by score, the middle one is taken.',
       'The round-type filter does not apply.',
     ],
+    terms: ['round-types'],
   },
   latestTop: {
     what: 'The best single round at the latest Sunday, out of 50.',
@@ -63,6 +69,7 @@ const explainers = {
       'The highest score among all rounds that day, second rounds included.',
       'The round-type filter does not apply.',
     ],
+    terms: ['round-types'],
   },
   meLast: {
     what: 'Your most recent Sunday: the date, your best score, where it placed and how your rating moved.',
@@ -75,6 +82,7 @@ const explainers = {
       'Score is your best round; finish is its place among best rounds.',
       'Rating move = rating after minus rating before, to 0.1. "—" means the Sunday had partial results, so ratings did not move.',
     ],
+    terms: ['round-types'],
   },
   meOdometer: {
     what: 'Your lifetime totals at Sunday Clays.',
@@ -86,6 +94,7 @@ const explainers = {
       'All round types count; the round-type filter does not apply.',
     ],
     scope: 'lifetime',
+    terms: ['held-sunday', 'round-types', 'special-shoot', 'streak'],
   },
 } satisfies Record<string, Explainer>;
 

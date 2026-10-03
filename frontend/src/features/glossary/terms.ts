@@ -119,3 +119,12 @@ export function termById(id: GlossaryTermId): GlossaryTerm {
   if (found === undefined) throw new Error(`no glossary term ${id}`);
   return found;
 }
+
+/** A builder's own terms joined to its base explainer's, in glossary order and without repeats. */
+export function mergeTerms(
+  base: readonly GlossaryTermId[] | undefined,
+  ...extra: GlossaryTermId[]
+): GlossaryTermId[] {
+  const wanted = new Set([...(base ?? []), ...extra]);
+  return GLOSSARY_TERMS.map((term) => term.id).filter((id) => wanted.has(id));
+}
