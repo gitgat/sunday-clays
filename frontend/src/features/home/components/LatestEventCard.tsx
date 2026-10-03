@@ -143,7 +143,7 @@ export function LatestEventCard() {
   }
 
   return (
-    <Card title="Latest Sunday" subtitle="Not affected by the time filter">
+    <Card title="Latest Sunday" subtitle="Not affected by the time filter" tour="sunday">
       {body()}
     </Card>
   );

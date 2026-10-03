@@ -18,6 +18,7 @@ const explainers = {
       'The round-type filter applies. Sundays with attendance but no scores are left out.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   pulseHeld: {
     what: 'How many Sundays in the time window have full results.',
@@ -26,6 +27,7 @@ const explainers = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['held-sunday', 'time-window'],
   },
   pulseTurnout: {
     what: 'The typical crowd: the average number of people per scored Sunday in the time window.',
@@ -34,6 +36,7 @@ const explainers = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   pulseHigh: {
     what: 'The best single round anyone shot in the time window, out of 50.',
@@ -42,6 +45,7 @@ const explainers = {
       'It is one round, not an average. The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   latestShooters: {
     what: 'How many people have at least one recorded score at the latest Sunday.',
@@ -86,6 +90,7 @@ const explainers = {
       'All round types count; the round-type filter does not apply.',
     ],
     scope: 'lifetime',
+    terms: ['held-sunday', 'round-types', 'special-shoot', 'streak'],
   },
 } satisfies Record<string, Explainer>;
 

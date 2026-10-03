@@ -21,6 +21,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter does not apply. The chart opens on the time window. Fullscreen shows every Sunday, and the CSV download has them all.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   years: {
     what: 'For each year, how many different people shot and how many Sundays had full results.',
@@ -34,6 +35,7 @@ export const explainers: Record<string, Explainer> = {
       'Year-to-date change = (Sundays so far minus last year’s at the same date) ÷ last year’s. Every year is shown; the round-type filter does not apply.',
     ],
     scope: 'all-time',
+    terms: ['held-sunday'],
   },
   season: {
     what: 'Which months of the year draw the biggest turnout, averaged over all years.',
@@ -48,6 +50,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter does not apply.',
     ],
     scope: 'all-time',
+    terms: ['held-sunday'],
   },
   turnout: {
     what: 'The average head count for each kind of weather.',
@@ -62,6 +65,7 @@ export const explainers: Record<string, Explainer> = {
       'On the page: only Sundays inside the time window. Fullscreen and the CSV download use every Sunday on record. The round-type filter applies: pick Super Sporting and every other Sunday drops out; Sundays with no station sheet count as Sporting.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
   dist: {
     what: 'How common each score was, one hill per year, newest on top.',
@@ -75,6 +79,7 @@ export const explainers: Record<string, Explainer> = {
       'Each year is its own hill, so the time window does not apply.',
     ],
     scope: 'all-time',
+    terms: ['round-types', 'time-window'],
   },
   scores: {
     what: 'How the field shot each Sunday: the middle score and the top score, each with a smoother trend line.',
@@ -88,6 +93,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter does not apply. The chart opens on the time window. Fullscreen shows every Sunday, and the CSV download has them all.',
     ],
     scope: 'windowed',
+    terms: ['held-sunday', 'round-types', 'time-window'],
   },
   diff: {
     what: 'How hard each Sunday was, in targets, against a typical Sunday of the past year.',
@@ -102,6 +108,7 @@ export const explainers: Record<string, Explainer> = {
       'Sundays with full results only. The round-type filter does not apply. The chart opens on the time window. Fullscreen shows every Sunday, and the CSV download has them all.',
     ],
     scope: 'windowed',
+    terms: ['held-sunday', 'time-window'],
   },
   new: {
     what: 'How many people shot here for the first time each year, and how many of them ever came back.',
@@ -183,6 +190,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies: pick Sporting and only sporting Sundays count.',
     ],
     scope: 'windowed',
+    terms: ['held-sunday', 'time-window'],
   },
   'stat-shooters': {
     what: 'How many different people shot a scored round in the time window.',
@@ -195,6 +203,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies: someone who only shot super sporting drops out when you pick Sporting.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
   'stat-rounds': {
     what: 'Rounds of 50 targets shot in the time window.',
@@ -204,6 +213,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   'stat-clays': {
     what: 'Targets broken by everyone in the time window.',
@@ -213,6 +223,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   'stat-first': {
     what: 'The first Sunday inside the time window that we have scores for.',
@@ -222,6 +233,7 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter applies, so this date can move when you pick a round type.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
 
   // Regulars lists
@@ -235,6 +247,7 @@ export const explainers: Record<string, Explainer> = {
       'A core regular has a score on at least half of them. Two rounds on one Sunday count once.',
       'In-memoriam shooters are left out. The round-type filter does not apply.',
     ],
+    terms: ['held-sunday', 'time-window'],
   },
   'regulars-lapsed': {
     what: 'People who used to shoot most Sundays but have not been out lately.',
@@ -244,6 +257,7 @@ export const explainers: Record<string, Explainer> = {
       'They have no round in the 90 days up to the latest Sunday with scores. The time window does not change this.',
       'In-memoriam shooters are left out. The round-type filter does not apply.',
     ],
+    terms: ['held-sunday', 'time-window'],
   },
   'first-rounds': {
     what: 'How shooters did on their first Sunday at the club: how many opened with each score.',
@@ -257,5 +271,6 @@ export const explainers: Record<string, Explainer> = {
       'The round-type filter does not apply.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
 };

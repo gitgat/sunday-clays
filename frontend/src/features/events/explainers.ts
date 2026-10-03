@@ -18,6 +18,7 @@ const explainers = {
       'The year is set with the arrows at the top. A custom time window opens on the year it ends in.',
     ],
     scope: 'year',
+    terms: ['round-types', 'time-window'],
   },
   stn: {
     what: 'The targets each shooter broke at each station on this Sunday. Only Sundays with a station sheet show it.',
@@ -80,6 +81,7 @@ const explainers = {
       "Difficulty = the typical gap over the last 52 weeks of full-results Sundays, minus this Sunday's.",
       'Small fields are pulled toward 0.0. "—" for partial results.',
     ],
+    terms: ['difficulty'],
   },
   weather: {
     what: "Weather from 10:00 to 12:00, from a weather service's hourly records (not a gauge at the range).",
@@ -103,11 +105,13 @@ const explainers = {
       'The earlier Sunday is the latest one with full results, of any round type, however many weeks back.',
       '"—" when either Sunday lacks the number.',
     ],
+    terms: ['difficulty', 'held-sunday', 'round-types'],
   },
   notables: {
     what: 'Other highlights from this Sunday. Personal bests and first-timers are in the insights at the top of the page.',
     read: ['Each line names the shooter and what happened.'],
     computed: ['All round types count together.'],
+    terms: ['first-timer', 'round-types'],
   },
   stations: {
     what: 'How many stations were shot on this Sunday.',
@@ -122,6 +126,7 @@ const explainers = {
       'It counts as a Sunday shot for everyone who came: Sundays shot, streaks and attendance trophies include it.',
       'Its scores stay out of averages, best scores, records, ratings and leaderboards, which are all out of 50.',
     ],
+    terms: ['special-shoot', 'streak'],
   },
 } satisfies Record<string, Explainer>;
 

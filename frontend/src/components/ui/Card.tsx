@@ -9,6 +9,8 @@ export interface CardProps {
   actions?: ReactNode;
   className?: string;
   children?: ReactNode;
+  /** Plan 19 tour: the step this card is the spotlight target of (`data-tour`). */
+  tour?: string;
 }
 
 /**
@@ -17,7 +19,7 @@ export interface CardProps {
  */
 export const CardHeadingLevel = createContext<2 | 3>(2);
 
-export function Card({ id, title, subtitle, actions, className, children }: CardProps) {
+export function Card({ id, title, subtitle, actions, className, children, tour }: CardProps) {
   const titleId = useId();
   const Heading = useContext(CardHeadingLevel) === 2 ? 'h2' : 'h3';
   const hasHeader = title !== undefined || actions !== undefined;
@@ -26,6 +28,7 @@ export function Card({ id, title, subtitle, actions, className, children }: Card
       id={id}
       tabIndex={id === undefined ? undefined : -1}
       aria-labelledby={title === undefined ? undefined : titleId}
+      data-tour={tour}
       className={cx(
         'rounded-card bg-elevated p-4 text-text shadow-sm',
         // A linked card lands below the sticky top bar; the script-only focus draws no outline.

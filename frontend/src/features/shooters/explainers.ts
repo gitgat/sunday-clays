@@ -17,6 +17,7 @@ export const explainers = {
       'Opens on the time window. Fullscreen opens on all your history, and the CSV download has every point. Ignores the round-type filter.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   trend: {
     what: 'Every round you shot: your score, and your score against the field that Sunday. Pins mark new personal bests.',
@@ -31,6 +32,7 @@ export const explainers = {
       'One point per round, spaced evenly. Opens on the time window. Fullscreen shows every round you have shot, and the CSV download has them all. The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['personal-best', 'time-window'],
   },
   finishes: {
     what: 'Where you finished on each Sunday with full results, 1st at the top.',
@@ -40,6 +42,7 @@ export const explainers = {
       'Only Sundays with complete results count. Opens on the time window. Fullscreen shows every Sunday you finished, and the CSV download has them all. The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['held-sunday', 'time-window'],
   },
   dist: {
     what: 'How often you shoot each score in the time window, next to how often the whole club does in the same window.',
@@ -53,6 +56,7 @@ export const explainers = {
       'The round-type filter applies to both sides. Fullscreen and the CSV download show every round and every year.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   learn: {
     what: 'How you improved with experience, next to a typical club shooter at the same stage.',
@@ -66,6 +70,7 @@ export const explainers = {
       'Career-long, so the time window and the round-type filter are ignored.',
     ],
     scope: 'all-time',
+    terms: ['time-window'],
   },
   splits: {
     what: 'Your average score in the time window by year, time of year (winter to fall), month, round type, gauge or weather, so you can see where you shoot best.',
@@ -80,6 +85,7 @@ export const explainers = {
       'Fullscreen and the CSV download cover every round you have shot.',
     ],
     scope: 'windowed',
+    terms: ['field-adjusted', 'round-types', 'time-window'],
   },
   cal: {
     what: 'Every Sunday the club shot this year. Filled squares are Sundays you shot; outlined ones you missed.',
@@ -95,6 +101,7 @@ export const explainers = {
       'The fullscreen table and the CSV download cover every year you shot.',
     ],
     scope: 'all-time',
+    terms: ['special-shoot', 'time-window'],
   },
   'cal-month': {
     what: 'How many Sundays you shot in each month, from your first round to your latest.',
@@ -107,6 +114,7 @@ export const explainers = {
       'Opens on the year the time window ends in; fullscreen and the CSV download show every month.',
     ],
     scope: 'windowed',
+    terms: ['special-shoot', 'time-window'],
   },
   'tough-days': {
     what: 'Every Sunday you shot, placed by how hard the day played for the whole field and by how you did against that field.',
@@ -121,6 +129,7 @@ export const explainers = {
       'Opens on the time window; fullscreen and the CSV download show every Sunday you shot. The round-type filter picks which of your Sundays appear; how hard the day played always uses everyone’s scores that Sunday.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   'hero-rounds': {
     what: 'How many rounds you have shot, for the round types picked in the filter.',
@@ -128,6 +137,7 @@ export const explainers = {
       'Every round counts, including second rounds on the same day and Sundays with incomplete results.',
     ],
     scope: 'all-time',
+    terms: ['round-types'],
   },
   'hero-sundays': {
     what: 'How many different Sundays you have shot, for the round types picked in the filter.',
@@ -135,6 +145,7 @@ export const explainers = {
       'A day counts once however many rounds you shot. Sundays with incomplete results count.',
     ],
     scope: 'all-time',
+    terms: ['round-types'],
   },
   'hero-average': {
     what: 'Your typical score out of 50.',
@@ -160,6 +171,7 @@ export const explainers = {
       'The date it was first reached is in Personal bests.',
     ],
     scope: 'all-time',
+    terms: ['round-types'],
   },
   'win-rounds': {
     what: 'How many rounds you shot inside the time window, for the round types picked in the filter.',
@@ -167,6 +179,7 @@ export const explainers = {
       'Every round on a Sunday between the window’s first and last date, including second rounds on the same day.',
     ],
     scope: 'windowed',
+    terms: ['round-types', 'time-window'],
   },
   'win-average': {
     what: 'Your typical score out of 50 inside the time window.',
@@ -178,11 +191,13 @@ export const explainers = {
       'The round-type filter applies.',
     ],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   'win-best': {
     what: 'Your highest single-round score inside the time window.',
     computed: ['The top score among your rounds in the window. The round-type filter applies.'],
     scope: 'windowed',
+    terms: ['time-window'],
   },
   odometer: {
     what: 'Lifetime totals for everything you have ever shot. The round-type filter does not change these.',
@@ -196,6 +211,7 @@ export const explainers = {
       'Favorite month = the month (any year) you have shot most often; ties go to the earlier month.',
     ],
     scope: 'all-time',
+    terms: ['clays-thrown', 'streak'],
   },
   'floor-ceiling': {
     what: 'The low and high end of your normal recent scoring: a bad-but-normal day and a good-but-normal day.',
@@ -207,6 +223,7 @@ export const explainers = {
       'Line up your last 20 rounds (fewer if you have not shot 20) from lowest to highest. Low end = the score a tenth of the way up; high end = nine-tenths of the way up. Landing between two scores gives decimals like 36.4.',
       'Every round counts. Needs at least 8 rounds. The round-type filter does not apply.',
     ],
+    terms: ['streak'],
   },
   'bad-day': {
     what: 'How often you shoot a round well below what we expected of you that day.',
@@ -288,6 +305,7 @@ export const explainers = {
       'Pace = Sundays you shot in the last 26 weeks ÷ 26. Projected date = today + (Sundays to go ÷ pace) weeks, rounded up to a whole week. No date if you have not shot in 26 weeks.',
     ],
     scope: 'all-time',
+    terms: ['round-types'],
   },
   pbs: {
     what: 'Your highest round ever, and your highest in each calendar year, with the date.',
@@ -300,5 +318,6 @@ export const explainers = {
       'A best is early when you had fewer than 5 rounds on earlier days. The round-type filter applies.',
     ],
     scope: 'all-time',
+    terms: ['personal-best'],
   },
 } satisfies Record<string, Explainer>;

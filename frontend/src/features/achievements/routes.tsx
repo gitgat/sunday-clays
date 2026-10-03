@@ -17,5 +17,5 @@ export const routes: RouteObject[] = [
 ];
 
 export const nav: NavItem[] = [
-  { label: 'Trophies', path: '/achievements', icon: Trophy, order: 70 },
+  { label: 'Trophies', path: '/achievements', icon: Trophy, order: 70, tourId: 'trophies' },
 ];
