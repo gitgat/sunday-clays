@@ -77,3 +77,35 @@ test('at phone width the dialog docks to the bottom with 44 px controls', async 
   }
   await expectNoSideScroll(page);
 });
+
+test('on wider screens the dialog stays clear of the personal panel and the time window', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'the phone dock sits at the bottom by design');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await expect(dialog(page)).toBeVisible({ timeout: 10_000 });
+  for (let i = 0; i < TITLES.length; i += 1) {
+    await expect(dialog(page)).toHaveAccessibleName(TITLES[i] as string);
+    const ring = page.getByTestId('tour-ring');
+    // Steps 2 and 5 point at small side or header targets; the others point at big content cards.
+    if (i === 1 || i === 4) {
+      await expect(ring).toBeVisible();
+      await page.waitForTimeout(400);
+      const [ringBox, dialogBox] = await Promise.all([
+        ring.boundingBox(),
+        dialog(page).boundingBox(),
+      ]);
+      if (ringBox !== null && dialogBox !== null) {
+        const apart =
+          dialogBox.x >= ringBox.x + ringBox.width ||
+          dialogBox.x + dialogBox.width <= ringBox.x ||
+          dialogBox.y >= ringBox.y + ringBox.height ||
+          dialogBox.y + dialogBox.height <= ringBox.y;
+        expect(apart, `step ${String(i + 1)} dialog clear of the ring`).toBe(true);
+      }
+    }
+    if (i < TITLES.length - 1) await page.getByRole('button', { name: 'Next' }).click();
+  }
+});

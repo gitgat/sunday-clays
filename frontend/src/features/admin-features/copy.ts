@@ -25,5 +25,10 @@ export function cacheStatusText(status: PageCacheStatus): string {
     return 'Refreshing…';
   }
   const megabytes = Math.round(status.bytes / 1_000_000);
-  return `${status.rows.toLocaleString('en-US')} pages stored · ${String(megabytes)} MB · last refreshed ${formatDate(warm.local_date)} (${String(warm.warmed)} pages in ${String(Math.round(warm.seconds))} s)`;
+  const trouble = [
+    warm.failed > 0 ? `${String(warm.failed)} ${warm.failed === 1 ? 'page' : 'pages'} failed` : '',
+    warm.skipped > 0 ? `${String(warm.skipped)} skipped` : '',
+  ].filter((part) => part !== '');
+  const problems = trouble.length > 0 ? ` · ${trouble.join(', ')}` : '';
+  return `${status.rows.toLocaleString('en-US')} pages stored · ${String(megabytes)} MB · last refreshed ${formatDate(warm.local_date)} (${String(warm.warmed)} pages in ${String(Math.round(warm.seconds))} s)${problems}`;
 }

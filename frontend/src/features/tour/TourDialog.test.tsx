@@ -159,4 +159,16 @@ describe('TourDialog', () => {
     });
     await vi.waitFor(() => expect(screen.getByTestId('tour-ring')).toHaveStyle({ width: '308px' }));
   });
+
+  it('sits left of a target on the right edge so it never covers it', async () => {
+    vi.stubGlobal('innerWidth', 1440);
+    const el = target('sunday', true);
+    el.getBoundingClientRect = () => ({ ...box(368, 500), left: 1048, right: 1416, top: 120 });
+    renderWithProviders(
+      <TourDialog steps={TOUR_STEPS} preview={false} onClose={() => undefined} />,
+    );
+    await screen.findByTestId('tour-ring');
+    expect(screen.getByRole('dialog')).toHaveStyle({ left: `${String(1048 - 16 - 360)}px` });
+    vi.unstubAllGlobals();
+  });
 });

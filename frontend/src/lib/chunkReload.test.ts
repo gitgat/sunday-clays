@@ -56,6 +56,16 @@ describe('chunk-load recovery', () => {
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
+  it('reloads when the stamp is ahead of the clock (the clock was corrected backwards)', () => {
+    vi.useFakeTimers({ now: 1_000_000 });
+    sessionStorage.setItem(RELOAD_KEY, '5000000');
+    const { win, reload, target } = fakeWindow();
+    installChunkReload(win);
+    fail(target);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(RELOAD_KEY)).toBe('1000000');
+  });
+
   it('treats an unreadable stamp as no earlier reload', () => {
     sessionStorage.setItem(RELOAD_KEY, 'junk');
     const { win, reload, target } = fakeWindow();
