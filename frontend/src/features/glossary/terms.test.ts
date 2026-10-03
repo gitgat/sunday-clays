@@ -20,6 +20,11 @@ describe('glossary terms', () => {
     expect(termById('held-sunday').term).toBe('Sunday with full results');
   });
 
+  it('refuses an id that is not a glossary term', () => {
+    // @ts-expect-error not a GlossaryTermId
+    expect(() => termById('no-such-term')).toThrow('no glossary term no-such-term');
+  });
+
   it('uses no banned word', () => {
     for (const text of allStrings(GLOSSARY_TERMS)) expect(text).not.toMatch(BANNED_WORDS);
   });
