@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from 'react';
+// Plan 19 §3.4: listen for the install prompt as early as the shell exists.
+import '../../lib/installPrompt';
 import { Outlet } from 'react-router';
 import { navItems, type NavItem } from '../../app/registry';
 import type { FeatureKey } from '../../lib/features';
