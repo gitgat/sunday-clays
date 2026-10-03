@@ -517,3 +517,13 @@ def fx_special_viewer_client(
     logged_in = _logged_in(_use_env_settings(fx_special_client), "viewer")
     yield logged_in
     logged_in.close()
+
+
+@pytest.fixture
+def fx_special_admin_client(
+    fx_special_client: TestClient, auth_env: Settings
+) -> Iterator[TestClient]:
+    """Plan 19 T8: an admin over the special-Sunday world."""
+    logged_in = _logged_in(_use_env_settings(fx_special_client), "admin")
+    yield logged_in
+    logged_in.close()
