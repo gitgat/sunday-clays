@@ -236,8 +236,18 @@ async function checkViewer(
   await page.goto('/about');
   await whenSettled(page);
   const items = page.getByRole('region', { name: 'Your privacy' }).getByRole('listitem');
-  await expect(items).toHaveCount(on || admin ? 6 : 5); // the link-preview sentence
-  if (admin) await expect(items.getByText(BADGE)).toBeVisible();
+  // Five standing lines, plus the link-preview sentence when it is on or previewed. An admin also
+  // previews `events` (off on this stack), which adds its two sign-up lines (Plan 20 §5.7.6).
+  await expect(items).toHaveCount(admin ? 8 : on ? 6 : 5);
+  if (admin) {
+    await expect(items.getByText(BADGE)).toHaveCount(3); // two sign-up lines and the link-preview line
+    await expect(
+      items.filter({ hasText: 'Links shared in chat apps' }).getByText(BADGE),
+    ).toBeVisible();
+    await expect(
+      items.filter({ hasText: 'sign up for a club event' }).getByText(BADGE),
+    ).toBeVisible();
+  }
 }
 
 // One test per size: a flip empties nothing, but every page load after one is cold (the page cache

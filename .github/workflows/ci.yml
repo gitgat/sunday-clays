@@ -104,6 +104,8 @@ jobs:
         working-directory: frontend
       - run: pnpm test --coverage
         working-directory: frontend
+      - run: pnpm test:tz # Plan 20 D21: club-event dates never depend on the device zone
+        working-directory: frontend
       - run: pnpm build
         working-directory: frontend
       - run: python3 scripts/bundle_stats.py --dist frontend/dist --out bundle-stats.json
