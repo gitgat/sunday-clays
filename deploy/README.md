@@ -191,8 +191,18 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    task lands. Persistent data is always a bind under `/var/data/sunday-clays/<service>/`, never a
    Docker named volume (`scripts/check_stack.py` enforces it).
 
-4. Off-site copies: add `/var/data/sunday-clays/*` to the fleet restic set (nightly at 03:30 to
-   lakitu, then Backblaze). The app's own dump runs at 02:30 America/Los_Angeles, before restic.
+4. Off-site copies: add only `/var/data/sunday-clays/backups` (and `/var/data/sunday-clays/deployer`
+   if its state should survive) to the fleet restic set (nightly at 03:30 to lakitu, then
+   Backblaze). Do **not** back up the raw `db/` directory: a copy of a live PGDATA is not a
+   consistent backup, and it would keep deleted sign-ups and the `club_event_attempts` table
+   (IP fingerprints) that the dumps leave out. Give the `backups` path this retention, so the About
+   page's "within about two months" holds (14 daily + 8 weekly dumps is at most 56 days, plus slack):
+
+   ```bash
+   restic forget --keep-within 60d --path /var/data/sunday-clays/backups --prune
+   ```
+
+   The app's own dump runs at 02:30 America/Los_Angeles, before restic.
 
 ## Moving the deployer state to /var/data (one time)
 
@@ -630,6 +640,14 @@ says: every stored answer is keyed by the data version, the local date and the r
 
 ## Club events: emails and retention
 
+Before turning on Club events:
+
+1. Run the `ALTER DATABASE` and `SHOW` commands below.
+2. Force-update `sundayclays_api`, then `sundayclays_worker`.
+3. Confirm the off-site restic set leaves out `db/` and keeps at most 60 days of `backups/`
+   ("Off-site copies", step 4 of the first-time setup).
+4. Only then turn on the switch in Admin → Features.
+
 Club-event sign-ups store emails (Plan 20). A Postgres CHECK or NOT NULL violation writes the
 whole failing row, email included, to the database server's log (`DETAIL: Failing row contains
 (…)`). The app itself never logs it (Plan 20 D22), but the server log is outside the app, so run
@@ -651,7 +669,9 @@ The daily `club_event_retention` job (after 03:00 club time, next to `page_view_
 every sign-up 30 days after its event's start, keeping only the two counts, and every shooter
 email unused for 730 days. The nightly backups keep a copy for up to 8 more weeks, which is what
 the About page says. The backups leave out `club_event_attempts` (rate-limit rows with IP
-fingerprints); registrations and contacts stay in them.
+fingerprints), and so does every copy: the dumps skip the table and the off-site set holds only the
+dumps, never the raw `db/` directory. Registrations and contacts stay in the dumps. Off-site copies
+follow the same limit of about two months (`restic forget --keep-within 60d`).
 
 ## Backups and restore
 

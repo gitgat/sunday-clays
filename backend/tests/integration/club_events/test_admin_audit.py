@@ -117,7 +117,6 @@ def test_audit_details_never_hold_a_name_or_email(
     assert by_action["club_events.registration.link"] == {
         "id": event_id,
         "registration_id": typo,
-        "shooter_id": amy,
         "email_moved": True,
         "email_discarded": False,
     }

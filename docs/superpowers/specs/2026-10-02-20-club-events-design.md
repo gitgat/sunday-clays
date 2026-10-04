@@ -296,7 +296,7 @@ All under `require_admin` via `admin_actor`, `no-store`, never ETagged (existing
 | `DELETE /{id}/registrations/{rid}` | `status = 'removed'`, `cancelled_via = 'organizer'`, scrub email and token; runs promotions; never blocked by any rate limit | `club_events.registration.remove` `{id, registration_id}` |
 | `PATCH /{id}/registrations/{rid}` | `{ guests }` (§5.3.4); runs promotions on a decrease | `club_events.registration.guests` `{id, registration_id, from, to}` |
 | `POST /{id}/registrations/{rid}/reset-cancel-limit` | deletes `club_event_attempts` rows with `action = 'cancel_fail'` and this `registration_id` → 200 `{ "cleared": int }` | `club_events.registration.reset_cancel_limit` `{id, registration_id, cleared}` |
-| `POST /{id}/registrations/{rid}/link` | `{ shooter_id }`; D15; 409 `already_signed_up` if that shooter is already active on the event; 409 `already_linked` | `club_events.registration.link` `{id, registration_id, shooter_id, email_moved: bool, email_discarded: bool}` |
+| `POST /{id}/registrations/{rid}/link` | `{ shooter_id }`; D15; 409 `already_signed_up` if that shooter is already active on the event; 409 `already_linked` | `club_events.registration.link` `{id, registration_id, email_moved: bool, email_discarded: bool}` (no `shooter_id`: an audit row never ties a registration to a person) |
 
 `csv_safe(cell: str) -> str` lives in `api/csv_safe.py` and is the only escaping path for this CSV (and for any later server-side CSV). It prefixes `'` when the cell's first character is `=`, `+`, `-`, `@`, a tab (`\t`) or a carriage return (`\r`), or when the cell starts with any run of whitespace followed by one of `= + - @`. It is unit-tested on its own (§7.1).
 
@@ -386,7 +386,8 @@ At 390 the roster table becomes stacked rows (the DataTable mobile pattern) with
 1. "No accounts. There are no logins beyond the club’s shared password." (unchanged)
 2. "Browsing the site collects nothing about you: no name, no email. The site processes the club’s score sheets and analyses them." (replaces "We don’t collect your name, email or anything else about you…")
 3. **New, shown when `events` is on or preview:** "If you sign up for a club event, we keep your name and the email you give us so organizers can reach you."
-4. **New, same condition:** "Only organizers see emails. We never show them on the site and never send email from it. Sign-ups are deleted 30 days after the event; an email saved for a shooter stays for quicker sign-ups until an organizer removes it X "“Which one are you?” is remembered on your device and never sent anywhere." (unchanged)
+4. **New, same condition:** "Only organizers see emails. We never show them on the site and never send email from it. Sign-ups are deleted 30 days after the event; an email saved for a shooter stays for quicker sign-ups until an organizer removes it or it goes two years unused. Nightly backups that still hold deleted data are themselves deleted within about two months."
+5. "“Which one are you?” is remembered on your device and never sent anywhere." (unchanged)
 6. "Fist bumps and visit counts are anonymous. They use a random ID your browser makes up, never tied to a name. We don’t store IP addresses for any of it." → "…We don’t store IP addresses for any of it, sign-ups included." only while `events` is on or in preview; otherwise the line is unchanged.
 7. "No ads, no third-party trackers." (unchanged)
 
