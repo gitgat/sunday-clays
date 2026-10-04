@@ -575,6 +575,8 @@ test('turning the switch off mid-visit saves nothing and hides club events from 
     expect((await m.page.request.get(`/api/club-events/${id}`)).status()).toBe(404);
     await m.page.goto('/');
     await whenSettled(m.page);
+    // Positive control: the milestone card shows only once the switches are known.
+    await expect(m.page.getByRole('region', { name: /^Club milestone/ })).toBeVisible(SLOW);
     await expect(m.page.getByRole('region', { name: 'Coming up' })).toHaveCount(0);
 
     // The admin still reaches the event in preview, and nobody signed up.

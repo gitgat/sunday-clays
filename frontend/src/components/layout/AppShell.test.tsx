@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NavItem } from '../../app/registry';
 import { BOTH_FILTERS, NO_FILTERS, ROUND_TYPE_ONLY } from '../../lib/pageFilters';
-import { renderRoutes } from '../../test/render';
+import { FEATURES_QUERY_KEY } from '../../lib/features';
+import { createTestQueryClient, renderRoutes, type RenderOptions } from '../../test/render';
 import { stubViewport } from '../../test/viewport';
 import { AppShell, type AppShellProps } from './AppShell';
 
@@ -17,12 +18,16 @@ const ITEMS: NavItem[] = [
   { label: 'Imports', path: '/admin/imports', icon: Settings, order: 900, adminOnly: true },
 ];
 
-function renderShell(route: string, props: AppShellProps = {}) {
+function renderShell(
+  route: string,
+  props: AppShellProps & Pick<RenderOptions, 'queryClient' | 'role'> = {},
+) {
+  const { queryClient, role, ...shellProps } = props;
   return renderRoutes(
     [
       {
         path: '/',
-        element: <AppShell items={ITEMS} {...props} />,
+        element: <AppShell items={ITEMS} {...shellProps} />,
         children: [
           { index: true, element: <p>home page</p>, handle: { filters: BOTH_FILTERS } },
           { path: 'explorer', element: <p>explorer page</p>, handle: { filters: BOTH_FILTERS } },
@@ -37,7 +42,7 @@ function renderShell(route: string, props: AppShellProps = {}) {
         ],
       },
     ],
-    { route },
+    { route, queryClient, role },
   );
 }
 
@@ -426,5 +431,27 @@ describe('AppShell tour targets', () => {
     });
     expect(screen.getByRole('link', { name: 'Trophies' })).toHaveAttribute('data-tour', 'trophies');
     expect(screen.getByRole('link', { name: 'Explorer' })).not.toHaveAttribute('data-tour');
+  });
+});
+
+describe('AppShell features-settled marker', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('marks its root once the features query has data', async () => {
+    stubViewport('desktop');
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(FEATURES_QUERY_KEY, { events: false });
+    const { container } = renderShell('/', { queryClient });
+    await screen.findByText('home page');
+    expect(container.querySelector('[data-features-settled="true"]')).not.toBeNull();
+  });
+
+  it('leaves the marker off while the switches are unknown', async () => {
+    stubViewport('desktop');
+    const { container } = renderShell('/', { role: null });
+    await screen.findByText('home page');
+    expect(container.querySelector('[data-features-settled]')).toBeNull();
   });
 });

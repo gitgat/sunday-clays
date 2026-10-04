@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import '../../lib/installPrompt';
 import { Outlet } from 'react-router';
 import { navItems, type NavItem } from '../../app/registry';
-import type { FeatureKey } from '../../lib/features';
+import { useFeatures, type FeatureKey } from '../../lib/features';
 import { useIsDesktop } from '../../lib/useMediaQuery';
 import { cx } from '../ui/cx';
 import { Sheet } from '../ui/Sheet';
@@ -41,6 +41,8 @@ export function AppShell({
   featureVisible,
 }: AppShellProps) {
   const isDesktop = useIsDesktop();
+  // Launch-switched UI renders nothing until /api/features answers; e2e waits on this marker.
+  const featuresSettled = useFeatures().data !== undefined;
   const [moreOpen, setMoreOpen] = useState(false);
   // The More sheet belongs to the mobile layout: reaching desktop closes it for good, so it never
   // springs back open on the way back to mobile.
@@ -50,7 +52,7 @@ export function AppShell({
   const close = () => setMoreOpen(false);
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh" data-features-settled={featuresSettled ? 'true' : undefined}>
       <a href="#main" className={SKIP_LINK}>
         Skip to content
       </a>

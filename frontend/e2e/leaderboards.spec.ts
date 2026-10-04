@@ -3,7 +3,12 @@ import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from './fixtures';
-import { expectNoSideScroll, expectTapTargets, expectTitlesUntruncated } from './layout';
+import {
+  expectNoSideScroll,
+  expectTapTargets,
+  expectTitlesUntruncated,
+  whenSettled,
+} from './layout';
 import { chooseWindow, datesText, longDate, monthsBack } from './window';
 
 interface Board {
@@ -71,11 +76,18 @@ test('the header window is the only date control: each preset is the API board f
   ] as const) {
     const api = await board(page, `period=${period}&metric=wins`);
     await chooseWindow(page, preset);
+    // 8W is the default window, so the URL drops `w`; every other preset names itself.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('w'))
+      .toBe(preset === '8w' ? null : preset);
+    await whenSettled(page);
+    // The board keeps the previous preset's rows while the next loads, so a row count alone can
+    // pass on stale rows: wait for this preset's names, in order.
     const rows = standings(page);
-    await expect(rows).toHaveCount(Math.min(10, api.rows.length));
-    const top = api.rows[0];
-    if (top !== undefined)
-      await expect(rows.first().locator('td').nth(1)).toContainText(top.display_name);
+    await expect(rows.locator('td:nth-child(2)')).toContainText(
+      api.rows.slice(0, 10).map((row) => row.display_name),
+      { timeout: 15_000 },
+    );
     if (preset !== 'all') {
       // The tag above the chart and table names the period and the dates the API resolved.
       const latest = api.event_dates.at(-1) ?? api.end;
@@ -107,6 +119,7 @@ test('a Custom window from Jan 1 is the same board as YTD', async ({ page }) => 
   await page.goto('/leaderboards?w=ytd&metric=avg_score');
   const note = page.getByText(/^Needs ≥\d+ rounds · \d+ qualify$/);
   await expect(standings(page).first()).toBeVisible();
+  await expect(note).toBeVisible();
   const ytdNote = await note.textContent();
   const ytdRows = await standings(page).allTextContents();
   await page.goto(`/leaderboards?w=${latest.slice(0, 4)}-01-01..${latest}&metric=avg_score`);
