@@ -6,7 +6,8 @@ import { whenSettled } from './layout';
 
 // Project `admin-mutations` (one worker, after every read-only spec). Every switch a test changed is
 // put back in `test.afterEach` on a fresh admin request context, so a timeout or a closed page still
-// restores them. The e2e stack starts with every feature on (FEATURES_DEFAULT_ON).
+// restores them. The e2e stack starts with every Plan 19 launch switch on (FEATURES_DEFAULT_ON);
+// `events` starts off.
 test.use({ storageState: ADMIN_STATE });
 
 /**

@@ -25,6 +25,7 @@ describe('FeaturesPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Features' })).toBeInTheDocument();
     const launch = await screen.findByRole('region', { name: 'Launch switches' });
     const switches = within(launch).getAllByRole('switch');
+    expect(switches).toHaveLength(7);
     expect(switches.map((s) => s.textContent)).toEqual(
       featureSwitches.filter((f) => f.kind === 'feature').map((f) => f.label),
     );
