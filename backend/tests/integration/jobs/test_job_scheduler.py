@@ -22,15 +22,20 @@ def _old_job(session: Session, kind: str, created_at: datetime) -> None:
     session.flush()
 
 
-def test_only_the_rollup_is_scheduled_when_weather_is_disabled(session: Session) -> None:
-    assert len(schedule_due(session, AFTERNOON, weather_enabled=False)) == 1
-    assert _kinds(session) == ["page_view_rollup"]
+def test_only_the_daily_jobs_are_scheduled_when_weather_is_disabled(session: Session) -> None:
+    assert len(schedule_due(session, AFTERNOON, weather_enabled=False)) == 2
+    assert _kinds(session) == ["club_event_retention", "page_view_rollup"]
 
 
 def test_after_14_local_every_job_is_due(session: Session) -> None:
     ids = schedule_due(session, AFTERNOON.astimezone(UTC), weather_enabled=True)
-    assert len(ids) == 3
-    assert _kinds(session) == ["forecast_refresh", "page_view_rollup", "weather_sync"]
+    assert len(ids) == 4
+    assert _kinds(session) == [
+        "club_event_retention",
+        "forecast_refresh",
+        "page_view_rollup",
+        "weather_sync",
+    ]
 
 
 def test_before_14_local_the_weather_sync_is_not_due(session: Session) -> None:
@@ -42,8 +47,13 @@ def test_called_twice_in_the_same_slot_creates_one_job_each(session: Session) ->
     first = schedule_due(session, AFTERNOON, weather_enabled=True)
     session.execute(update(Job).values(status="done"))  # finished, so dedupe cannot hide a repeat
     assert schedule_due(session, AFTERNOON + timedelta(hours=1), weather_enabled=True) == []
-    assert len(first) == 3
-    assert _kinds(session) == ["forecast_refresh", "page_view_rollup", "weather_sync"]
+    assert len(first) == 4
+    assert _kinds(session) == [
+        "club_event_retention",
+        "forecast_refresh",
+        "page_view_rollup",
+        "weather_sync",
+    ]
 
 
 def test_weather_sync_is_due_again_the_next_day_and_forecast_after_6h(session: Session) -> None:
@@ -60,7 +70,7 @@ def test_the_rollup_waits_for_3_local(session: Session) -> None:
     assert ROLLUP_LOCAL_HOUR == 3
     early = datetime(2020, 1, 5, 2, 59, tzinfo=PT)
     assert schedule_due(session, early, weather_enabled=False) == []
-    assert len(schedule_due(session, early.replace(hour=3, minute=0), weather_enabled=False)) == 1
+    assert len(schedule_due(session, early.replace(hour=3, minute=0), weather_enabled=False)) == 2
 
 
 def test_the_rollup_slot_is_local_time_not_utc(session: Session) -> None:
@@ -70,7 +80,7 @@ def test_the_rollup_slot_is_local_time_not_utc(session: Session) -> None:
     )
     assert _kinds(session) == []
     schedule_due(session, datetime(2020, 1, 5, 11, 0, tzinfo=UTC), weather_enabled=False)
-    assert _kinds(session) == ["page_view_rollup"]
+    assert _kinds(session) == ["club_event_retention", "page_view_rollup"]
 
 
 def test_the_rollup_runs_once_a_local_day(session: Session) -> None:
@@ -78,9 +88,23 @@ def test_the_rollup_runs_once_a_local_day(session: Session) -> None:
     # in the weather test: it counts for its own day only.
     morning = datetime(2020, 1, 5, 3, 0, tzinfo=PT)
     _old_job(session, "page_view_rollup", morning)
+    _old_job(session, "club_event_retention", morning)
     assert schedule_due(session, morning.replace(hour=23), weather_enabled=False) == []
     next_day = morning + timedelta(days=1)
-    assert len(schedule_due(session, next_day, weather_enabled=False)) == 1
+    assert len(schedule_due(session, next_day, weather_enabled=False)) == 2
     session.execute(update(Job).values(status="done"))  # finished, so dedupe cannot hide a repeat
     assert schedule_due(session, next_day.replace(hour=23), weather_enabled=False) == []
-    assert _kinds(session) == ["page_view_rollup", "page_view_rollup"]
+    assert _kinds(session) == [
+        "club_event_retention",
+        "club_event_retention",
+        "page_view_rollup",
+        "page_view_rollup",
+    ]
+
+
+def test_the_club_event_retention_is_daily_with_its_dedupe_key(session: Session) -> None:
+    schedule_due(session, AFTERNOON, weather_enabled=False)
+    job = session.execute(
+        select(Job.kind, Job.dedupe_key).where(Job.kind == "club_event_retention")
+    ).one()
+    assert tuple(job) == ("club_event_retention", "club_event_retention")

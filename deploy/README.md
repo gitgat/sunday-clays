@@ -619,13 +619,39 @@ says: every stored answer is keyed by the data version, the local date and the r
    This survives the deployer's image updates (they change only the image), but a hand
    `docker stack deploy` of the compose file removes it.
 3. **Backups:** `response_cache` is disposable. The nightly dump keeps the table's definition but
-   not its rows (`pg_dump --exclude-table-data=response_cache`), `verify-restore.sh` leaves it
-   out of its row-count comparison, and a restore needs no step for it: the worker warms the
-   pages again.
+   not its rows (`pg_dump --exclude-table-data=response_cache`; `club_event_attempts`, the
+   club-event rate-limit rows, is left out the same way, while sign-ups and emails stay in),
+   `verify-restore.sh` leaves both out of its row-count comparison, and a restore needs no step
+   for the cache: the worker warms the pages again.
 4. **Placement:** `api` and `worker` are already constrained to the x86 nodes (`x-x86` in
    `compose.swarm.yaml`, checked by `scripts/check_stack.py`; see the placement note near the top of this file). The page
    cache does not change that. The images stay multi-arch, and the page cache must still meet its
    targets on arm64 if that constraint is ever lifted.
+
+## Club events: emails and retention
+
+Club-event sign-ups store emails (Plan 20). A Postgres CHECK or NOT NULL violation writes the
+whole failing row, email included, to the database server's log (`DETAIL: Failing row contains
+(…)`). The app itself never logs it (Plan 20 D22), but the server log is outside the app, so run
+this **once**, on the database node (`autopirate`), as the database superuser:
+
+```bash
+docker exec "$(docker ps -q -f name=sundayclays_db)" \
+  psql -U sunday -d sunday_clays -c "ALTER DATABASE sunday_clays SET log_error_verbosity = 'terse';"
+docker exec "$(docker ps -q -f name=sundayclays_db)" \
+  psql -U sunday -d sunday_clays -c "SHOW log_error_verbosity;"   # a new connection: terse
+```
+
+The setting applies to new connections. On a manager, `docker service update --force
+sundayclays_api` and then `docker service update --force sundayclays_worker` so their pools
+reconnect. `restore.sh` recreates the `public` schema, not the database, so the setting survives a
+restore.
+
+The daily `club_event_retention` job (after 03:00 club time, next to `page_view_rollup`) deletes
+every sign-up 30 days after its event's start, keeping only the two counts, and every shooter
+email unused for 730 days. The nightly backups keep a copy for up to 8 more weeks, which is what
+the About page says. The backups leave out `club_event_attempts` (rate-limit rows with IP
+fingerprints); registrations and contacts stay in them.
 
 ## Backups and restore
 
