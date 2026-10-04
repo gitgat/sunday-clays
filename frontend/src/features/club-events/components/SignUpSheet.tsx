@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/errors';
 import { Button } from '../../../components/ui/Button';
 import { Sheet } from '../../../components/ui/Sheet';
@@ -64,16 +64,40 @@ export function SignUpSheet({
     choice !== undefined ? choice : auto ? { id: auto.shooter_id, name: auto.display_name } : null;
   const pickedId = picked?.id ?? null;
   const pickedName = picked?.name ?? '';
-  const check = useSignupCheck(event.id, notListed ? null : pickedId);
+  const check = useSignupCheck(event.id, notListed ? null : pickedId, open);
   const signUp = useSignUp(event.id);
 
   const asksEmail = notListed || (picked !== null && check.data?.has_email === false);
   const already = !notListed && check.data?.already_signed_up === true;
-  const ready = notListed
-    ? typedName.trim() !== ''
-    : picked !== null && check.isSuccess && !already;
+  const emailOk = !asksEmail || email.trim() !== '';
+  const ready =
+    emailOk &&
+    (notListed ? typedName.trim() !== '' : picked !== null && check.isSuccess && !already);
+  const checkError = check.isError
+    ? check.error instanceof ApiError
+      ? check.error.message
+      : 'Something went wrong. Try again.'
+    : null;
+
+  // Focus follows the step: the new field after "I'm not listed", Change after a pick, the
+  // search again on the way back, and the closed message when it replaces the button.
+  const formRef = useRef<HTMLFormElement>(null);
+  const blockedRef = useRef<HTMLParagraphElement>(null);
+  const moved = useRef(false);
+  useEffect(() => {
+    if (!moved.current) return;
+    const form = formRef.current;
+    if (notListed) form?.querySelector<HTMLElement>(`[id="${ids.name}"]`)?.focus();
+    else if (picked !== null) form?.querySelector<HTMLElement>('[data-change]')?.focus();
+    else form?.querySelector<HTMLElement>(`[id="${ids.search}"]`)?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notListed, pickedId]);
+  useEffect(() => {
+    blockedRef.current?.focus();
+  }, [blocked]);
 
   const choose = (next: Picked | null) => {
+    moved.current = true;
     setChoice(next);
     setNotListed(false);
     setQuery('');
@@ -120,7 +144,7 @@ export function SignUpSheet({
       title="Sign up"
       placement={isDesktop ? 'center' : 'bottom'}
     >
-      <form onSubmit={submit} noValidate className="flex max-w-md flex-col gap-4">
+      <form ref={formRef} onSubmit={submit} noValidate className="flex max-w-md flex-col gap-4">
         {!notListed && picked === null && (
           <div className="flex flex-col gap-2">
             <label htmlFor={ids.search} className="text-sm font-medium">
@@ -150,6 +174,7 @@ export function SignUpSheet({
                 <button
                   type="button"
                   onClick={() => {
+                    moved.current = true;
                     setNotListed(true);
                     setChoice(null);
                   }}
@@ -165,18 +190,30 @@ export function SignUpSheet({
         {!notListed && picked !== null && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{picked.name}</span>
-            <Button variant="ghost" onClick={() => choose(null)}>
+            <Button variant="ghost" data-change="" onClick={() => choose(null)}>
               Change
             </Button>
           </div>
         )}
-        {already && picked !== null && (
-          <p className="text-sm">{picked.name} is already on the list.</p>
-        )}
-        {!notListed && check.data?.has_email === true && !already && (
-          <p className="text-sm text-text-muted">{EMAIL_ON_FILE}</p>
+        <div aria-live="polite" className="flex flex-col gap-1">
+          {already && picked !== null && (
+            <p className="text-sm">{picked.name} is already on the list.</p>
+          )}
+          {!notListed && check.data?.has_email === true && !already && (
+            <p className="text-sm text-text-muted">{EMAIL_ON_FILE}</p>
+          )}
+        </div>
+        {checkError !== null && (
+          <p role="alert" className="text-sm text-error">
+            {checkError}
+          </p>
         )}
 
+        {notListed && (
+          <Button variant="ghost" className="self-start" onClick={() => choose(null)}>
+            Pick from the list
+          </Button>
+        )}
         {notListed && (
           <label htmlFor={ids.name} className="flex flex-col gap-1 text-sm">
             Your first and last name
@@ -220,9 +257,9 @@ export function SignUpSheet({
             >
               −
             </Button>
-            <output aria-live="polite" className="min-w-6 text-center">
+            <span aria-live="polite" data-guests="" className="min-w-6 text-center">
               {guests}
-            </output>
+            </span>
             <Button
               variant="tonal"
               aria-label="More guests"
@@ -234,14 +271,18 @@ export function SignUpSheet({
           </fieldset>
         )}
 
-        {wouldWaitlist(event, 1 + guests) && <p className="text-sm">{WAITLIST_WARNING}</p>}
+        <p aria-live="polite" className="text-sm">
+          {wouldWaitlist(event, 1 + guests) ? WAITLIST_WARNING : null}
+        </p>
         {error !== null && (
           <p role="alert" className="text-sm text-error">
             {error}
           </p>
         )}
         {blocked !== null ? (
-          <p className="font-medium">{blocked}</p>
+          <p ref={blockedRef} role="status" tabIndex={-1} className="font-medium outline-none">
+            {blocked}
+          </p>
         ) : (
           <Button type="submit" disabled={!ready} loading={signUp.isPending} className="w-full">
             Sign me up

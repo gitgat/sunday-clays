@@ -18,7 +18,9 @@ describe('the sheets, desktop and unexpected failures', () => {
     renderWithProviders(
       <SignUpSheet event={fallFunShoot} open onClose={vi.fn()} onSignedUp={vi.fn()} />,
     );
-    expect(screen.getByRole('dialog', { name: 'Sign up' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Sign up' }).parentElement).toHaveClass(
+      'justify-center',
+    );
   });
 
   it('centers the cancel sheet on a desktop', () => {
@@ -31,6 +33,7 @@ describe('the sheets, desktop and unexpected failures', () => {
       />,
     );
     expect(screen.getByText('Cancel your spot?')).toBeInTheDocument();
+    expect(screen.getByRole('dialog').parentElement).toHaveClass('justify-center');
   });
 
   it('says to try again when the sign-up request itself fails', async () => {
@@ -43,7 +46,7 @@ describe('the sheets, desktop and unexpected failures', () => {
     await user.type(sheet.getByLabelText('Your first and last name'), 'Dana Quill');
     await user.type(sheet.getByLabelText('Your email'), 'dana.quill@example.com');
     await user.click(sheet.getByRole('button', { name: 'Sign me up' }));
-    expect(await sheet.findByRole('alert')).toBeInTheDocument();
+    expect(await sheet.findByRole('alert')).toHaveTextContent('Something went wrong. Try again.');
   });
 
   it('says to try again when the cancel request itself fails', async () => {
@@ -60,7 +63,7 @@ describe('the sheets, desktop and unexpected failures', () => {
     await user.click(
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel my spot' }),
     );
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong. Try again.');
   });
 
   it('signs up a picked name with the email on file, sending no email', async () => {

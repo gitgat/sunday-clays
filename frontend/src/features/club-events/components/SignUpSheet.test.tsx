@@ -81,9 +81,13 @@ describe('SignUpSheet', () => {
 
   it('does not pre-pick a shooter the picker does not list', async () => {
     setMe(41); // deceased in the directory mock
-    renderSheet();
-    expect(await dialog().findByRole('searchbox', { name: 'Who are you?' })).toBeInTheDocument();
+    const { user } = renderSheet();
+    const search = await dialog().findByRole('searchbox', { name: 'Who are you?' });
+    // wait for the directory to load before asserting nothing was pre-picked
+    await user.type(search, 'ike');
+    expect(await dialog().findByRole('button', { name: 'Hadley, Ike' })).toBeInTheDocument();
     expect(dialog().queryByRole('button', { name: 'Change' })).not.toBeInTheDocument();
+    expect(dialog().queryByRole('button', { name: 'Gilchrist, Melvin' })).not.toBeInTheDocument();
   });
 
   it('signs up a typed name with guests and saves the token on this device', async () => {
@@ -101,7 +105,7 @@ describe('SignUpSheet', () => {
     await user.click(dialog().getByRole('button', { name: 'More guests' }));
     await user.click(dialog().getByRole('button', { name: 'More guests' }));
     await user.click(dialog().getByRole('button', { name: 'More guests' })); // capped at 2
-    expect(dialog().getByText('2', { selector: 'output' })).toBeInTheDocument();
+    expect(dialog().getByText('2', { selector: '[data-guests]' })).toBeInTheDocument();
     await user.click(dialog().getByRole('button', { name: 'Sign me up' }));
     await waitFor(() => expect(onSignedUp).toHaveBeenCalled());
     expect(body).toEqual({
@@ -189,5 +193,92 @@ describe('SignUpSheet', () => {
       'That name is already on the shooter list. Pick it from the list instead.',
     );
     expect(dialog().getByRole('button', { name: 'Sign me up' })).toBeEnabled();
+  });
+
+  it('goes back to the list from "I\'m not listed", and focuses the search', async () => {
+    const { user } = renderSheet();
+    await user.click(dialog().getByRole('button', { name: "I'm not listed" }));
+    expect(dialog().getByLabelText('Your first and last name')).toHaveFocus();
+    await user.click(dialog().getByRole('button', { name: 'Pick from the list' }));
+    expect(dialog().getByRole('searchbox', { name: 'Who are you?' })).toHaveFocus();
+    expect(dialog().queryByLabelText('Your first and last name')).not.toBeInTheDocument();
+  });
+
+  it('moves focus to Change after picking a name', async () => {
+    const { user } = renderSheet();
+    await user.type(dialog().getByRole('searchbox', { name: 'Who are you?' }), 'hadley');
+    await user.click(await dialog().findByRole('button', { name: 'Hadley, Ike' }));
+    expect(dialog().getByRole('button', { name: 'Change' })).toHaveFocus();
+  });
+
+  it('shows an alert, not a dead button, when the sign-up check fails', async () => {
+    server.use(
+      http.get('*/api/club-events/:id/signup-check', () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'rate_limited',
+              message: 'Too many tries from here. Wait a bit and try again.',
+            },
+          },
+          { status: 429 },
+        ),
+      ),
+    );
+    const { user } = renderSheet();
+    await user.type(dialog().getByRole('searchbox', { name: 'Who are you?' }), 'hadley');
+    await user.click(await dialog().findByRole('button', { name: 'Hadley, Ike' }));
+    expect(await dialog().findByRole('alert')).toHaveTextContent('Too many tries from here.');
+  });
+
+  it('says to try again when the sign-up check cannot be reached', async () => {
+    server.use(http.get('*/api/club-events/:id/signup-check', () => HttpResponse.error()));
+    const { user } = renderSheet();
+    await user.type(dialog().getByRole('searchbox', { name: 'Who are you?' }), 'hadley');
+    await user.click(await dialog().findByRole('button', { name: 'Hadley, Ike' }));
+    expect(await dialog().findByRole('alert')).toHaveTextContent(
+      'Something went wrong. Try again.',
+    );
+  });
+
+  it('focuses the closed message when it replaces the button', async () => {
+    server.use(
+      http.post('*/api/club-events/:id/registrations', () =>
+        HttpResponse.json(
+          { error: { code: 'signups_closed', message: 'Sign-ups for this event have closed.' } },
+          { status: 409 },
+        ),
+      ),
+    );
+    const { user } = renderSheet();
+    await user.click(dialog().getByRole('button', { name: "I'm not listed" }));
+    await user.type(dialog().getByLabelText('Your first and last name'), 'Dana Quill');
+    await user.type(dialog().getByLabelText('Your email'), 'dana.quill@example.com');
+    await user.click(dialog().getByRole('button', { name: 'Sign me up' }));
+    const status = await dialog().findByRole('status');
+    expect(status).toHaveTextContent('Sign-ups for this event have closed.');
+    expect(status).toHaveAttribute('tabindex', '-1');
+    expect(status).toHaveFocus();
+  });
+
+  it('needs a non-blank email when one is asked for', async () => {
+    const { user } = renderSheet();
+    await user.click(dialog().getByRole('button', { name: "I'm not listed" }));
+    await user.type(dialog().getByLabelText('Your first and last name'), 'Dana Quill');
+    await user.type(dialog().getByLabelText('Your email'), '   ');
+    expect(dialog().getByRole('button', { name: 'Sign me up' })).toBeDisabled();
+  });
+
+  it('announces the already-on-the-list line in a polite live region', async () => {
+    server.use(
+      http.get('*/api/club-events/:id/signup-check', () =>
+        HttpResponse.json({ has_email: true, already_signed_up: true }),
+      ),
+    );
+    const { user } = renderSheet();
+    await user.type(dialog().getByRole('searchbox', { name: 'Who are you?' }), 'hadley');
+    await user.click(await dialog().findByRole('button', { name: 'Hadley, Ike' }));
+    const line = await dialog().findByText('Hadley, Ike is already on the list.');
+    expect(line.closest('[aria-live="polite"]')).not.toBeNull();
   });
 });

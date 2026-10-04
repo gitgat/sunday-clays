@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { server } from '../../../test/msw/server';
+import { fallFunShoot } from '../mocks';
 import { renderWithProviders } from '../../../test/render';
 import { ClubEventPage } from './ClubEventPage';
 
@@ -45,15 +46,36 @@ describe('ClubEventPage share, copy link and errors', () => {
     expect(await screen.findByText(`${window.location.origin}/club-events/1`)).toBeInTheDocument();
   });
 
-  it('shows the not-on-the-list page for a bad id and for a server error', async () => {
+  it('shows the not-on-the-list page for a bad id and for a 404', async () => {
     const first = renderWithProviders(<ClubEventPage />, {
       route: '/club-events/abc',
       path: '/club-events/:id',
     });
     expect(await screen.findByText("That club event isn't on the list.")).toBeInTheDocument();
     first.unmount();
-    server.use(http.get('*/api/club-events/:id', () => HttpResponse.json({}, { status: 500 })));
+    server.use(http.get('*/api/club-events/:id', () => HttpResponse.json({}, { status: 404 })));
     renderPage();
     expect(await screen.findByText("That club event isn't on the list.")).toBeInTheDocument();
+  });
+
+  it('says it could not load, with a retry, on any other error', async () => {
+    let calls = 0;
+    server.use(
+      http.get('*/api/club-events/:id', () => {
+        calls += 1;
+        return calls === 1
+          ? HttpResponse.json({}, { status: 500 })
+          : HttpResponse.json(fallFunShoot);
+      }),
+    );
+    const { user } = renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load this club event. Try again.',
+    );
+    expect(screen.queryByText("That club event isn't on the list.")).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Fall Fun Shoot' }),
+    ).toBeInTheDocument();
   });
 });

@@ -25,6 +25,7 @@ export function ClubEventPage() {
   const qc = useQueryClient();
   const signups = useDeviceSignups();
   const [signingUp, setSigningUp] = useState(false);
+  const [sheetKey, setSheetKey] = useState(0);
   const [cancelling, setCancelling] = useState<CancelTarget | null>(null);
   const [justSigned, setJustSigned] = useState<SignedUp | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -47,6 +48,18 @@ export function ClubEventPage() {
   // The "Good news" line shows during the visit that found the promotion, not on every later one.
   useEffect(() => () => acknowledgePromotions(id), [id]);
 
+  if (event.isError && !(event.error instanceof ApiError && event.error.status === 404)) {
+    return (
+      <div className="flex flex-col gap-3">
+        <p role="alert">Could not load this club event. Try again.</p>
+        <div>
+          <Button variant="tonal" onClick={() => void event.refetch()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
   if (!Number.isInteger(id) || id <= 0 || event.isError) {
     return (
       <EmptyState
@@ -155,7 +168,13 @@ export function ClubEventPage() {
       </div>
 
       {myRow === undefined && data.state === 'open' && (
-        <Button className="w-full sm:w-auto" onClick={() => setSigningUp(true)}>
+        <Button
+          className="w-full sm:w-auto"
+          onClick={() => {
+            setSheetKey((k) => k + 1);
+            setSigningUp(true);
+          }}
+        >
           Sign up
         </Button>
       )}
@@ -170,6 +189,7 @@ export function ClubEventPage() {
       </Card>
 
       <SignUpSheet
+        key={sheetKey}
         event={data}
         open={signingUp}
         onClose={() => setSigningUp(false)}

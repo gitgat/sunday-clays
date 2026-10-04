@@ -68,7 +68,13 @@ describe('club-event copy (§5.8), from club-time parts only (D21)', () => {
 describe('club-event copy edge cases', () => {
   it('leaves the place blank rather than saying "null" if the server omits it', () => {
     const row = { status: 'waitlist', guests: 0, waitlist_position: null } as const;
-    expect(statusLine(row)).toContain('waitlist: #.');
-    expect(chipText(row)).toBe('Waitlist #');
+    expect(statusLine(row)).toBe(
+      "You're on the waitlist. If a spot opens, you move up automatically.",
+    );
+    expect(chipText(row)).toBe('On the waitlist');
+  });
+
+  it('returns the raw text for a date it cannot read instead of throwing', () => {
+    expect(formatEventDate('not-a-date')).toBe('not-a-date');
   });
 });

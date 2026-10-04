@@ -31,7 +31,8 @@ const DATE_PARTS = new Intl.DateTimeFormat('en-US', {
 
 /** "Sat, Oct 17" from `YYYY-MM-DD`, read as a UTC calendar date, so no device zone applies. */
 export function formatEventDate(localDate: string): string {
-  return DATE_PARTS.format(new Date(`${localDate}T00:00:00Z`));
+  const date = new Date(`${localDate}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? localDate : DATE_PARTS.format(date);
 }
 
 /** "11:30 PM" from `HH:MM`. */
@@ -83,7 +84,8 @@ export function guestsRule(e: Pick<ClubEventSummary, 'allow_guests' | 'max_guest
 
 export function statusLine(row: Mine): string {
   if (row.status === 'waitlist') {
-    return `You're on the waitlist: #${row.waitlist_position ?? ''}. If a spot opens, you move up automatically.`;
+    const place = row.waitlist_position === null ? '.' : `: #${row.waitlist_position}.`;
+    return `You're on the waitlist${place} If a spot opens, you move up automatically.`;
   }
   return row.guests > 0
     ? `You're in, plus ${plural(row.guests, 'guest')}. See you there!`
@@ -91,7 +93,8 @@ export function statusLine(row: Mine): string {
 }
 
 export function chipText(row: Mine): string {
-  return row.status === 'going' ? "You're in" : `Waitlist #${row.waitlist_position ?? ''}`;
+  if (row.status === 'going') return "You're in";
+  return row.waitlist_position === null ? 'On the waitlist' : `Waitlist #${row.waitlist_position}`;
 }
 
 export function cancelOwnQuestion(guests: number): string {

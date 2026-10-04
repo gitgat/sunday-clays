@@ -22,7 +22,7 @@ function Row({
         {row.shooter_id !== null ? (
           <Link
             to={`/shooters/${row.shooter_id}`}
-            className="inline-flex min-h-11 items-center underline"
+            className="inline-flex min-h-11 min-w-0 items-center break-words underline"
           >
             {row.name}
           </Link>

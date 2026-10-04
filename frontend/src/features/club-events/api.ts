@@ -34,7 +34,7 @@ export function useClubEvent(id: number) {
 }
 
 /** One check per picked name (D11 accepted exception); never refetched on focus. */
-export function useSignupCheck(eventId: number, shooterId: number | null) {
+export function useSignupCheck(eventId: number, shooterId: number | null, enabled = true) {
   return useQuery({
     queryKey: ['/api/club-events', eventId, 'signup-check', shooterId] as const,
     queryFn: () =>
@@ -43,7 +43,7 @@ export function useSignupCheck(eventId: number, shooterId: number | null) {
           params: { path: { event_id: eventId }, query: { shooter_id: Number(shooterId) } },
         }),
       ),
-    enabled: shooterId !== null,
+    enabled: enabled && shooterId !== null,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });

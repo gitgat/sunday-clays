@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { AdminPreviewBadge } from '../../../components/ui/AdminPreviewBadge';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
+import { ApiError } from '../../../api/errors';
+import { FEATURES_QUERY_KEY } from '../../../lib/features';
 import { useClubEvents } from '../api';
 import { EventCard } from '../components/EventCard';
 import { cameLine, formatEventDate } from '../format';
@@ -11,6 +14,13 @@ import { readPastOpen, writePastOpen } from '../tokens';
 /** /club-events (§5.7.2): upcoming cards, past events collapsed. No filters (D12). */
 export function ClubEventsPage() {
   const events = useClubEvents();
+  const qc = useQueryClient();
+  useEffect(() => {
+    // The gate's 404: the switch went off while this page was open, so refetch the switches.
+    if (events.error instanceof ApiError && events.error.code === 'http_404') {
+      void qc.invalidateQueries({ queryKey: FEATURES_QUERY_KEY });
+    }
+  }, [events.error, qc]);
   const [pastOpen, setPastOpen] = useState(readPastOpen);
   const toggle = () => {
     writePastOpen(!pastOpen);
@@ -59,7 +69,10 @@ export function ClubEventsPage() {
                       key={event.id}
                       className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-outline-variant"
                     >
-                      <Link to={`/club-events/${event.id}`} className="break-words underline">
+                      <Link
+                        to={`/club-events/${event.id}`}
+                        className="min-w-0 break-words underline"
+                      >
                         {event.title}
                       </Link>
                       <span className="text-sm text-text-muted">

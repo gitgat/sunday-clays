@@ -1,9 +1,10 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
-import { fallFunShoot, fallFunSummary } from '../mocks';
+import { FeatureGate } from '../../../components/FeatureGate';
+import { banquetPast, fallFunShoot, fallFunSummary } from '../mocks';
 import { PAST_OPEN_KEY, saveSignup } from '../tokens';
 import { ClubEventsPage } from './ClubEventsPage';
 
@@ -75,5 +76,40 @@ describe('ClubEventsPage errors', () => {
     await user.click(toggle);
     await user.click(toggle);
     expect(localStorage.getItem(PAST_OPEN_KEY)).toBe('0');
+  });
+
+  it('refetches the switches when the gate answers 404', async () => {
+    let reads = 0;
+    server.use(
+      http.get('*/api/features', () => {
+        reads += 1;
+        return HttpResponse.json({ switches: { events: true } });
+      }),
+      http.get('*/api/club-events', () =>
+        HttpResponse.json({ detail: 'Not Found' }, { status: 404 }),
+      ),
+    );
+    renderWithProviders(
+      <FeatureGate feature="events">
+        <ClubEventsPage />
+      </FeatureGate>,
+      { route: '/club-events' },
+    );
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+  });
+
+  it('wraps an unbroken long past-event title', async () => {
+    featuresOn();
+    server.use(
+      http.get('*/api/club-events', () =>
+        HttpResponse.json({ upcoming: [], past: [{ ...banquetPast, title: 'B'.repeat(60) }] }),
+      ),
+    );
+    const { user } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    await user.click(await screen.findByRole('button', { name: 'Past events (1)' }));
+    expect(screen.getByRole('link', { name: 'B'.repeat(60) })).toHaveClass(
+      'min-w-0',
+      'break-words',
+    );
   });
 });

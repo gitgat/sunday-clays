@@ -270,4 +270,39 @@ describe('ClubEventPage', () => {
     });
     expect(await screen.findByText('Admin preview')).toBeInTheDocument();
   });
+
+  it('starts the sign-up sheet fresh each time it is opened', async () => {
+    featuresOn();
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Sign up' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: "I'm not listed" }),
+    );
+    await user.type(screen.getByLabelText('Your first and last name'), 'Dana Quill');
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(screen.getByRole('button', { name: 'Sign up' }));
+    expect(screen.getByRole('searchbox', { name: 'Who are you?' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Your first and last name')).not.toBeInTheDocument();
+  });
+
+  it('wraps an unbroken long linked name', async () => {
+    featuresOn();
+    serve({
+      roster: [
+        {
+          registration_id: 12,
+          name: 'Q'.repeat(60),
+          shooter_id: 3,
+          guests: 0,
+          status: 'going',
+          waitlist_position: null,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByRole('link', { name: 'Q'.repeat(60) })).toHaveClass(
+      'min-w-0',
+      'break-words',
+    );
+  });
 });
