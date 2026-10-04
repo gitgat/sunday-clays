@@ -17,6 +17,9 @@ def test_defaults_match_the_contract(settings_env: None, monkeypatch: pytest.Mon
         "CLUB_LON",
         "LOGIN_MAX_FAILURES",
         "LOGIN_WINDOW_MINUTES",
+        "CLUB_EVENT_SIGNUP_LIMIT",
+        "CLUB_EVENT_CHECK_LIMIT",
+        "CLUB_EVENT_CANCEL_FAIL_LIMIT",
         "COOKIE_SECURE",  # settings_env sets it; the default is what this test checks
     }
     for key in list(os.environ):  # any case: Settings matches env names case-insensitively
@@ -34,6 +37,9 @@ def test_defaults_match_the_contract(settings_env: None, monkeypatch: pytest.Mon
     assert settings.login_window_minutes == 15
     assert settings.cookie_secure is True
     assert settings.app_version == "dev"
+    assert settings.club_event_signup_limit == 100
+    assert settings.club_event_check_limit == 60
+    assert settings.club_event_cancel_fail_limit == 10
 
 
 def test_env_overrides_defaults(settings_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,3 +196,18 @@ def test_database_url_from_env_without_any_source_is_an_error(
 
     with pytest.raises(ConfigError, match="DATABASE_URL"):
         database_url_from_env()
+
+
+def test_club_event_limits_come_from_the_environment(
+    settings_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Plan 20: the one-IP e2e stack raises these in compose.test.yaml
+    monkeypatch.setenv("CLUB_EVENT_SIGNUP_LIMIT", "1000")
+    monkeypatch.setenv("CLUB_EVENT_CHECK_LIMIT", "100000")
+    monkeypatch.setenv("CLUB_EVENT_CANCEL_FAIL_LIMIT", "3")
+    settings = get_settings()
+    assert (
+        settings.club_event_signup_limit,
+        settings.club_event_check_limit,
+        settings.club_event_cancel_fail_limit,
+    ) == (1000, 100000, 3)

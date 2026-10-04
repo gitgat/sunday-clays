@@ -226,7 +226,7 @@ Indexes: `ix_club_event_registrations_queue (event_id, status, id)`; partial uni
 
 Indexes `(ip, action, at)` and `(registration_id, at)`. Every insert goes through `auth.ratelimit._insert_and_prune` with `keep_for = timedelta(days=1)`, so the table is pruned on write (as `bump_attempts` and `page_view_attempts` are) as well as by the daily job.
 
-**Rollback limit** (stated in the migration docstring, as `0008` does): the previous release never reads these tables, so rolling the app back is safe at any time; `alembic downgrade 0008` deletes every event, registration and stored email.
+**Rollback limit** (stated in the migration docstring, as `0008` does): the previous release never reads these tables, so rolling the app back is safe at any time; `alembic downgrade 0009` deletes every event, registration and stored email.
 
 ### 5.3 Domain rules (`domain/club_events.py`)
 

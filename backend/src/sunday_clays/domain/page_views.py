@@ -49,6 +49,7 @@ PageKind = Literal[
     "compare",
     "events-list",
     "admin",
+    "club-events",  # Plan 20: both Club events pages
     "other",
 ]
 MeState = Literal["picked", "skipped", "none"]

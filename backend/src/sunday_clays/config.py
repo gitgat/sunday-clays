@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     login_max_failures: int = 10
     login_window_minutes: int = 15
     page_view_limit: int = 600  # Plan 16: page-view beacons per IP per 10 minutes
+    # Plan 20 §5.3.7: club-event sign-ups per IP fingerprint per hour, sign-up checks per 10
+    # minutes, failed cancels per hour. compose.test.yaml raises the first two for the one-IP e2e.
+    club_event_signup_limit: int = 100
+    club_event_check_limit: int = 60
+    club_event_cancel_fail_limit: int = 10
     # Plan 19 D4: comma-separated feature keys treated as on while their app_state row is missing
     features_default_on: str = ""
     # Plan 19 D11: every absolute URL (og:url, og:image, recap link); never the Host header

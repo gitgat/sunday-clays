@@ -43,6 +43,7 @@ def test_the_kinds_and_states_are_exactly_the_approved_lists() -> None:
         "compare",
         "events-list",
         "admin",
+        "club-events",  # Plan 20: both Club events pages (code only, no migration, Plan 16 D3)
         "other",
     )
     assert ME_STATES == ("picked", "skipped", "none")

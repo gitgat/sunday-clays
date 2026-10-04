@@ -74,6 +74,61 @@ OTHER_CHECKS = {
         "polarity <> 'field_negative' OR cardinality(named_shooter_ids) = 0",
         "CHECK (((polarity <> 'field_negative'::text) OR (cardinality(named_shooter_ids) = 0)))",
     ),
+    "ck_club_events_title_length": (
+        "char_length(title) BETWEEN 1 AND 80",
+        "CHECK (((char_length(title) >= 1) AND (char_length(title) <= 80)))",
+    ),
+    "ck_club_events_deadline_before_start": (
+        "signup_deadline <= starts_at",
+        "CHECK ((signup_deadline <= starts_at))",
+    ),
+    "ck_club_events_notes_length": (
+        "char_length(notes) <= 2000",
+        "CHECK ((char_length(notes) <= 2000))",
+    ),
+    "ck_club_events_capacity_range": (
+        "capacity IS NULL OR capacity BETWEEN 1 AND 500",
+        "CHECK (((capacity IS NULL) OR ((capacity >= 1) AND (capacity <= 500))))",
+    ),
+    "ck_club_events_max_guests_range": (
+        "max_guests BETWEEN 0 AND 10",
+        "CHECK (((max_guests >= 0) AND (max_guests <= 10)))",
+    ),
+    "ck_club_events_guest_rule": (
+        "(allow_guests AND max_guests >= 1) OR (NOT allow_guests AND max_guests = 0)",
+        "CHECK (((allow_guests AND (max_guests >= 1))"
+        " OR ((NOT allow_guests) AND (max_guests = 0))))",
+    ),
+    "ck_club_event_registrations_name_length": (
+        "char_length(registrant_name) <= 60",
+        "CHECK ((char_length(registrant_name) <= 60))",
+    ),
+    "ck_club_event_registrations_email_length": (
+        "char_length(registrant_email) <= 254",
+        "CHECK ((char_length(registrant_email) <= 254))",
+    ),
+    "ck_club_event_registrations_guests_range": (
+        "guests BETWEEN 0 AND 10",
+        "CHECK (((guests >= 0) AND (guests <= 10)))",
+    ),
+    "ck_club_event_registrations_who": (
+        "shooter_id IS NOT NULL OR (registrant_name IS NOT NULL AND name_key IS NOT NULL)",
+        "CHECK (((shooter_id IS NOT NULL)"
+        " OR ((registrant_name IS NOT NULL) AND (name_key IS NOT NULL))))",
+    ),
+    "ck_club_event_registrations_email_owner": (
+        "registrant_email IS NULL OR shooter_id IS NULL",
+        "CHECK (((registrant_email IS NULL) OR (shooter_id IS NULL)))",
+    ),
+    "ck_club_event_registrations_inactive_scrubbed": (
+        "status IN ('going', 'waitlist') OR (registrant_email IS NULL AND token_hash IS NULL)",
+        "CHECK (((status = ANY (ARRAY['going'::text, 'waitlist'::text]))"
+        " OR ((registrant_email IS NULL) AND (token_hash IS NULL))))",
+    ),
+    "ck_shooter_contacts_email_length": (
+        "char_length(email) BETWEEN 3 AND 254",
+        "CHECK (((char_length(email) >= 3) AND (char_length(email) <= 254)))",
+    ),
 }
 CATALOG_CHECK = re.compile(r"CHECK \(\((\w+) = ANY \(ARRAY\[(.*)\]\)\)\)")
 QUOTED = re.compile(r"'([^']*)'")
@@ -138,12 +193,17 @@ C4_TABLES = {
     "page_kind_rollups",  # 0007 (Plan 16)
     "import_special_events",  # 0008 (Plan 17)
     "response_cache",  # 0009 (Plan 19)
+    "club_events",  # 0010 (Plan 20)
+    "club_event_registrations",  # 0010 (Plan 20)
+    "shooter_contacts",  # 0010 (Plan 20)
+    "club_event_attempts",  # 0010 (Plan 20)
 }
 TABLES_0003 = {"insights", "insight_picks"}
 TABLES_0006 = {"fist_bumps", "bump_attempts"}
 TABLES_0007 = {"page_views", "page_view_attempts", "page_view_rollups", "page_kind_rollups"}
 TABLES_0008 = {"import_special_events"}
 TABLES_0009 = {"response_cache"}
+TABLES_0010 = {"club_events", "club_event_registrations", "shooter_contacts", "club_event_attempts"}
 
 
 def _alembic(eng: Engine, action: str, target: str) -> None:
@@ -267,12 +327,15 @@ def test_upgrade_downgrade_roundtrip(scratch_engine: Engine) -> None:
     _alembic(scratch_engine, "upgrade", "head")
     assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
     assert _round_id_index(scratch_engine) == ROUND_ID_INDEX_DEF
+    _alembic(scratch_engine, "downgrade", "0009")  # 0010 drops only its four tables
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0010) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0008")  # 0009 drops only the response cache
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0009) | {"alembic_version"}
+    newest = TABLES_0009 | TABLES_0010
+    assert _tables(scratch_engine) == (C4_TABLES - newest) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0007")  # 0008 drops its table and the event kind
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0008 - TABLES_0009) | {"alembic_version"}
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0008 - newest) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0006")  # 0007 drops only its four tables
-    newer = TABLES_0007 | TABLES_0008 | TABLES_0009
+    newer = TABLES_0007 | TABLES_0008 | newest
     assert _tables(scratch_engine) == (C4_TABLES - newer) | {"alembic_version"}
     later = TABLES_0006 | newer
     _alembic(scratch_engine, "downgrade", "0005")  # 0006 drops only its two tables

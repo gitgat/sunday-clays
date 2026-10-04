@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import type { FeatureSwitch, PageCacheStatus } from './api';
 
-/** The six switches and the page cache as the API lists them (labels and descriptions as in domain/features.py). */
+/** The seven switches and the page cache as the API lists them (labels and descriptions as in domain/features.py). */
 export const featureSwitches: FeatureSwitch[] = [
   {
     key: 'link_previews',
@@ -56,6 +56,16 @@ export const featureSwitches: FeatureSwitch[] = [
     kind: 'feature',
     label: 'Summary card',
     description: 'A shareable card on every profile for the chosen time window.',
+    enabled: false,
+    updated_at: null,
+    updated_on: null,
+  },
+  {
+    key: 'events',
+    kind: 'feature',
+    label: 'Club events',
+    description:
+      'Club event sign-ups: the Club events page, the Coming up card on Home and the sign-up line on About.',
     enabled: false,
     updated_at: null,
     updated_on: null,

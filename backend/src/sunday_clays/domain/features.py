@@ -30,6 +30,7 @@ FeatureKey = Literal[
     "pwa",
     "club_milestones",
     "summary_card",
+    "events",
     "page_cache",
 ]
 FeatureKind = Literal["feature", "infrastructure"]
@@ -80,6 +81,12 @@ FEATURES: Final[tuple[Feature, ...]] = (
         "summary_card",
         "Summary card",
         "A shareable card on every profile for the chosen time window.",
+    ),
+    Feature(
+        "events",
+        "Club events",
+        "Club event sign-ups: the Club events page, the Coming up card on Home and the sign-up "
+        "line on About.",
     ),
     Feature(
         "page_cache",
