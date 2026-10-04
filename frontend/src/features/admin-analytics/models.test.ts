@@ -21,6 +21,7 @@ describe('analytics chart models', () => {
     expect(pageKindLabel('event')).toBe('One Sunday');
     expect(pageKindLabel('events-list')).toBe('Sundays list');
     expect(pageKindLabel('profile')).toBe('Shooter profiles');
+    expect(pageKindLabel('club-events')).toBe('Club events');
     expect(pageKindLabel('brand-new-kind')).toBe('brand-new-kind');
     const model = pageKindsModel(pageKinds);
     expect(model.rows.map((r) => r.page)).toEqual([

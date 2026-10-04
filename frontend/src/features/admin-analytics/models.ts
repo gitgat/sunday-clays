@@ -22,6 +22,7 @@ const PAGE_KIND_LABELS = new Map<string, string>([
   ['achievements', 'Trophies'],
   ['race', 'Race'],
   ['compare', 'Compare'],
+  ['club-events', 'Club events'],
   ['admin', 'Admin pages'],
   ['other', 'Other pages'],
 ]);
