@@ -157,7 +157,7 @@ describe('SignUpSheet', () => {
         HttpResponse.json({ detail: 'Not Found' }, { status: 404 }),
       ),
     );
-    const { user, queryClient } = renderSheet();
+    const { user, queryClient, onClose } = renderSheet();
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
     await user.click(dialog().getByRole('button', { name: "I'm not listed" }));
     await user.type(dialog().getByLabelText('Your first and last name'), 'Dana Quill');
@@ -166,8 +166,13 @@ describe('SignUpSheet', () => {
     expect(
       await dialog().findByText("Club events aren't available right now. Nothing was saved."),
     ).toBeInTheDocument();
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/features'] });
+    // §5.1/§5.9: the message stays up; the switches are refetched only when the sheet closes, so
+    // the page's not-found view cannot replace the sheet before it is read.
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['/api/features'] });
     expect(allSignups()).toEqual([]);
+    await user.click(dialog().getByRole('button', { name: 'Close' }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['/api/features'] });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('shows a refusal message and keeps the button for other errors', async () => {
