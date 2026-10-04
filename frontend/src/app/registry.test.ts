@@ -90,6 +90,7 @@ const EXPECTED: Record<string, PageFilters> = {
   '/admin/analytics': { roundType: false, window: true },
   '/admin/recap': { roundType: false, window: false },
   '/admin/features': NO_FILTERS,
+  '/admin/club-events': NO_FILTERS,
   '/glossary': NO_FILTERS,
   '/club-events': NO_FILTERS,
   '/club-events/:id': NO_FILTERS,
