@@ -1,8 +1,9 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../../test/msw/server';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
+import { FEATURES_QUERY_KEY } from '../../../lib/features';
 import { stubViewport } from '../../../test/viewport';
 import { AdminClubEventsPage } from './AdminClubEventsPage';
 
@@ -33,9 +34,9 @@ describe('AdminClubEventsPage', () => {
   it('shows no notice once the switch is on', async () => {
     stubViewport('desktop');
     server.use(http.get('*/api/features', () => HttpResponse.json({ switches: { events: true } })));
-    renderWithProviders(<AdminClubEventsPage />, { role: 'admin' });
+    const { queryClient } = renderWithProviders(<AdminClubEventsPage />, { role: 'admin' });
     expect(await screen.findByRole('button', { name: 'New event' })).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => expect(queryClient.getQueryData(FEATURES_QUERY_KEY)).toBeDefined());
     expect(screen.queryByText(/Members can't see club events/)).not.toBeInTheDocument();
   });
 });

@@ -100,35 +100,32 @@ describe('EventEditor, more', () => {
     expect(await screen.findByText('Club event restored')).toBeInTheDocument();
   });
 
-  it('shows Restore as a primary button, and a Delete error does not come back after Keep it', async () => {
+  it('shows Restore as a primary button', async () => {
     stubViewport('desktop');
-    let refuse = true;
-    server.use(
-      http.delete('*/api/admin/club-events/1', () =>
-        refuse ? refused('Could not delete.') : new HttpResponse(null, { status: 204 }),
-      ),
-    );
-    const first = renderWithProviders(<EventEditor event={adminEvent} onDeleted={vi.fn()} />, {
-      role: 'admin',
-    });
-    await first.user.click(screen.getByRole('button', { name: 'Delete' }));
-    const danger = within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' });
-    expect(danger.className).not.toContain('bg-primary');
-    await first.user.click(danger);
-    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toBeInTheDocument();
-    await first.user.click(screen.getByRole('button', { name: 'Keep it' }));
-    refuse = false;
-    await first.user.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(within(screen.getByRole('dialog')).queryByRole('alert')).not.toBeInTheDocument();
-    first.unmount();
-    const second = renderWithProviders(
+    const { user } = renderWithProviders(
       <EventEditor event={{ ...adminEvent, state: 'cancelled' }} onDeleted={vi.fn()} />,
       { role: 'admin' },
     );
-    await second.user.click(screen.getByRole('button', { name: 'Restore' }));
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
     expect(
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Restore' }).className,
     ).toContain('bg-primary');
+  });
+
+  it('keeps Delete as a danger button, and its error does not come back after Keep it', async () => {
+    stubViewport('desktop');
+    server.use(http.delete('*/api/admin/club-events/1', () => refused('Could not delete.')));
+    const { user } = renderWithProviders(<EventEditor event={adminEvent} onDeleted={vi.fn()} />, {
+      role: 'admin',
+    });
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const danger = within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' });
+    expect(danger.className).not.toContain('bg-primary');
+    await user.click(danger);
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Keep it' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('links to the member page for the club event', () => {

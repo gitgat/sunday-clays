@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminEvent, rosterRows } from './mocks';
 import { CONTACT_SOURCES, fromEvent, headHint, sortEvents, statusLabel } from './form';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('organizer form helpers, edges', () => {
   it('starts a new form empty and an edit form from the event', () => {
@@ -69,7 +73,6 @@ describe('organizer form helpers, edges', () => {
       at(3, '2026-10-20T00:00:00Z', true),
       at(4, '2026-09-20T00:00:00Z', false),
     ]);
-    vi.useRealTimers();
     expect(sorted.map((e) => e.id)).toEqual([3, 2, 4, 1]);
   });
 });

@@ -51,6 +51,25 @@ describe('EventForm, more', () => {
     expect(screen.getByLabelText('Sign-up deadline date')).toHaveValue('2026-10-01');
   });
 
+  it('keeps a custom deadline offset when the date crosses a month boundary', async () => {
+    const event = {
+      ...adminEvent,
+      local_date: '2026-11-02',
+      deadline_local_date: '2026-10-31',
+      deadline_local_time: '18:00',
+    };
+    const { user } = renderWithProviders(<EventForm event={event} onSaved={vi.fn()} />, {
+      role: 'admin',
+    });
+    await user.clear(screen.getByLabelText('Date'));
+    await user.type(screen.getByLabelText('Date'), '2026-10-30');
+    expect(screen.getByLabelText('Sign-up deadline date')).toHaveValue('2026-10-28');
+    expect(screen.getByLabelText('Deadline time')).toHaveValue('18:00');
+    await user.clear(screen.getByLabelText('Date'));
+    await user.type(screen.getByLabelText('Date'), '2026-12-01');
+    expect(screen.getByLabelText('Sign-up deadline date')).toHaveValue('2026-11-29');
+  });
+
   it('hides the guest limit when guests are off, and saves an edit', async () => {
     let body: unknown = null;
     server.use(

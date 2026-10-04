@@ -106,8 +106,8 @@ export function sortEvents(events: readonly AdminEvent[]): AdminEvent[] {
 /** `deadline` moved by the same number of whole days as `from` to `to` (all YYYY-MM-DD). */
 export function shiftDate(deadline: string, from: string, to: string): string {
   const day = (iso: string) => {
-    const [y = 1970, m = 1, d = 1] = iso.split('-').map(Number);
-    return Date.UTC(y, m - 1, d);
+    const [y, m, d] = iso.split('-').map(Number);
+    return Date.UTC(y as number, (m as number) - 1, d as number);
   };
   const moved = new Date(day(deadline) + day(to) - day(from));
   return moved.toISOString().slice(0, 10);
