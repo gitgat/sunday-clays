@@ -100,7 +100,26 @@ def test_a_summary_carries_club_time_parts_and_counts(
         "max_guests": 2,
         "signups": 2,
         "purged": False,
+        "upcoming": True,
     }
+
+
+def test_the_upcoming_flag_matches_the_list_it_is_in_on_list_and_detail(
+    session: Session, viewer_client: TestClient, clock: Callable[[datetime], None]
+) -> None:
+    clock(datetime(2026, 10, 2, 18, 0, tzinfo=UTC))
+    soon = seed_event(session, title="Fall Fun Shoot")
+    old = seed_event(
+        session,
+        title="Lesson day",
+        starts_at=datetime(2026, 9, 5, 16, tzinfo=UTC),
+        deadline=datetime(2026, 9, 5, 3, tzinfo=UTC),
+    )
+    body = _list(viewer_client)
+    assert [e["upcoming"] for e in body["upcoming"]] == [True]
+    assert [e["upcoming"] for e in body["past"]] == [False]
+    assert viewer_client.get(f"/api/club-events/{soon}").json()["upcoming"] is True
+    assert viewer_client.get(f"/api/club-events/{old}").json()["upcoming"] is False
 
 
 def test_late_evening_event_stays_upcoming(
