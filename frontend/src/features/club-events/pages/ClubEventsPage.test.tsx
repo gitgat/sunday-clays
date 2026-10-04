@@ -1,0 +1,79 @@
+import { screen, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
+import { describe, expect, it } from 'vitest';
+import { server } from '../../../test/msw/server';
+import { renderWithProviders } from '../../../test/render';
+import { fallFunShoot, fallFunSummary } from '../mocks';
+import { PAST_OPEN_KEY, saveSignup } from '../tokens';
+import { ClubEventsPage } from './ClubEventsPage';
+
+function featuresOn() {
+  server.use(http.get('*/api/features', () => HttpResponse.json({ switches: { events: true } })));
+}
+
+describe('ClubEventsPage', () => {
+  it('lists upcoming cards and keeps past events collapsed', async () => {
+    featuresOn();
+    const { user } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    expect(screen.getByRole('heading', { level: 1, name: 'Club events' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Club get-togethers beyond Sunday shoots. Sign up so organizers know who's coming.",
+      ),
+    ).toBeInTheDocument();
+    const card = await screen.findByRole('link', { name: /Fall Fun Shoot/ });
+    expect(card).toHaveAttribute('href', '/club-events/1');
+    expect(within(card).getByText('Sat, Oct 17 · 11:30 PM')).toBeInTheDocument();
+    expect(within(card).getByText('3 of 4 spots taken')).toBeInTheDocument();
+    expect(within(card).getByText('Sign up by Fri, Oct 16, 8:00 PM')).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: 'Past events (1)' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Summer Banquet')).not.toBeInTheDocument();
+    await user.click(toggle);
+    expect(screen.getByText('Summer Banquet')).toBeInTheDocument();
+    expect(screen.getByText('Sat, Aug 1 · 28 came')).toBeInTheDocument();
+    expect(localStorage.getItem(PAST_OPEN_KEY)).toBe('1');
+  });
+
+  it("marks a cancelled event and this device's place", async () => {
+    featuresOn();
+    saveSignup(13, { eventId: 1, token: 'tok-13', status: 'waitlist' });
+    server.use(
+      http.get('*/api/club-events', () =>
+        HttpResponse.json({ upcoming: [{ ...fallFunSummary, state: 'cancelled' }], past: [] }),
+      ),
+      http.get('*/api/club-events/:id', () => HttpResponse.json(fallFunShoot)),
+    );
+    renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    expect(await screen.findByText('Cancelled')).toBeInTheDocument();
+    expect(await screen.findByText('Waitlist #1')).toBeInTheDocument();
+  });
+
+  it('says when nothing is coming up', async () => {
+    featuresOn();
+    server.use(http.get('*/api/club-events', () => HttpResponse.json({ upcoming: [], past: [] })));
+    renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    expect(
+      await screen.findByText('No club events coming up. Check back soon.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Past events/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('ClubEventsPage errors', () => {
+  it('says the list is unavailable when it cannot load', async () => {
+    featuresOn();
+    server.use(http.get('*/api/club-events', () => HttpResponse.json({}, { status: 500 })));
+    renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    expect(await screen.findByText("Club events aren't available right now.")).toBeInTheDocument();
+  });
+
+  it('closes the past events again and remembers it', async () => {
+    featuresOn();
+    const { user } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    const toggle = await screen.findByRole('button', { name: 'Past events (1)' });
+    await user.click(toggle);
+    await user.click(toggle);
+    expect(localStorage.getItem(PAST_OPEN_KEY)).toBe('0');
+  });
+});

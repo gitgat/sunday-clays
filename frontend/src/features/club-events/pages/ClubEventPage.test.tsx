@@ -1,0 +1,273 @@
+import { screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FeatureGate } from '../../../components/FeatureGate';
+import { server } from '../../../test/msw/server';
+import { renderWithProviders } from '../../../test/render';
+import type { ClubEventDetail } from '../api';
+import { fallFunShoot } from '../mocks';
+import { allSignups, saveSignup } from '../tokens';
+import { ClubEventPage } from './ClubEventPage';
+
+function featuresOn() {
+  server.use(http.get('*/api/features', () => HttpResponse.json({ switches: { events: true } })));
+}
+
+function serve(detail: Partial<ClubEventDetail>) {
+  server.use(
+    http.get('*/api/club-events/:id', () => HttpResponse.json({ ...fallFunShoot, ...detail })),
+  );
+}
+
+function renderPage() {
+  return renderWithProviders(<ClubEventPage />, {
+    route: '/club-events/1',
+    path: '/club-events/:id',
+  });
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('ClubEventPage', () => {
+  it('shows the title, club-time date, notes as plain text and the facts', async () => {
+    featuresOn();
+    serve({ notes: '<b>x</b>\nsecond line' });
+    renderPage();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Fall Fun Shoot' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Sat, Oct 17 · 11:30 PM')).toBeInTheDocument();
+    const notes = screen.getByText(/<b>x<\/b>/);
+    expect(notes).toHaveClass('whitespace-pre-line', 'break-words');
+    expect(notes.querySelector('b')).toBeNull();
+    expect(screen.getByText('Guests welcome, up to 2 each')).toBeInTheDocument();
+    expect(screen.getByText('Sign up by Fri, Oct 16, 8:00 PM')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign up' })).toBeEnabled();
+  });
+
+  it('lists who is coming, then the numbered waitlist, with guests and links', async () => {
+    featuresOn();
+    renderPage();
+    const going = await screen.findByRole('list', { name: 'Going' });
+    // names never go into a shared image (§5.7.3): the roster sits inside data-share-exclude
+    expect(going.closest('[data-share-exclude]')).not.toBeNull();
+    expect(
+      screen.getByRole('list', { name: 'Waitlist' }).closest('[data-share-exclude]'),
+    ).not.toBeNull();
+    expect(within(going).getByRole('link', { name: 'Hadley, Ike' })).toHaveAttribute(
+      'href',
+      '/shooters/3',
+    );
+    expect(within(going).getByText('+1')).toBeInTheDocument();
+    const waitlist = screen.getByRole('list', { name: 'Waitlist' });
+    expect(within(waitlist).getByText('Pat Kim')).toBeInTheDocument();
+    expect(within(waitlist).getByText('1.')).toBeInTheDocument();
+    expect(screen.getByText('3 of 4 spots taken · 1 on the waitlist')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: "Cancel Dana Quill's spot" })).toBeInTheDocument();
+  });
+
+  it("marks this device's row and cancels it with its token", async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    let body: unknown = null;
+    server.use(
+      http.post('*/api/club-events/1/registrations/12/cancel', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ status: 'cancelled', promoted: 0 });
+      }),
+    );
+    const { user } = renderPage();
+    expect(await screen.findByText("You're in. See you there!")).toBeInTheDocument();
+    expect(screen.getByText('You')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign up' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel my spot' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel my spot' }),
+    );
+    await waitFor(() => expect(body).toEqual({ token: 'tok-12' }));
+    await waitFor(() => expect(allSignups()).toEqual([]));
+  });
+
+  it('drops a stale token and cancels the new sign-up', async () => {
+    featuresOn();
+    saveSignup(5, { eventId: 1, token: 'removed', status: 'going' }); // not in the roster any more
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    const posted: string[] = [];
+    server.use(
+      http.post('*/api/club-events/1/registrations/:rid/cancel', async ({ params, request }) => {
+        posted.push(`${String(params.rid)} ${JSON.stringify(await request.json())}`);
+        return HttpResponse.json({ status: 'cancelled', promoted: 0 });
+      }),
+    );
+    const { user } = renderPage();
+    await screen.findByText("You're in. See you there!");
+    await waitFor(() => expect(allSignups().map((s) => s.registrationId)).toEqual([12]));
+    await user.click(screen.getByRole('button', { name: 'Cancel my spot' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel my spot' }),
+    );
+    // Review Focus 4: the new registration is the one cancelled, never the stale id 5
+    await waitFor(() => expect(posted).toEqual(['12 {"token":"tok-12"}']));
+  });
+
+  it("keeps this device's tokens on the switch's 404 and refetches the switches (§5.1, §5.9)", async () => {
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    let switchReads = 0;
+    server.use(
+      http.get('*/api/features', () => {
+        switchReads += 1;
+        return HttpResponse.json({ switches: { events: true } });
+      }),
+      // the unknown-path body the gate answers while the switch is off (D1): code http_404
+      http.get('*/api/club-events/:id', () =>
+        HttpResponse.json({ detail: 'Not Found' }, { status: 404 }),
+      ),
+    );
+    renderWithProviders(
+      <FeatureGate feature="events">
+        <ClubEventPage />
+      </FeatureGate>,
+      { route: '/club-events/1', path: '/club-events/:id' },
+    );
+    await waitFor(() => expect(switchReads).toBeGreaterThan(1));
+    expect(allSignups().map((s) => s.registrationId)).toEqual([12]); // only club_event_not_found drops them
+  });
+
+  it('shows "Good news" once a waitlisted sign-up is going', async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'waitlist' });
+    renderPage();
+    expect(await screen.findByText("Good news: a spot opened and you're in.")).toBeInTheDocument();
+  });
+
+  it("keeps a cancelled event's roster visible below its banner, with Cancel buttons", async () => {
+    featuresOn();
+    serve({ state: 'cancelled' });
+    renderPage();
+    const banner = await screen.findByText('This event was cancelled by the organizers.');
+    const roster = screen.getByRole('list', { name: 'Going' });
+    expect(banner.compareDocumentPosition(roster) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('button', { name: "Cancel Dana Quill's spot" })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign up' })).not.toBeInTheDocument();
+  });
+
+  it('closes sign-ups and cancels once started; trusts state over the device clock', async () => {
+    featuresOn();
+    serve({ state: 'started' });
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Sign-ups closed' })).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: "Cancel Dana Quill's spot" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Happening now')).toBeInTheDocument();
+  });
+
+  it('shows the empty and the purged roster lines', async () => {
+    featuresOn();
+    serve({ roster: [], spots_taken: 0, waitlist_count: 0, signups: 0 });
+    const first = renderPage();
+    expect(await screen.findByText('No one has signed up yet. Be the first.')).toBeInTheDocument();
+    first.unmount();
+    serve({ roster: [], purged: true, state: 'started' });
+    renderPage();
+    expect(
+      await screen.findByText('The sign-up list was cleared 30 days after the event.'),
+    ).toBeInTheDocument();
+  });
+
+  it("forgets this event's tokens when it was deleted", async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    server.use(
+      http.get('*/api/club-events/:id', () =>
+        HttpResponse.json(
+          { error: { code: 'club_event_not_found', message: 'That club event does not exist.' } },
+          { status: 404 },
+        ),
+      ),
+    );
+    renderPage();
+    expect(await screen.findByText("That club event isn't on the list.")).toBeInTheDocument();
+    await waitFor(() => expect(allSignups()).toEqual([]));
+  });
+
+  it('works with storage blocked: no own row, the email path still opens', async () => {
+    featuresOn();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: "Cancel Dana Quill's spot" }));
+    expect(screen.getByLabelText('Type the email used for this sign-up.')).toBeInTheDocument();
+  });
+
+  it('wraps long notes and names', async () => {
+    featuresOn();
+    const long = 'x'.repeat(120);
+    serve({
+      notes: `https://${long}`,
+      roster: [
+        {
+          registration_id: 12,
+          name: 'Q'.repeat(29) + ' ' + 'D'.repeat(30),
+          shooter_id: null,
+          guests: 0,
+          status: 'going',
+          waitlist_position: null,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText(`https://${long}`)).toHaveClass('break-words');
+    expect(screen.getByText('Q'.repeat(29) + ' ' + 'D'.repeat(30)).closest('li')).toHaveClass(
+      'break-words',
+    );
+  });
+
+  it('shows the after-race line when a typed email was not used', async () => {
+    featuresOn();
+    server.use(
+      http.get('*/api/club-events/:id/signup-check', () =>
+        HttpResponse.json({ has_email: false, already_signed_up: false }),
+      ),
+      http.post('*/api/club-events/:id/registrations', () =>
+        HttpResponse.json(
+          {
+            registration_id: 12,
+            token: 'tok-12',
+            status: 'going',
+            waitlist_position: null,
+            email_used: 'on_file',
+          },
+          { status: 201 },
+        ),
+      ),
+    );
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Sign up' }));
+    const sheet = within(screen.getByRole('dialog'));
+    await user.type(sheet.getByRole('searchbox', { name: 'Who are you?' }), 'hadley');
+    await user.click(await sheet.findByRole('button', { name: 'Hadley, Ike' }));
+    await user.type(await sheet.findByLabelText('Your email'), 'ike.hadley@example.com');
+    await user.click(sheet.getByRole('button', { name: 'Sign me up' }));
+    expect(
+      await screen.findByText(
+        "We'll use the email already on file for Hadley, Ike. To cancel, use this device or ask an organizer.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the admin preview badge while the switch is off', async () => {
+    server.use(
+      http.get('*/api/features', () => HttpResponse.json({ switches: { events: false } })),
+    );
+    renderWithProviders(<ClubEventPage />, {
+      route: '/club-events/1',
+      path: '/club-events/:id',
+      role: 'admin',
+    });
+    expect(await screen.findByText('Admin preview')).toBeInTheDocument();
+  });
+});
