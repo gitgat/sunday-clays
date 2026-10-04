@@ -19,7 +19,7 @@ export function EventCard({ event }: { event: ClubEventSummary }) {
               Cancelled
             </span>
           )}
-          <MyChip eventId={event.id} />
+          {event.state !== 'cancelled' && <MyChip eventId={event.id} />}
         </div>
       </div>
       <p className="text-sm text-text-muted">{whenLine(event)}</p>

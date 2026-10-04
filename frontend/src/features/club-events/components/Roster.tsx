@@ -62,7 +62,7 @@ export function Roster({
 }) {
   if (event.purged) return <p className="text-sm text-text-muted">{PURGED}</p>;
   if (event.roster.length === 0) return <p className="text-sm text-text-muted">{EMPTY_ROSTER}</p>;
-  const canCancel = event.state !== 'started';
+  const canCancel = event.state !== 'started' && event.upcoming;
   const going = event.roster.filter((r) => r.status === 'going');
   const waiting = event.roster.filter((r) => r.status === 'waitlist');
   const item = (row: RosterRow) => (

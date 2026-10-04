@@ -5,6 +5,7 @@ import { AdminError } from '../../admin/components/AdminError';
 import { useCreateEvent, useUpdateEvent, type AdminEvent } from '../api';
 import {
   defaultDeadline,
+  shiftDate,
   fromEvent,
   notesCounter,
   NOTES_MAX,
@@ -60,7 +61,7 @@ export function EventForm({
   onSaved: (id: number) => void;
 }) {
   const [values, setValues] = useState<FormValues>(() => fromEvent(event));
-  const [deadlineEdited, setDeadlineEdited] = useState(event !== null);
+  const [deadlineEdited, setDeadlineEdited] = useState(false);
   const create = useCreateEvent();
   const update = useUpdateEvent(event?.id ?? 0);
   const mutation = event === null ? create : update;
@@ -69,8 +70,15 @@ export function EventForm({
   const set = (patch: Partial<FormValues>) => setValues((v) => ({ ...v, ...patch }));
   const setDate = (date: string) => {
     if (deadlineEdited || date === '') return set({ date });
-    const deadline = defaultDeadline(date);
-    return set({ date, deadlineDate: deadline.date, deadlineTime: deadline.time });
+    if (event === null) {
+      const deadline = defaultDeadline(date);
+      return set({ date, deadlineDate: deadline.date, deadlineTime: deadline.time });
+    }
+    // Keep the saved deadline's offset from the start by shifting it the same number of days.
+    return set({
+      date,
+      deadlineDate: shiftDate(event.deadline_local_date, event.local_date, date),
+    });
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();

@@ -5,6 +5,7 @@ import {
   allSignups,
   forgetEvent,
   forgetSignup,
+  pruneTo,
   readPastOpen,
   reconcile,
   saveSignup,
@@ -46,6 +47,14 @@ describe('device sign-up tokens (D10a)', () => {
     expect(reconcile(1, [{ registration_id: 21, status: 'going' }])).toBe(false);
     acknowledgePromotions(1);
     expect(signupsFor(1)[0]?.promoted).toBeUndefined();
+  });
+
+  it('prunes tokens for events that are gone or purged, keeping the rest', () => {
+    saveSignup(1, { eventId: 1, token: 'a', status: 'going' });
+    saveSignup(2, { eventId: 2, token: 'b', status: 'going' });
+    saveSignup(3, { eventId: 3, token: 'c', status: 'going' });
+    pruneTo([1, 2], [2]); // 3 is not listed any more, 2 was purged
+    expect(allSignups().map((s) => s.registrationId)).toEqual([1]);
   });
 
   it('ignores junk in storage', () => {

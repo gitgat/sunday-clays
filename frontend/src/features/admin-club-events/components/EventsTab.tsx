@@ -12,11 +12,10 @@ import { EventForm } from './EventForm';
 /** Upcoming first (soonest), then past (most recent), each with its counts; one opens in the editor. */
 export function EventsTab() {
   const events = useAdminClubEvents();
-  const [now] = useState(() => Date.now());
   const [selected, setSelected] = useState<number | 'new' | null>(null);
   if (events.isError) return <AdminError error={events.error} />;
   if (events.data === undefined) return <Skeleton label="Loading club events" />;
-  const sorted = sortEvents(events.data, now);
+  const sorted = sortEvents(events.data);
   const current = sorted.find((e) => e.id === selected);
   return (
     <div className="flex flex-col gap-4">

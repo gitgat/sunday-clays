@@ -37,11 +37,14 @@ export function SignUpSheet({
   open,
   onClose,
   onSignedUp,
+  prePick = true,
 }: {
   event: ClubEventDetail;
   open: boolean;
   onClose: () => void;
   onSignedUp: (done: SignedUp) => void;
+  /** Pre-pick "Which one are you?"; off when this device already signed someone up. */
+  prePick?: boolean;
 }) {
   const isDesktop = useIsDesktop();
   const qc = useQueryClient();
@@ -59,7 +62,7 @@ export function SignUpSheet({
 
   const live = directory.data ? pickable(directory.data) : [];
   const me = getMe();
-  const auto = live.find((s) => s.shooter_id === me);
+  const auto = prePick ? live.find((s) => s.shooter_id === me) : undefined;
   const picked: Picked | null =
     choice !== undefined ? choice : auto ? { id: auto.shooter_id, name: auto.display_name } : null;
   const pickedId = picked?.id ?? null;
@@ -69,6 +72,9 @@ export function SignUpSheet({
 
   const asksEmail = notListed || (picked !== null && check.data?.has_email === false);
   const already = !notListed && check.data?.already_signed_up === true;
+  const showAlready = already && picked !== null;
+  const showOnFile = !notListed && check.data?.has_email === true && !already;
+  const waitlistWarning = wouldWaitlist(event, 1 + guests);
   const emailOk = !asksEmail || email.trim() !== '';
   const ready =
     emailOk &&
@@ -149,12 +155,12 @@ export function SignUpSheet({
         {!notListed && picked === null && (
           <div className="flex flex-col gap-2">
             <label htmlFor={ids.search} className="text-sm font-medium">
-              Who are you?
+              {prePick ? 'Who are you?' : "Who's signing up?"}
             </label>
             <input
               id={ids.search}
               type="search"
-              placeholder="Search your name"
+              placeholder={prePick ? 'Search your name' : 'Search a name'}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className={INPUT}
@@ -196,13 +202,12 @@ export function SignUpSheet({
             </Button>
           </div>
         )}
-        <div aria-live="polite" className="flex flex-col gap-1">
-          {already && picked !== null && (
-            <p className="text-sm">{picked.name} is already on the list.</p>
-          )}
-          {!notListed && check.data?.has_email === true && !already && (
-            <p className="text-sm text-text-muted">{EMAIL_ON_FILE}</p>
-          )}
+        <div
+          aria-live="polite"
+          className={showAlready || showOnFile ? 'flex flex-col gap-1' : 'sr-only'}
+        >
+          {showAlready && <p className="text-sm">{picked.name} is already on the list.</p>}
+          {showOnFile && <p className="text-sm text-text-muted">{EMAIL_ON_FILE}</p>}
         </div>
         {checkError !== null && (
           <p role="alert" className="text-sm text-error">
@@ -253,8 +258,10 @@ export function SignUpSheet({
             <Button
               variant="tonal"
               aria-label="Fewer guests"
-              disabled={guests === 0}
-              onClick={() => setGuests((n) => Math.max(0, n - 1))}
+              aria-disabled={guests === 0 || undefined}
+              onClick={() => {
+                if (guests > 0) setGuests(guests - 1); // at the limit: a no-op that keeps focus
+              }}
             >
               −
             </Button>
@@ -264,16 +271,18 @@ export function SignUpSheet({
             <Button
               variant="tonal"
               aria-label="More guests"
-              disabled={guests >= event.max_guests}
-              onClick={() => setGuests((n) => Math.min(event.max_guests, n + 1))}
+              aria-disabled={guests >= event.max_guests || undefined}
+              onClick={() => {
+                if (guests < event.max_guests) setGuests(guests + 1);
+              }}
             >
               +
             </Button>
           </fieldset>
         )}
 
-        <p aria-live="polite" className="text-sm">
-          {wouldWaitlist(event, 1 + guests) ? WAITLIST_WARNING : null}
+        <p aria-live="polite" className={waitlistWarning ? 'text-sm' : 'sr-only'}>
+          {waitlistWarning ? WAITLIST_WARNING : null}
         </p>
         {error !== null && (
           <p role="alert" className="text-sm text-error">

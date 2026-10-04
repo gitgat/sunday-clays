@@ -2,10 +2,11 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
-import { renderWithProviders } from '../../../test/render';
+import { createTestQueryClient, renderWithProviders } from '../../../test/render';
 import { FeatureGate } from '../../../components/FeatureGate';
-import { banquetPast, fallFunShoot, fallFunSummary } from '../mocks';
-import { PAST_OPEN_KEY, saveSignup } from '../tokens';
+import { CLUB_EVENTS_KEY } from '../api';
+import { banquetPast, clubEventList, fallFunShoot, fallFunSummary } from '../mocks';
+import { allSignups, PAST_OPEN_KEY, saveSignup } from '../tokens';
 import { ClubEventsPage } from './ClubEventsPage';
 
 function featuresOn() {
@@ -36,18 +37,62 @@ describe('ClubEventsPage', () => {
     expect(localStorage.getItem(PAST_OPEN_KEY)).toBe('1');
   });
 
-  it("marks a cancelled event and this device's place", async () => {
+  it('says Cancelled, not "N came", for a past cancelled event', async () => {
     featuresOn();
+    server.use(
+      http.get('*/api/club-events', () =>
+        HttpResponse.json({
+          upcoming: [],
+          past: [{ ...banquetPast, state: 'cancelled', signups: 5 }],
+        }),
+      ),
+    );
+    const { user } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    await user.click(await screen.findByRole('button', { name: 'Past events (1)' }));
+    expect(screen.getByText('Sat, Aug 1 · Cancelled')).toBeInTheDocument();
+    expect(screen.queryByText(/came/)).not.toBeInTheDocument();
+  });
+
+  it("marks a cancelled event and keeps this device's chip off it", async () => {
+    featuresOn();
+    let detailReads = 0;
     saveSignup(13, { eventId: 1, token: 'tok-13', status: 'waitlist' });
     server.use(
       http.get('*/api/club-events', () =>
         HttpResponse.json({ upcoming: [{ ...fallFunSummary, state: 'cancelled' }], past: [] }),
       ),
-      http.get('*/api/club-events/:id', () => HttpResponse.json(fallFunShoot)),
+      http.get('*/api/club-events/:id', () => {
+        detailReads += 1;
+        return HttpResponse.json(fallFunShoot);
+      }),
     );
-    renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    const { queryClient } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
     expect(await screen.findByText('Cancelled')).toBeInTheDocument();
-    expect(await screen.findByText('Waitlist #1')).toBeInTheDocument();
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0)); // any chip fetch has settled
+    expect(detailReads).toBe(0);
+    expect(screen.queryByText('Waitlist #1')).not.toBeInTheDocument();
+  });
+
+  it('drops stored sign-ups for events that are gone or purged', async () => {
+    featuresOn();
+    saveSignup(11, { eventId: 1, token: 'keep', status: 'going' });
+    saveSignup(12, { eventId: 2, token: 'purged', status: 'going' }); // banquetPast is purged
+    saveSignup(13, { eventId: 77, token: 'gone', status: 'going' });
+    renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    await screen.findByRole('link', { name: /Fall Fun Shoot/ });
+    await waitFor(() => expect(allSignups().map((s) => s.registrationId)).toEqual([11]));
+  });
+
+  it('keeps a token saved after the cached list was read (no prune from stale cache)', async () => {
+    featuresOn();
+    const queryClient = createTestQueryClient();
+    // the list was cached before an organizer added event 5; this device then signed up for it
+    queryClient.setQueryData(CLUB_EVENTS_KEY, clubEventList);
+    saveSignup(61, { eventId: 5, token: 'new', status: 'going' });
+    renderWithProviders(<ClubEventsPage />, { route: '/club-events', queryClient });
+    await screen.findByRole('link', { name: /Fall Fun Shoot/ });
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(allSignups().map((s) => s.registrationId)).toEqual([61]);
   });
 
   it('says when nothing is coming up', async () => {
@@ -62,9 +107,30 @@ describe('ClubEventsPage', () => {
 });
 
 describe('ClubEventsPage errors', () => {
-  it('says the list is unavailable when it cannot load', async () => {
+  it('offers Try again when the list fails to load, and loads on retry', async () => {
     featuresOn();
-    server.use(http.get('*/api/club-events', () => HttpResponse.json({}, { status: 500 })));
+    let failing = true;
+    server.use(
+      http.get('*/api/club-events', () =>
+        failing ? HttpResponse.json({}, { status: 500 }) : HttpResponse.json(clubEventList),
+      ),
+    );
+    const { user } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load club events. Try again.',
+    );
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('link', { name: /Fall Fun Shoot/ })).toBeInTheDocument();
+  });
+
+  it("says the list is unavailable on the gate's 404", async () => {
+    featuresOn();
+    server.use(
+      http.get('*/api/club-events', () =>
+        HttpResponse.json({ detail: 'Not Found' }, { status: 404 }),
+      ),
+    );
     renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
     expect(await screen.findByText("Club events aren't available right now.")).toBeInTheDocument();
   });

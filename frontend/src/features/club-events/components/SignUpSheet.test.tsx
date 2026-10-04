@@ -120,6 +120,34 @@ describe('SignUpSheet', () => {
     expect(onSignedUp.mock.calls[0]?.[0]).toMatchObject({ name: 'Dana Quill', typedEmail: true });
   });
 
+  it('keeps the stepper focusable at its limits: aria-disabled and a no-op, never disabled', async () => {
+    const { user } = renderSheet();
+    await user.click(dialog().getByRole('button', { name: "I'm not listed" }));
+    const fewer = dialog().getByRole('button', { name: 'Fewer guests' });
+    const more = dialog().getByRole('button', { name: 'More guests' });
+    expect(fewer).toHaveAttribute('aria-disabled', 'true');
+    expect(fewer).toBeEnabled();
+    await user.click(more);
+    await user.click(more);
+    more.focus();
+    expect(more).toHaveAttribute('aria-disabled', 'true');
+    expect(more).toBeEnabled();
+    await user.click(more);
+    expect(more).toHaveFocus();
+    expect(dialog().getByText('2', { selector: '[data-guests]' })).toBeInTheDocument();
+    expect(fewer).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('leaves no layout gap for empty live regions', async () => {
+    const { user } = renderSheet({ ...fallFunShoot, waitlist_count: 0, spots_taken: 0 });
+    await user.click(dialog().getByRole('button', { name: "I'm not listed" }));
+    const regions = [...screen.getByRole('dialog').querySelectorAll('[aria-live="polite"]')].filter(
+      (el) => el.textContent === '',
+    );
+    expect(regions.length).toBeGreaterThan(0);
+    for (const el of regions) expect(el).toHaveClass('sr-only');
+  });
+
   it('warns exactly when the server would waitlist', async () => {
     const { user } = renderSheet({ ...fallFunShoot, waitlist_count: 0, spots_taken: 2 });
     await user.click(dialog().getByRole('button', { name: "I'm not listed" }));
@@ -272,6 +300,29 @@ describe('SignUpSheet', () => {
     await user.type(dialog().getByLabelText('Your first and last name'), 'Dana Quill');
     await user.type(dialog().getByLabelText('Your email'), '   ');
     expect(dialog().getByRole('button', { name: 'Sign me up' })).toBeDisabled();
+  });
+
+  it('does not re-run the name check after a 201, so "already on the list" never flashes', async () => {
+    let checks = 0;
+    let signedUpNow = false;
+    server.use(
+      http.get('*/api/club-events/:id/signup-check', () => {
+        checks += 1;
+        return HttpResponse.json({ has_email: true, already_signed_up: signedUpNow });
+      }),
+      http.post('*/api/club-events/:id/registrations', () => {
+        signedUpNow = true;
+        return HttpResponse.json(signedUp, { status: 201 });
+      }),
+    );
+    const { user, onSignedUp, queryClient } = renderSheet();
+    await user.type(dialog().getByRole('searchbox', { name: 'Who are you?' }), 'hadley');
+    await user.click(await dialog().findByRole('button', { name: 'Hadley, Ike' }));
+    await user.click(await screen.findByRole('button', { name: 'Sign me up' }));
+    await waitFor(() => expect(onSignedUp).toHaveBeenCalled());
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(checks).toBe(1);
+    expect(screen.queryByText(/already on the list/)).not.toBeInTheDocument();
   });
 
   it('announces the already-on-the-list line in a polite live region', async () => {

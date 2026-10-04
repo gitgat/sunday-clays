@@ -14,9 +14,7 @@ describe('club-events queries', () => {
     );
     const { result } = renderHook(() => useSignupCheck(1, 3), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    const query = client
-      .getQueryCache()
-      .find({ queryKey: ['/api/club-events', 1, 'signup-check', 3] });
+    const query = client.getQueryCache().find({ queryKey: ['club-event-signup-check', 1, 3] });
     expect(query?.options).toMatchObject({ staleTime: Infinity, refetchOnWindowFocus: false });
   });
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { Skeleton } from '../../../components/ui/Skeleton';
@@ -34,6 +35,7 @@ export function EventEditor({ event, onDeleted }: { event: AdminEvent; onDeleted
     setConfirm(null);
     cancel.reset();
     restore.reset();
+    remove.reset();
   };
   const hint = roster.data ? headHint(roster.data, event.capacity) : null;
 
@@ -86,6 +88,12 @@ export function EventEditor({ event, onDeleted }: { event: AdminEvent; onDeleted
               Cancel event
             </Button>
           )}
+          <Link
+            to={`/club-events/${event.id}`}
+            className="inline-flex min-h-11 items-center rounded-button px-3 text-sm text-accent underline"
+          >
+            Open member page
+          </Link>
           <Button variant="danger" onClick={() => setConfirm('delete')}>
             Delete
           </Button>
@@ -125,6 +133,7 @@ export function EventEditor({ event, onDeleted }: { event: AdminEvent; onDeleted
         open={confirm === 'restore'}
         title="Restore this club event"
         confirm="Restore"
+        variant="primary"
         busy={restore.isPending}
         onClose={closeConfirm}
         onConfirm={() =>

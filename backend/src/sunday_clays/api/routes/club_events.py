@@ -52,6 +52,7 @@ class ClubEventSummaryOut(BaseModel):
     max_guests: int
     signups: int
     purged: bool
+    upcoming: bool
 
 
 class ClubEventListOut(BaseModel):
@@ -122,6 +123,7 @@ def summary_out(summary: store.EventSummary) -> ClubEventSummaryOut:
         max_guests=event.max_guests,
         signups=summary.signups,
         purged=summary.purged,
+        upcoming=summary.upcoming,
     )
 
 

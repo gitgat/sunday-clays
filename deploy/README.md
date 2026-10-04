@@ -191,8 +191,27 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    task lands. Persistent data is always a bind under `/var/data/sunday-clays/<service>/`, never a
    Docker named volume (`scripts/check_stack.py` enforces it).
 
-4. Off-site copies: add `/var/data/sunday-clays/*` to the fleet restic set (nightly at 03:30 to
-   lakitu, then Backblaze). The app's own dump runs at 02:30 America/Los_Angeles, before restic.
+4. Off-site copies: add only `/var/data/sunday-clays/backups` (and `/var/data/sunday-clays/deployer`
+   if its state should survive) to the fleet restic set (nightly at 03:30 to lakitu, then
+   Backblaze). Do **not** back up the raw `db/` directory: a copy of a live PGDATA is not a
+   consistent backup, and it would keep deleted sign-ups and the `club_event_attempts` table
+   (IP fingerprints) that the dumps leave out. Keep `backups/` in its own restic snapshot group,
+   backed up in a separate invocation with its own tag, and prune it on its own:
+
+   ```bash
+   restic backup --tag sundayclays-backups /var/data/sunday-clays/backups
+   restic forget --tag sundayclays-backups --keep-within 7d --prune
+   ```
+
+   The local prune keeps dumps for at most 56 days (14 daily + 8 weekly) and each off-site
+   snapshot is kept 7 days more, so a deleted sign-up is gone from every copy in about 63 days,
+   which is the About page's "within about two months". A per-path or per-tag `forget` only works
+   when `backups/` is its own snapshot: in a snapshot that also holds other paths, the whole
+   snapshot is kept and the dumps with it. The Backblaze copy must get the same `forget`.
+   `--keep-within` counts back from the newest snapshot in the group, so the bound holds only while
+   the nightly `backups/` backup keeps running; if it stops, prune the group by hand.
+
+   The app's own dump runs at 02:30 America/Los_Angeles, before restic.
 
 ## Moving the deployer state to /var/data (one time)
 
@@ -630,6 +649,14 @@ says: every stored answer is keyed by the data version, the local date and the r
 
 ## Club events: emails and retention
 
+Before turning on Club events:
+
+1. Run the `ALTER DATABASE` and `SHOW` commands below.
+2. Force-update `sundayclays_api`, then `sundayclays_worker`.
+3. Confirm the off-site restic set leaves out `db/` and prunes `backups/` in its own tagged snapshot group (`--keep-within 7d`)
+   ("Off-site copies", step 4 of the first-time setup).
+4. Only then turn on the switch in Admin → Features.
+
 Club-event sign-ups store emails (Plan 20). A Postgres CHECK or NOT NULL violation writes the
 whole failing row, email included, to the database server's log (`DETAIL: Failing row contains
 (…)`). The app itself never logs it (Plan 20 D22), but the server log is outside the app, so run
@@ -649,9 +676,12 @@ restore.
 
 The daily `club_event_retention` job (after 03:00 club time, next to `page_view_rollup`) deletes
 every sign-up 30 days after its event's start, keeping only the two counts, and every shooter
-email unused for 730 days. The nightly backups keep a copy for up to 8 more weeks, which is what
-the About page says. The backups leave out `club_event_attempts` (rate-limit rows with IP
-fingerprints); registrations and contacts stay in them.
+email unused for 730 days. Copies in the backups last about 9 more weeks at most (below), which is what the
+About page's "within about two months" means. The backups leave out `club_event_attempts` (rate-limit rows with IP
+fingerprints), and so does every copy: the dumps skip the table and the off-site set holds only the
+dumps, never the raw `db/` directory. Registrations and contacts stay in the dumps. Off-site copies
+follow the same limit of about two months: 56 days local plus 7 days off-site
+(`restic forget --tag sundayclays-backups --keep-within 7d`), on Backblaze too.
 
 ## Backups and restore
 

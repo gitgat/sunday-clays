@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
+import { Button } from '../../../components/ui/Button';
 import { AdminPreviewBadge } from '../../../components/ui/AdminPreviewBadge';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
@@ -9,18 +10,25 @@ import { FEATURES_QUERY_KEY } from '../../../lib/features';
 import { useClubEvents } from '../api';
 import { EventCard } from '../components/EventCard';
 import { cameLine, formatEventDate } from '../format';
-import { readPastOpen, writePastOpen } from '../tokens';
+import { pruneToList, readPastOpen, writePastOpen } from '../tokens';
 
 /** /club-events (§5.7.2): upcoming cards, past events collapsed. No filters (D12). */
 export function ClubEventsPage() {
   const events = useClubEvents();
   const qc = useQueryClient();
+  const gate404 = events.error instanceof ApiError && events.error.code === 'http_404';
   useEffect(() => {
     // The gate's 404: the switch went off while this page was open, so refetch the switches.
     if (events.error instanceof ApiError && events.error.code === 'http_404') {
       void qc.invalidateQueries({ queryKey: FEATURES_QUERY_KEY });
     }
   }, [events.error, qc]);
+  const list = events.data;
+  // Only a list fetched since mount: a cached one may predate an event this device just joined.
+  const fresh = events.isFetchedAfterMount && !events.isFetching;
+  useEffect(() => {
+    if (fresh && list !== undefined) pruneToList(list);
+  }, [fresh, list]);
   const [pastOpen, setPastOpen] = useState(readPastOpen);
   const toggle = () => {
     writePastOpen(!pastOpen);
@@ -37,6 +45,15 @@ export function ClubEventsPage() {
       </p>
       {events.isPending ? (
         <Skeleton label="Loading club events" />
+      ) : events.isError && !gate404 ? (
+        <div className="flex flex-col gap-3">
+          <p role="alert">Could not load club events. Try again.</p>
+          <div>
+            <Button variant="tonal" onClick={() => void events.refetch()}>
+              Try again
+            </Button>
+          </div>
+        </div>
       ) : events.data === undefined ? (
         <EmptyState title="Club events aren't available right now." />
       ) : (
@@ -76,7 +93,8 @@ export function ClubEventsPage() {
                         {event.title}
                       </Link>
                       <span className="text-sm text-text-muted">
-                        {formatEventDate(event.local_date)} · {cameLine(event)}
+                        {formatEventDate(event.local_date)} ·{' '}
+                        {event.state === 'cancelled' ? 'Cancelled' : cameLine(event)}
                       </span>
                     </li>
                   ))}

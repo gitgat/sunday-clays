@@ -23,6 +23,53 @@ describe('EventForm, more', () => {
     expect(screen.getByLabelText('Deadline time')).toHaveValue('18:30');
   });
 
+  it('moves an existing event earlier and its deadline moves with it, until the deadline is edited', async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('*/api/admin/club-events/1', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(adminEvent);
+      }),
+    );
+    const { user } = renderWithProviders(<EventForm event={adminEvent} onSaved={vi.fn()} />, {
+      role: 'admin',
+    });
+    await user.clear(screen.getByLabelText('Date'));
+    await user.type(screen.getByLabelText('Date'), '2026-10-14');
+    expect(screen.getByLabelText('Sign-up deadline date')).toHaveValue('2026-10-13');
+    expect(screen.getByLabelText('Deadline time')).toHaveValue('20:00');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({
+      starts_local: '2026-10-14T23:30',
+      deadline_local: '2026-10-13T20:00',
+    });
+    await user.clear(screen.getByLabelText('Sign-up deadline date'));
+    await user.type(screen.getByLabelText('Sign-up deadline date'), '2026-10-01');
+    await user.clear(screen.getByLabelText('Date'));
+    await user.type(screen.getByLabelText('Date'), '2026-10-20');
+    expect(screen.getByLabelText('Sign-up deadline date')).toHaveValue('2026-10-01');
+  });
+
+  it('keeps a custom deadline offset when the date crosses a month boundary', async () => {
+    const event = {
+      ...adminEvent,
+      local_date: '2026-11-02',
+      deadline_local_date: '2026-10-31',
+      deadline_local_time: '18:00',
+    };
+    const { user } = renderWithProviders(<EventForm event={event} onSaved={vi.fn()} />, {
+      role: 'admin',
+    });
+    await user.clear(screen.getByLabelText('Date'));
+    await user.type(screen.getByLabelText('Date'), '2026-10-30');
+    expect(screen.getByLabelText('Sign-up deadline date')).toHaveValue('2026-10-28');
+    expect(screen.getByLabelText('Deadline time')).toHaveValue('18:00');
+    await user.clear(screen.getByLabelText('Date'));
+    await user.type(screen.getByLabelText('Date'), '2026-12-01');
+    expect(screen.getByLabelText('Sign-up deadline date')).toHaveValue('2026-11-29');
+  });
+
   it('hides the guest limit when guests are off, and saves an edit', async () => {
     let body: unknown = null;
     server.use(

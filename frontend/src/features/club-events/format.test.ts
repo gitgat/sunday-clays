@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  signedUpLine,
   cameLine,
   cancelOwnQuestion,
   chipText,
@@ -24,10 +25,10 @@ describe('club-event copy (§5.8), from club-time parts only (D21)', () => {
     expect(whenLine(fallFunShoot)).toBe('Sat, Oct 17 · 11:30 PM');
   });
 
-  it('says the deadline while open, then closed, started or nothing', () => {
+  it('says the deadline while open, then closed, or nothing', () => {
     expect(deadlineLine(fallFunShoot)).toBe('Sign up by Fri, Oct 16, 8:00 PM');
     expect(deadlineLine({ ...fallFunShoot, state: 'closed' })).toBe('Sign-ups closed');
-    expect(deadlineLine({ ...fallFunShoot, state: 'started' })).toBe('Happening now');
+    expect(deadlineLine({ ...fallFunShoot, state: 'started', upcoming: false })).toBeNull();
     expect(deadlineLine({ ...fallFunShoot, state: 'cancelled' })).toBeNull();
   });
 
@@ -65,6 +66,39 @@ describe('club-event copy (§5.8), from club-time parts only (D21)', () => {
   });
 });
 
+describe('club-event copy once the event is past (Ruling F3)', () => {
+  it('says nothing present-tense or actionable for a past event', () => {
+    for (const state of ['closed', 'started', 'open'] as const) {
+      expect(deadlineLine({ ...fallFunShoot, state, upcoming: false })).toBeNull();
+    }
+    const full = { capacity: 20, spots_taken: 20, waitlist_count: 0 };
+    expect(spotsLine({ ...full, upcoming: false })).toBe('Full');
+    expect(spotsLine({ ...full, upcoming: true, state: 'closed' })).toBe('Full');
+    expect(spotsLine({ ...full, upcoming: true, state: 'open' })).toBe('Full · join the waitlist');
+    const going = { status: 'going', guests: 0, waitlist_position: null } as const;
+    const past = { upcoming: false, state: 'started' } as const;
+    expect(statusLine(going, past)).toBe('You signed up.');
+    expect(statusLine({ ...going, guests: 2 }, past)).toBe('You signed up, plus 2 guests.');
+    expect(statusLine({ ...going, status: 'waitlist' }, past)).toBe('You were on the waitlist.');
+  });
+
+  it('says a past cancelled event was cancelled, in the past tense, and keeps no spot', () => {
+    const going = { status: 'going', guests: 0, waitlist_position: null } as const;
+    expect(statusLine(going, { upcoming: false, state: 'cancelled' })).toBe(
+      'This club event was cancelled.',
+    );
+  });
+
+  it('keeps the spot for a cancelled event and never says see you there', () => {
+    const going = { status: 'going', guests: 0, waitlist_position: null } as const;
+    const text = statusLine(going, { upcoming: true, state: 'cancelled' });
+    expect(text).toBe('Your spot is kept in case the organizers restore this club event.');
+    expect(
+      statusLine({ ...going, status: 'waitlist' }, { upcoming: true, state: 'cancelled' }),
+    ).toBe(text);
+  });
+});
+
 describe('club-event copy edge cases', () => {
   it('leaves the place blank rather than saying "null" if the server omits it', () => {
     const row = { status: 'waitlist', guests: 0, waitlist_position: null } as const;
@@ -76,5 +110,22 @@ describe('club-event copy edge cases', () => {
 
   it('returns the raw text for a date it cannot read instead of throwing', () => {
     expect(formatEventDate('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('signedUpLine', () => {
+  it('names the person, with guests or a waitlist place', () => {
+    expect(
+      signedUpLine('Dana Quill', { status: 'going', guests: 0, waitlist_position: null }),
+    ).toBe('Dana Quill is in.');
+    expect(
+      signedUpLine('Dana Quill', { status: 'going', guests: 2, waitlist_position: null }),
+    ).toBe('Dana Quill is in, plus 2 guests.');
+    expect(
+      signedUpLine('Dana Quill', { status: 'waitlist', guests: 0, waitlist_position: 3 }),
+    ).toBe('Dana Quill is on the waitlist: #3.');
+    expect(
+      signedUpLine('Dana Quill', { status: 'waitlist', guests: 0, waitlist_position: null }),
+    ).toBe('Dana Quill is on the waitlist.');
   });
 });

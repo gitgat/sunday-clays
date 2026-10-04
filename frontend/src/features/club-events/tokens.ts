@@ -106,6 +106,30 @@ export function forgetEvent(eventId: number): void {
   );
 }
 
+/** Drops tokens for events the list no longer shows, and for purged ones (D16: the token goes with
+ * the sign-up list). Called once a list read resolves, so stale tokens never outlive the list. */
+export function pruneTo(eventIds: Iterable<number>, purgedIds: Iterable<number>): void {
+  const known = new Set(eventIds);
+  const purged = new Set(purgedIds);
+  const store = parse(rawStore());
+  const next = Object.fromEntries(
+    Object.entries(store).filter(([, s]) => known.has(s.eventId) && !purged.has(s.eventId)),
+  );
+  if (Object.keys(next).length !== Object.keys(store).length) write(next);
+}
+
+/** The ids `pruneTo` wants from a list read. */
+export function pruneToList(list: {
+  upcoming: readonly { id: number; purged: boolean }[];
+  past: readonly { id: number; purged: boolean }[];
+}): void {
+  const all = [...list.upcoming, ...list.past];
+  pruneTo(
+    all.map((e) => e.id),
+    all.filter((e) => e.purged).map((e) => e.id),
+  );
+}
+
 /**
  * Keeps this event's tokens in step with its roster: a sign-up no longer listed (cancelled
  * elsewhere, removed, purged) is dropped, and each one's status is recorded. Returns whether one

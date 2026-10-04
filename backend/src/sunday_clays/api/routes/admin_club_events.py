@@ -390,7 +390,6 @@ def link_registration(
             {
                 "id": event_id,
                 "registration_id": registration_id,
-                "shooter_id": result.shooter_id,
                 "email_moved": result.email_moved,
                 "email_discarded": result.email_discarded,
             },

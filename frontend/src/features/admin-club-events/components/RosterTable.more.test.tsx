@@ -184,7 +184,8 @@ describe('RosterTable, more', () => {
     });
     await user.click(screen.getByRole('button', { name: 'Looks like Hadley, Ike? Link' }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Linked.');
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Linked.'));
+    await waitFor(() => expect(screen.getByTestId('roster-container')).toHaveFocus());
     await user.click(screen.getByRole('button', { name: 'Remove Hadley, Ike' }));
     expect(screen.queryByText('Linked.')).not.toBeInTheDocument();
   });

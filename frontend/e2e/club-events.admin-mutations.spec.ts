@@ -207,7 +207,9 @@ test('club events end to end: prepare, launch, sign up, waitlist, cancel, export
   await sheetA.getByLabel('Your email').fill(IKE_EMAIL);
   await sheetA.getByRole('button', { name: 'More guests' }).click();
   await sheetA.getByRole('button', { name: 'Sign me up' }).click();
-  await expect(a.page.getByText("You're in, plus 1 guest. See you there!")).toBeVisible(SLOW);
+  // The status box and the screen-reader announcer both say it; check the box.
+  const mine = (page: Page) => page.getByRole('region', { name: 'Your sign-up' });
+  await expect(mine(a.page).getByText("You're in, plus 1 guest. See you there!")).toBeVisible(SLOW);
 
   // 4. Viewer B: "I'm not listed" as Dana Quill: the event is full, so the waitlist.
   const b = await member(browser, baseURL, bodies);
@@ -218,7 +220,9 @@ test('club events end to end: prepare, launch, sign up, waitlist, cancel, export
   await expect(sheetB.getByText(WAITLIST_WARNING)).toBeVisible();
   await sheetB.getByRole('button', { name: 'Sign me up' }).click();
   await expect(
-    b.page.getByText("You're on the waitlist: #1. If a spot opens, you move up automatically."),
+    mine(b.page).getByText(
+      "You're on the waitlist: #1. If a spot opens, you move up automatically.",
+    ),
   ).toBeVisible(SLOW);
 
   // 9 (moved, Decision 1). The admin roster shows both emails; the CSV has the §5.5 header; the
@@ -272,7 +276,12 @@ test('club events end to end: prepare, launch, sign up, waitlist, cancel, export
   await cancelSheet.getByLabel('Type the email used for this sign-up.').fill(DANA_EMAIL);
   await cancelSheet.getByRole('button', { name: 'Cancel spot' }).click();
   await expect(cancelSheet).toHaveCount(0, SLOW);
-  await expect(c.page.getByText('Dana Quill')).toHaveCount(0, SLOW);
+  // The announcer names the cancelled spot; the roster row (the exact name) is gone.
+  await expect(c.page.getByTestId('club-event-announcer')).toHaveText(
+    "Dana Quill's spot was cancelled.",
+    SLOW,
+  );
+  await expect(c.page.getByText('Dana Quill', { exact: true })).toHaveCount(0, SLOW);
 
   // Review Focus 5: a 60-character typed name on a phone.
   const d = await member(browser, baseURL, bodies);

@@ -36,7 +36,8 @@ export function useClubEvent(id: number) {
 /** One check per picked name (D11 accepted exception); never refetched on focus. */
 export function useSignupCheck(eventId: number, shooterId: number | null, enabled = true) {
   return useQuery({
-    queryKey: ['/api/club-events', eventId, 'signup-check', shooterId] as const,
+    // its own root: a sign-up's invalidation of CLUB_EVENTS_KEY must not refetch the check
+    queryKey: ['club-event-signup-check', eventId, shooterId] as const,
     queryFn: () =>
       unwrap(
         api.GET('/api/club-events/{event_id}/signup-check', {

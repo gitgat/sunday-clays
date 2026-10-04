@@ -50,6 +50,28 @@ describe('RosterTable', () => {
     await waitFor(() => expect(removed).toBe(true));
   });
 
+  it('keeps a status region mounted and, after Remove, announces it and focuses the list', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.delete(
+        '*/api/admin/club-events/1/registrations/41',
+        () => new HttpResponse(null, { status: 204 }),
+      ),
+    );
+    const { user } = renderWithProviders(<RosterTable eventId={1} rows={rosterRows} />, {
+      role: 'admin',
+    });
+    const region = screen.getByRole('status');
+    expect(region).toBeEmptyDOMElement();
+    await user.click(screen.getByRole('button', { name: 'Remove Hadley, Ike' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }));
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Hadley, Ike was removed.'),
+    );
+    expect(screen.getByRole('status')).toBe(region); // the same node, so the change is announced
+    await waitFor(() => expect(screen.getByTestId('roster-container')).toHaveFocus());
+  });
+
   it('changes guests', async () => {
     stubViewport('desktop');
     let body: unknown = null;

@@ -10,6 +10,7 @@ export function ConfirmSheet({
   children,
   confirm,
   busy,
+  variant = 'danger',
   onConfirm,
   onClose,
 }: {
@@ -18,6 +19,7 @@ export function ConfirmSheet({
   children: ReactNode;
   confirm: string;
   busy: boolean;
+  variant?: 'danger' | 'primary';
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -27,7 +29,7 @@ export function ConfirmSheet({
       <div className="flex max-w-md flex-col gap-3">
         {children}
         <div className="flex flex-wrap gap-2">
-          <Button variant="danger" loading={busy} onClick={onConfirm}>
+          <Button variant={variant} loading={busy} onClick={onConfirm}>
             {confirm}
           </Button>
           <Button variant="ghost" onClick={onClose}>

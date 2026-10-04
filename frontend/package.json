@@ -18,7 +18,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:tz": "TZ=UTC vitest run src/features/club-events && TZ=Asia/Tokyo vitest run src/features/club-events",
+    "test:tz": "TZ=Pacific/Honolulu vitest run src/features/club-events src/features/admin-club-events && TZ=Asia/Tokyo vitest run src/features/club-events src/features/admin-club-events",
     "e2e": "playwright test"
   },
   "dependencies": {
