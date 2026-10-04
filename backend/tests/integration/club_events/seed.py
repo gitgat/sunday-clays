@@ -158,3 +158,28 @@ def seed_contact(
     if updated_at is not None:
         values["updated_at"] = updated_at
     session.execute(insert(ShooterContact).values(**values))
+
+
+IP = {"X-Real-IP": "203.0.113.7"}  # the client every API test speaks for, unless it says otherwise
+
+
+def seed_attempts(
+    session: Session,
+    ip: str,
+    action: str,
+    n: int,
+    *,
+    registration_id: int | None = None,
+    at: datetime | None = None,
+) -> None:
+    """`n` rate-limit rows for the fingerprint `ip` (use auth.deps.fingerprint on an address)."""
+    from sunday_clays.models import ClubEventAttempt  # local: keeps the block self-contained
+
+    stamp = at or datetime.now(UTC)
+    session.execute(
+        insert(ClubEventAttempt),
+        [
+            {"ip": ip, "action": action, "registration_id": registration_id, "at": stamp}
+            for _ in range(n)
+        ],
+    )

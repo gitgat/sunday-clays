@@ -24,6 +24,9 @@ NEVER = (
     "/api/predictions/next",
     "/api/club/milestones",
     "/api/shooters/{id}/summary",
+    "/api/club-events",
+    "/api/club-events/{event_id}",
+    "/api/club-events/{event_id}/signup-check",
 )
 
 

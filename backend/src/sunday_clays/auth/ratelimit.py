@@ -1,5 +1,6 @@
 """Rate limits per client-IP bucket: failed logins (``login_attempts``, C4, C8), fist bumps
-(``bump_attempts``, Plan 15) and page-view beacons (``page_view_attempts``, Plan 16)."""
+(``bump_attempts``, Plan 15), page-view beacons (``page_view_attempts``, Plan 16) and club-event
+sign-ups, checks and failed cancels (``club_event_attempts``, Plan 20)."""
 
 from datetime import UTC, datetime, timedelta
 from typing import Final
@@ -109,3 +110,51 @@ def prune_old_attempts(session: Session) -> None:
     cutoff = datetime.now(UTC) - PRUNE_AFTER
     for t in (_bump_attempts(), _attempts()):
         session.execute(delete(t).where(t.c.at < cutoff))
+
+
+# --- Plan 20: club events -------------------------------------------------------------------------
+# Per client fingerprint (D17), like bumps and page views. The limits are settings and the windows
+# are in domain/club_events.py; rows are pruned on insert after a day, and by the daily
+# club_event_retention job.
+
+
+def _club_event_attempts() -> Table:
+    return Base.metadata.tables["club_event_attempts"]
+
+
+def record_club_event_attempt(
+    session: Session, ip: str, action: str, registration_id: int | None = None
+) -> None:
+    """Insert one sign-up, check or failed cancel and prune rows older than a day, inside the
+    caller's transaction."""
+    _insert_and_prune(
+        session,
+        _club_event_attempts(),
+        PRUNE_AFTER,
+        ip=ip,
+        action=action,
+        registration_id=registration_id,
+    )
+
+
+def club_event_attempts(session: Session, ip: str, action: str, window: timedelta) -> int:
+    """Rows of `action` for this fingerprint within `window`."""
+    t = _club_event_attempts()
+    return _count_since(session, t, ip, datetime.now(UTC) - window, t.c.action == action)
+
+
+def club_event_registration_failures(
+    session: Session, registration_id: int, window: timedelta
+) -> int:
+    """Failed cancels on one registration within `window`, from any fingerprint."""
+    t = _club_event_attempts()
+    n = session.scalar(
+        select(func.count())
+        .select_from(t)
+        .where(
+            t.c.registration_id == registration_id,
+            t.c.action == "cancel_fail",
+            t.c.at > datetime.now(UTC) - window,
+        )
+    )
+    return n or 0
