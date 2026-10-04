@@ -25,13 +25,24 @@ NO_ETAG_PREFIXES: tuple[str, ...] = (
     "/api/predictions/",
     "/api/features/",
     "/api/og/",  # Plan 19 D6: public previews set their own Cache-Control
+    "/api/club-events/",  # Plan 20 D20
 )
 # Plan 19: routes whose own Cache-Control must stand (the middleware sets none for them)
 OWN_CACHE_CONTROL_PREFIXES: tuple[str, ...] = ("/api/og/",)
-NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/", "/api/features/")
+NO_STORE_PREFIXES: tuple[str, ...] = (
+    "/api/auth/",
+    "/api/admin/",
+    "/api/features/",
+    "/api/club-events/",  # Plan 20 D20
+)
 # Plan 19 D3: switches change without a data_version bump. Matched exactly (plus the "/"
 # prefixes above), so a sibling such as /api/features-x is not swept in.
 SWITCH_PATH = "/api/features"
+# Plan 20 D20: club-event rosters change without a data_version bump, so the list path itself
+# ("/api/club-events", plus the "/" prefixes above) is never tagged and never stored. Matched
+# exactly, so a sibling such as /api/club-events-x stays eligible.
+CLUB_EVENTS_PATH = "/api/club-events"
+UNTAGGED_PATHS: tuple[str, ...] = (SWITCH_PATH, CLUB_EVENTS_PATH)
 # Plan 15: fist-bump counts change without a data_version bump, so a data_version ETag would
 # answer 304 with stale counts. They are never tagged and never stored.
 NO_STORE_SUFFIXES: tuple[str, ...] = ("/bumps",)
@@ -42,7 +53,7 @@ def etag_eligible(method: str, path: str) -> bool:
     return (
         method == "GET"
         and path.startswith("/api/")
-        and path != SWITCH_PATH
+        and path not in UNTAGGED_PATHS
         and not path.startswith(NO_ETAG_PREFIXES)
         and not path.endswith(NO_STORE_SUFFIXES)
     )
@@ -56,7 +67,7 @@ def cache_control_for(path: str) -> str | None:
     if path.startswith(OWN_CACHE_CONTROL_PREFIXES):
         return None
     if (
-        path == SWITCH_PATH
+        path in UNTAGGED_PATHS
         or path.startswith(NO_STORE_PREFIXES)
         or (path.startswith("/api/") and path.endswith(NO_STORE_SUFFIXES))
     ):
