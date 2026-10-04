@@ -35,7 +35,21 @@ test('the window trims the inline table, not the data', async ({ page }) => {
   const rowsAt = async (w: string) => {
     await page.goto(`/club?w=${w}&ctot=table`);
     await whenSettled(page);
-    return page.getByRole('region', { name: 'Club totals over time' }).getByRole('row').count();
+    const region = page.getByRole('region', { name: 'Club totals over time' });
+    await expect(region.getByRole('table')).toBeVisible();
+    const rows = region.getByRole('row');
+    // Retry until the lazy chart has swapped in and the count stops changing.
+    let last = -1;
+    await expect
+      .poll(async () => {
+        const n = await rows.count();
+        const stable = n > 1 && n === last;
+        last = n;
+        return stable;
+      })
+      .toBe(true);
+    return last;
   };
-  expect(await rowsAt('8w')).toBeLessThan(await rowsAt('all'));
+  const trimmed = await rowsAt('8w');
+  expect(trimmed).toBeLessThan(await rowsAt('all'));
 });
