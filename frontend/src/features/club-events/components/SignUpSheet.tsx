@@ -125,8 +125,9 @@ export function SignUpSheet({
       },
       onError: (err) => {
         if (err instanceof ApiError && err.status === 404 && err.code === 'http_404') {
+          // The switches are refetched when the sheet closes (`close`), not now: the page's
+          // not-found view would replace this sheet before the message could be read.
           setBlocked(SWITCHED_OFF);
-          void qc.invalidateQueries({ queryKey: FEATURES_QUERY_KEY });
         } else if (err instanceof ApiError && CLOSING.has(err.code)) {
           setBlocked(err.message);
           void qc.invalidateQueries({ queryKey: clubEventKey(event.id) });
@@ -137,13 +138,13 @@ export function SignUpSheet({
     });
   };
 
+  const close = () => {
+    if (blocked === SWITCHED_OFF) void qc.invalidateQueries({ queryKey: FEATURES_QUERY_KEY });
+    onClose();
+  };
+
   return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title="Sign up"
-      placement={isDesktop ? 'center' : 'bottom'}
-    >
+    <Sheet open={open} onClose={close} title="Sign up" placement={isDesktop ? 'center' : 'bottom'}>
       <form ref={formRef} onSubmit={submit} noValidate className="flex max-w-md flex-col gap-4">
         {!notListed && picked === null && (
           <div className="flex flex-col gap-2">
