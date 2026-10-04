@@ -11,7 +11,7 @@ export async function chooseWindow(page: Page, preset: Preset): Promise<void> {
   const select = page.getByRole('combobox', { name: 'Time window' });
   const group = page.getByRole('group', { name: 'Time window' });
   // The control renders after the lazy route and the session: wait for one before branching.
-  await expect(select.or(group).first()).toBeVisible();
+  await expect(select.or(group).filter({ visible: true }).first()).toBeVisible();
   if (await select.isVisible()) {
     await select.selectOption(preset);
     return;

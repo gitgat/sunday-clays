@@ -8,9 +8,9 @@ test('club events stay invisible to members while the switch is off', async ({
 }, testInfo) => {
   await page.goto('/');
   await whenSettled(page);
-  // Positive controls first: the Glossary entry and the milestone card are switched on in the e2e
-  // stack, so they only appear once /api/features has answered. Until then every launch-switched
-  // piece renders nothing and the absence checks below would pass whether or not the gate works.
+  // whenSettled waits for the shell's features-settled marker, which is what stops the race with
+  // /api/features. These controls prove the e2e stack has those switches on, so the absence checks
+  // below compare against switches that are known to be loaded.
   await expect(page.getByRole('region', { name: /^Club milestone/ })).toBeVisible();
   if (testInfo.project.name === 'desktop') {
     await expect(
