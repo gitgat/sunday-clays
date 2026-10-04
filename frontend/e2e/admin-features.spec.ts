@@ -12,9 +12,10 @@ const LABELS = [
   'Add to Home Screen',
   'Club milestones',
   'Summary card',
+  'Club events', // Plan 20
 ];
 
-test('the Features page lists the six launch switches', async ({ page }) => {
+test('the Features page lists the seven launch switches', async ({ page }) => {
   await page.goto('/admin/features');
   await expect(page.getByRole('heading', { level: 1, name: 'Features' })).toBeVisible();
   await whenSettled(page);

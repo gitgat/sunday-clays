@@ -20,11 +20,12 @@ function FeaturesProbe() {
 }
 
 describe('FeaturesPage', () => {
-  it('lists exactly the six switches with labels, descriptions and dates', async () => {
+  it('lists exactly the seven switches with labels, descriptions and dates', async () => {
     renderWithProviders(<FeaturesPage />, { role: 'admin', route: '/admin/features' });
     expect(screen.getByRole('heading', { level: 1, name: 'Features' })).toBeInTheDocument();
     const launch = await screen.findByRole('region', { name: 'Launch switches' });
     const switches = within(launch).getAllByRole('switch');
+    expect(switches).toHaveLength(7);
     expect(switches.map((s) => s.textContent)).toEqual(
       featureSwitches.filter((f) => f.kind === 'feature').map((f) => f.label),
     );
