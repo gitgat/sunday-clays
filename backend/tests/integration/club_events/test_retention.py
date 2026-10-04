@@ -2,13 +2,14 @@
 start instant, emails after 730 days unused, rate-limit rows after a day. Logs counts only."""
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 
 import pytest
 from sqlalchemy import func, insert, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
+from sunday_clays.jobs import club_event_retention
 from sunday_clays.jobs.club_event_retention import (
     due_events,
     handle_club_event_retention,
@@ -56,6 +57,28 @@ def test_an_event_31_days_old_is_purged_and_29_days_old_is_kept(session: Session
     assert tuple(row) == (2, 4, RUN)
     assert (_registrations(session, old), _registrations(session, recent)) == (0, 1)
     assert purge_club_events(session, RUN + timedelta(days=1)).events == 0  # already purged
+
+
+def test_two_due_events_are_both_purged(session: Session) -> None:
+    ids = [
+        seed_event(session, starts_at=RUN - timedelta(days=days), deadline=RUN - timedelta(days=60))
+        for days in (45, 31)
+    ]
+    for event_id in ids:
+        seed_registration(session, event_id, name="Amy Ace", email="amy@example.com")
+    assert purge_club_events(session, RUN).events == 2
+    assert [_registrations(session, event_id) for event_id in ids] == [0, 0]
+
+
+def test_an_event_exactly_30_days_old_is_kept(session: Session) -> None:
+    """The cutoff is strict: starts_at exactly 30 days before the run is not yet due."""
+    event_id = seed_event(
+        session, starts_at=RUN - timedelta(days=30), deadline=RUN - timedelta(days=31)
+    )
+    seed_registration(session, event_id, name="Amy Ace", email="amy@example.com")
+    assert purge_club_events(session, RUN).events == 0
+    assert _registrations(session, event_id) == 1
+    assert purge_club_events(session, RUN + timedelta(seconds=1)).events == 1
 
 
 def test_purge_counts_from_starts_at(session: Session) -> None:
@@ -115,13 +138,18 @@ def test_attempts_older_than_a_day_are_pruned(session: Session) -> None:
 
 
 def test_the_handler_is_registered_and_logs_counts_only(
-    session: Session, caplog: pytest.LogCaptureFixture
+    session: Session, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> "FrozenDatetime":
+            return cls.fromtimestamp(RUN.timestamp(), tz)
+
+    monkeypatch.setattr(club_event_retention, "datetime", FrozenDatetime)
     caplog.set_level(logging.DEBUG)
     assert "club_event_retention" in load_handlers()
-    now = datetime.now(UTC)
     event_id = seed_event(
-        session, starts_at=now - timedelta(days=40), deadline=now - timedelta(days=41)
+        session, starts_at=RUN - timedelta(days=40), deadline=RUN - timedelta(days=41)
     )
     seed_registration(session, event_id, name="Dana Quill", email="dana.quill@example.com")
     handle_club_event_retention(session, {})

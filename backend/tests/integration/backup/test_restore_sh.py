@@ -187,7 +187,9 @@ def test_verify_restore_ignores_the_club_event_attempts_row_count(
     postgres: PostgresContainer,
 ) -> None:
     """Live has 2 attempt rows, the restore has 0, and the check must still pass; registrations
-    are still compared. Kills: counting club_event_attempts in row_counts."""
+    are still compared. Kills: counting club_event_attempts in row_counts. This test depends on
+    the backup.sh --exclude-table-data=club_event_attempts exclusion: without it the restore would
+    hold the rows and the skip here would go unproven."""
     make_database_with_a_response_cache(postgres, "verify_attempts")
     exit_code, output = run_backup_tool(postgres, "verify-restore.sh", "verify_attempts")
     assert exit_code == 0, output
