@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { allStrings, BANNED_WORDS } from '../../test/language';
-import { LINK_PREVIEWS_LINE, privacyLines } from './privacy';
+import { BACKUP_RETENTION_SENTENCE, LINK_PREVIEWS_LINE, privacyLines } from './privacy';
 
 const KEEP =
   'If you sign up for a club event, we keep your name and the email you give us so organizers can reach you.';
 const EMAILS =
   'Only organizers see emails. We never show them on the site and never send email from it. Sign-ups are deleted 30 days after the event; an email saved for a shooter stays for quicker sign-ups until an organizer removes it or it goes two years unused. Nightly backups that still hold deleted data are themselves deleted within about two months.';
+const IP =
+  'Fist bumps and visit counts are anonymous. They use a random ID your browser makes up, never tied to a name. We don’t store IP addresses for any of it';
 
 describe('About privacy points (Plan 19 §4, Plan 20 §5.7.6)', () => {
   it('lists the five standing points in order, with "No ads" last', () => {
@@ -13,7 +15,7 @@ describe('About privacy points (Plan 19 §4, Plan 20 §5.7.6)', () => {
       'No accounts. There are no logins beyond the club’s shared password.',
       'Browsing the site collects nothing about you: no name, no email. The site processes the club’s score sheets and analyses them.',
       '“Which one are you?” is remembered on your device and never sent anywhere.',
-      'Fist bumps and visit counts are anonymous. They use a random ID your browser makes up, never tied to a name. We don’t store IP addresses for any of it, sign-ups included.',
+      `${IP}.`,
       'No ads, no third-party trackers.',
     ]);
   });
@@ -25,6 +27,8 @@ describe('About privacy points (Plan 19 §4, Plan 20 §5.7.6)', () => {
       { text: EMAILS, feature: 'events' },
     ]);
     expect(lines).toHaveLength(7);
+    expect(lines.map((line) => line.text)).toContain(`${IP}, sign-ups included.`);
+    expect(lines[3]?.text).toContain(BACKUP_RETENTION_SENTENCE);
     expect(lines.at(-1)?.text).toBe('No ads, no third-party trackers.');
   });
 

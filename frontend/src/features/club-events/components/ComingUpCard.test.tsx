@@ -65,9 +65,36 @@ describe('ComingUpCard (§5.7.4)', () => {
     expect(await screen.findByText("You're in")).toBeInTheDocument();
   });
 
+  it('shows "Waitlist #2" for a waitlist token with a roster row at position 2', async () => {
+    switches({ events: true });
+    saveSignup(14, { eventId: 1, token: 'tok-14', status: 'waitlist' });
+    server.use(
+      http.get('*/api/club-events/:id', () =>
+        HttpResponse.json({
+          ...fallFunShoot,
+          roster: [
+            ...fallFunShoot.roster,
+            {
+              registration_id: 14,
+              name: 'Amy Ace',
+              shooter_id: null,
+              guests: 0,
+              status: 'waitlist',
+              waitlist_position: 2,
+            },
+          ],
+        }),
+      ),
+    );
+    renderWithProviders(<ComingUpCard />);
+    expect(await screen.findByText('Waitlist #2')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See details' })).toBeInTheDocument();
+  });
+
   it('first says that an event this device signed up for was cancelled', async () => {
     switches({ events: true });
     saveSignup(12, { eventId: 9, token: 'tok', status: 'going' });
+    let detailCalls = 0;
     server.use(
       http.get('*/api/club-events', () =>
         HttpResponse.json({
@@ -78,14 +105,16 @@ describe('ComingUpCard (§5.7.4)', () => {
           past: [],
         }),
       ),
-      http.get('*/api/club-events/:id', ({ params }) =>
-        HttpResponse.json({ ...fallFunShoot, id: Number(params.id), roster: [] }),
-      ),
+      http.get('*/api/club-events/:id', () => {
+        detailCalls += 1;
+        return HttpResponse.json(fallFunShoot);
+      }),
     );
     renderWithProviders(<ComingUpCard />);
     expect(
       await screen.findByText('Fall Fun Shoot on Sat, Oct 17 was cancelled.'),
     ).toBeInTheDocument();
+    expect(detailCalls).toBe(0); // D13: no token for the shown event, so no extra fetch
   });
 
   it('renders nothing when the only upcoming club event is cancelled, even one this device joined', async () => {

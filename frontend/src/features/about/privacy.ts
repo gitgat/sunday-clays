@@ -9,6 +9,10 @@ export interface PrivacyLine {
 export const LINK_PREVIEWS_LINE =
   'Links shared in chat apps show only the club name, and for a Sunday its date (or a special shoot’s title), how many shot and the round type. Never shooter names or scores.';
 
+/** How long backups hold deleted data (backup prune: 14 daily + 8 weekly dumps). One place to edit. */
+export const BACKUP_RETENTION_SENTENCE =
+  'Nightly backups that still hold deleted data are themselves deleted within about two months.';
+
 /**
  * Plan 20 §5.7.6. The two club-event lines state the retention rules of
  * backend/src/sunday_clays/domain/club_events.py (30 days, 730 days, D16): change them together.
@@ -27,14 +31,14 @@ export function privacyLines(clubEvents: boolean): PrivacyLine[] {
             feature: 'events' as const,
           },
           {
-            text: 'Only organizers see emails. We never show them on the site and never send email from it. Sign-ups are deleted 30 days after the event; an email saved for a shooter stays for quicker sign-ups until an organizer removes it or it goes two years unused. Nightly backups that still hold deleted data are themselves deleted within about two months.',
+            text: `Only organizers see emails. We never show them on the site and never send email from it. Sign-ups are deleted 30 days after the event; an email saved for a shooter stays for quicker sign-ups until an organizer removes it or it goes two years unused. ${BACKUP_RETENTION_SENTENCE}`,
             feature: 'events' as const,
           },
         ]
       : []),
     { text: '“Which one are you?” is remembered on your device and never sent anywhere.' },
     {
-      text: 'Fist bumps and visit counts are anonymous. They use a random ID your browser makes up, never tied to a name. We don’t store IP addresses for any of it, sign-ups included.',
+      text: `Fist bumps and visit counts are anonymous. They use a random ID your browser makes up, never tied to a name. We don’t store IP addresses for any of it${clubEvents ? ', sign-ups included' : ''}.`,
     },
     { text: 'No ads, no third-party trackers.' },
   ];

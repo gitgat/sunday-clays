@@ -34,6 +34,7 @@ describe('home widgets', () => {
     const main = widgetsForSlot(homeWidgets, 'main').map((w) => w.id);
     expect(main.indexOf('next-sunday')).toBeGreaterThanOrEqual(0);
     expect(main.indexOf('next-sunday')).toBeLessThan(main.indexOf('club-events-next'));
+    expect(main.indexOf('club-events-next')).toBeLessThan(main.indexOf('club-milestone'));
     expect(main.indexOf('club-events-next')).toBeLessThan(main.indexOf('on-this-day'));
     expect(homeWidgets.find((w) => w.id === 'club-events-next')).toMatchObject({
       order: 15,

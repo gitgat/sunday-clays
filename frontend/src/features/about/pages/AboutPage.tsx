@@ -76,13 +76,7 @@ export function AboutPage() {
           ))}
           {previews.visible && (
             <li>
-              {LINK_PREVIEWS_LINE}
-              {previews.preview && (
-                <>
-                  {' '}
-                  <AdminPreviewBadge feature="link_previews" />
-                </>
-              )}
+              {LINK_PREVIEWS_LINE} <AdminPreviewBadge feature="link_previews" />
             </li>
           )}
         </ul>
