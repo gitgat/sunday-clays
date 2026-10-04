@@ -14,7 +14,15 @@ import { CancelSheet, type CancelTarget } from '../components/CancelSheet';
 import { MyStatus } from '../components/MyStatus';
 import { Roster } from '../components/Roster';
 import { SignUpSheet, type SignedUp } from '../components/SignUpSheet';
-import { CANCELLED, deadlineLine, guestsRule, spotsLine, statusLine, whenLine } from '../format';
+import {
+  CANCELLED,
+  deadlineLine,
+  guestsRule,
+  spotsLine,
+  signedUpLine,
+  statusLine,
+  whenLine,
+} from '../format';
 import { acknowledgePromotions, forgetEvent, reconcile, useDeviceSignups } from '../tokens';
 
 /** /club-events/:id (§5.7.3). Every open/closed/started decision is the server's `state` (D21). */
@@ -29,7 +37,12 @@ export function ClubEventPage() {
   const [cancelling, setCancelling] = useState<CancelTarget | null>(null);
   const [justSigned, setJustSigned] = useState<SignedUp | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [cancelNote, setCancelNote] = useState('');
+  // `n` counts events, so an identical message is announced (and focus moved) again each time
+  const [spoken, setSpoken] = useState<{ kind: 'cancel' | 'signup'; text: string; n: number }>({
+    kind: 'signup',
+    text: '',
+    n: 0,
+  });
   const titleRef = useRef<HTMLHeadingElement>(null);
   const shareRef = useRef<HTMLDivElement>(null);
   const data = event.data;
@@ -48,8 +61,8 @@ export function ClubEventPage() {
     }
   }, [event.error, id, qc]);
   useEffect(() => {
-    if (cancelNote !== '') titleRef.current?.focus(); // the spot is gone: land on the title
-  }, [cancelNote]);
+    if (spoken.kind === 'cancel') titleRef.current?.focus(); // the spot is gone: land on the title
+  }, [spoken]);
   // The "Good news" line shows during the visit that found the promotion, not on every later one.
   useEffect(() => () => acknowledgePromotions(id), [id]);
 
@@ -102,7 +115,16 @@ export function ClubEventPage() {
     justSigned === null
       ? undefined
       : data.roster.find((r) => r.registration_id === justSigned.result.registration_id);
-  const announcement = cancelNote !== '' ? cancelNote : justRow ? statusLine(justRow, data) : '';
+  // The live region carries the words; the focused "Your sign-up" section is read by its label
+  // only, so the status is not said twice.
+  const announcement =
+    spoken.kind === 'cancel'
+      ? spoken.text
+      : justRow === undefined || justSigned === null
+        ? ''
+        : justRow.registration_id === myRow?.registration_id
+          ? statusLine(justRow, data)
+          : signedUpLine(justSigned.name, justRow);
   const canSignUpAnother = myRow !== undefined && data.state === 'open' && data.upcoming;
   const canCancel = data.state !== 'started' && data.upcoming;
   const deadline = deadlineLine(data);
@@ -234,7 +256,7 @@ export function ClubEventPage() {
         onClose={() => setSigningUp(false)}
         prePick={myRow === undefined}
         onSignedUp={(done) => {
-          setCancelNote('');
+          setSpoken((s) => ({ kind: 'signup', text: '', n: s.n + 1 }));
           setJustSigned(done);
           setSigningUp(false);
         }}
@@ -245,7 +267,7 @@ export function ClubEventPage() {
         aria-atomic="true"
         className="sr-only"
       >
-        {announcement}
+        <span key={spoken.n}>{announcement}</span>
       </p>
       <CancelSheet
         eventId={data.id}
@@ -253,7 +275,7 @@ export function ClubEventPage() {
         onClose={() => setCancelling(null)}
         onCancelled={(text) => {
           setJustSigned(null);
-          setCancelNote(text);
+          setSpoken((s) => ({ kind: 'cancel', text, n: s.n + 1 }));
         }}
       />
     </div>

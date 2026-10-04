@@ -81,6 +81,13 @@ describe('club-event copy once the event is past (Ruling F3)', () => {
     expect(statusLine({ ...going, status: 'waitlist' }, past)).toBe('You were on the waitlist.');
   });
 
+  it('says a past cancelled event was cancelled, in the past tense, and keeps no spot', () => {
+    const going = { status: 'going', guests: 0, waitlist_position: null } as const;
+    expect(statusLine(going, { upcoming: false, state: 'cancelled' })).toBe(
+      'This club event was cancelled.',
+    );
+  });
+
   it('keeps the spot for a cancelled event and never says see you there', () => {
     const going = { status: 'going', guests: 0, waitlist_position: null } as const;
     const text = statusLine(going, { upcoming: true, state: 'cancelled' });

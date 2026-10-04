@@ -183,9 +183,8 @@ describe('ClubEventPage', () => {
     serve({ state: 'cancelled', upcoming: false });
     renderPage();
     expect(await screen.findByText('This event was cancelled by the organizers.')).toBeVisible();
-    expect(
-      screen.getByText('Your spot is kept in case the organizers restore this club event.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('This club event was cancelled.')).toBeInTheDocument();
+    expect(screen.queryByText(/kept in case/)).not.toBeInTheDocument();
     expect(screen.queryByText(/See you there/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel my spot' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Cancel .*spot$/ })).not.toBeInTheDocument();
@@ -258,7 +257,7 @@ describe('ClubEventPage', () => {
     expect(screen.queryByRole('button', { name: 'Sign up' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Sign up someone else' }));
     expect(
-      within(screen.getByRole('dialog')).getByRole('searchbox', { name: 'Who are you?' }),
+      within(screen.getByRole('dialog')).getByRole('searchbox', { name: "Who's signing up?" }),
     ).toBeInTheDocument();
     await signUpTyped(user, 'Cal Cy');
     await waitFor(() =>
@@ -299,7 +298,7 @@ describe('ClubEventPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Sign up' }));
     const live = screen.getByTestId('club-event-announcer');
     expect(live).toHaveAttribute('aria-live', 'polite');
-    expect(live).toBeEmptyDOMElement();
+    expect(live.textContent).toBe('');
     await signUpTyped(user, 'Dana Quill');
     await waitFor(() => expect(live).toHaveTextContent("You're in. See you there!"));
     await waitFor(() => expect(screen.getByRole('region', { name: 'Your sign-up' })).toHaveFocus());
@@ -321,6 +320,53 @@ describe('ClubEventPage', () => {
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 1, name: 'Fall Fun Shoot' })).toHaveFocus(),
     );
+  });
+
+  it('re-announces an identical message each time it happens', async () => {
+    featuresOn();
+    server.use(
+      http.post('*/api/club-events/1/registrations/12/cancel', () =>
+        HttpResponse.json({ status: 'cancelled', promoted: 0 }),
+      ),
+    );
+    const { user } = renderPage();
+    const cancelDana = async () => {
+      await user.click(await screen.findByRole('button', { name: "Cancel Dana Quill's spot" }));
+      await user.type(
+        screen.getByLabelText('Type the email used for this sign-up.'),
+        'dana@example.com',
+      );
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel spot' }),
+      );
+    };
+    await cancelDana();
+    const announcer = screen.getByTestId('club-event-announcer');
+    await waitFor(() => expect(announcer).toHaveTextContent("Dana Quill's spot was cancelled."));
+    const first = announcer.firstChild;
+    await cancelDana();
+    await waitFor(() => expect(announcer.firstChild).not.toBe(first)); // a fresh node is announced
+    expect(announcer).toHaveTextContent("Dana Quill's spot was cancelled.");
+  });
+
+  it('names the other person when this device signs someone else up', async () => {
+    featuresOn();
+    saveSignup(11, { eventId: 1, token: 'tok-11', status: 'going' });
+    server.use(
+      http.post('*/api/club-events/:id/registrations', () =>
+        HttpResponse.json({ ...signedUp, registration_id: 12, token: 'tok-12' }, { status: 201 }),
+      ),
+    );
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Sign up someone else' }));
+    const sheet = within(screen.getByRole('dialog'));
+    expect(sheet.getByRole('searchbox', { name: "Who's signing up?" })).toBeInTheDocument();
+    expect(sheet.queryByText('Who are you?')).not.toBeInTheDocument();
+    await signUpTyped(user, 'Dana Quill');
+    await waitFor(() =>
+      expect(screen.getByTestId('club-event-announcer')).toHaveTextContent('Dana Quill is in.'),
+    );
+    expect(screen.getByTestId('club-event-announcer')).not.toHaveTextContent(/You're in/);
   });
 
   it('announces cancelling someone else by name', async () => {

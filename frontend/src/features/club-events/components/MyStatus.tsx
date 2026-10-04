@@ -23,10 +23,12 @@ export function MyStatus({
   focusOnMount?: boolean;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const focused = useRef(false);
   useEffect(() => {
-    if (focusOnMount) ref.current?.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!focusOnMount || focused.current) return;
+    focused.current = true; // once, when this section first appears
+    ref.current?.focus();
+  }, [focusOnMount]);
   return (
     <section
       ref={ref}

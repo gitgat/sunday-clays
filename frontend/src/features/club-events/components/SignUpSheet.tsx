@@ -72,6 +72,9 @@ export function SignUpSheet({
 
   const asksEmail = notListed || (picked !== null && check.data?.has_email === false);
   const already = !notListed && check.data?.already_signed_up === true;
+  const showAlready = already && picked !== null;
+  const showOnFile = !notListed && check.data?.has_email === true && !already;
+  const waitlistWarning = wouldWaitlist(event, 1 + guests);
   const emailOk = !asksEmail || email.trim() !== '';
   const ready =
     emailOk &&
@@ -152,12 +155,12 @@ export function SignUpSheet({
         {!notListed && picked === null && (
           <div className="flex flex-col gap-2">
             <label htmlFor={ids.search} className="text-sm font-medium">
-              Who are you?
+              {prePick ? 'Who are you?' : "Who's signing up?"}
             </label>
             <input
               id={ids.search}
               type="search"
-              placeholder="Search your name"
+              placeholder={prePick ? 'Search your name' : 'Search a name'}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className={INPUT}
@@ -201,19 +204,10 @@ export function SignUpSheet({
         )}
         <div
           aria-live="polite"
-          className={
-            (already && picked !== null) ||
-            (!notListed && check.data?.has_email === true && !already)
-              ? 'flex flex-col gap-1'
-              : 'sr-only'
-          }
+          className={showAlready || showOnFile ? 'flex flex-col gap-1' : 'sr-only'}
         >
-          {already && picked !== null && (
-            <p className="text-sm">{picked.name} is already on the list.</p>
-          )}
-          {!notListed && check.data?.has_email === true && !already && (
-            <p className="text-sm text-text-muted">{EMAIL_ON_FILE}</p>
-          )}
+          {showAlready && <p className="text-sm">{picked.name} is already on the list.</p>}
+          {showOnFile && <p className="text-sm text-text-muted">{EMAIL_ON_FILE}</p>}
         </div>
         {checkError !== null && (
           <p role="alert" className="text-sm text-error">
@@ -287,8 +281,8 @@ export function SignUpSheet({
           </fieldset>
         )}
 
-        <p aria-live="polite" className={wouldWaitlist(event, 1 + guests) ? 'text-sm' : 'sr-only'}>
-          {wouldWaitlist(event, 1 + guests) ? WAITLIST_WARNING : null}
+        <p aria-live="polite" className={waitlistWarning ? 'text-sm' : 'sr-only'}>
+          {waitlistWarning ? WAITLIST_WARNING : null}
         </p>
         {error !== null && (
           <p role="alert" className="text-sm text-error">

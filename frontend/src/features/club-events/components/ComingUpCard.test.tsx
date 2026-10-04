@@ -2,9 +2,10 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
-import { renderWithProviders } from '../../../test/render';
+import { createTestQueryClient, renderWithProviders } from '../../../test/render';
 import { WidgetSlot } from '../../home/components/WidgetSlot';
 import { homeWidgets } from '../../home/widgets';
+import { CLUB_EVENTS_KEY } from '../api';
 import { fallFunShoot, fallFunSummary } from '../mocks';
 import { allSignups, saveSignup } from '../tokens';
 import { ComingUpCard } from './ComingUpCard';
@@ -23,8 +24,16 @@ describe('ComingUpCard (§5.7.4)', () => {
         return HttpResponse.json({ upcoming: [fallFunSummary], past: [] });
       }),
     );
-    const { container } = renderWithProviders(<ComingUpCard />);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    let featureReads = 0;
+    server.use(
+      http.get('*/api/features', () => {
+        featureReads += 1;
+        return HttpResponse.json({ switches: {} });
+      }),
+    );
+    const { container, queryClient } = renderWithProviders(<ComingUpCard />);
+    await waitFor(() => expect(featureReads).toBeGreaterThan(0));
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(container).toBeEmptyDOMElement();
     expect(asked).toBe(0);
   });
@@ -125,6 +134,17 @@ describe('ComingUpCard (§5.7.4)', () => {
     expect(screen.queryByText("You're in")).not.toBeInTheDocument();
   });
 
+  it('keeps a token saved after the cached list was read (no prune from stale cache)', async () => {
+    switches({ events: true });
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(CLUB_EVENTS_KEY, { upcoming: [fallFunSummary], past: [] });
+    saveSignup(61, { eventId: 5, token: 'new', status: 'going' });
+    renderWithProviders(<ComingUpCard />, { queryClient });
+    await screen.findByRole('region', { name: 'Coming up' });
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(allSignups().map((s) => s.registrationId)).toEqual([61]);
+  });
+
   it('prunes tokens for events missing from the list', async () => {
     switches({ events: true });
     saveSignup(50, { eventId: 404, token: 'gone', status: 'going' });
@@ -147,9 +167,9 @@ describe('ComingUpCard (§5.7.4)', () => {
         }),
       ),
     );
-    renderWithProviders(<ComingUpCard />);
+    const { queryClient } = renderWithProviders(<ComingUpCard />);
     await screen.findByRole('link', { name: 'Sign up' });
-    await new Promise((r) => setTimeout(r, 100));
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0)); // the cancelled roster has landed
     expect(screen.queryByText(/was cancelled/)).not.toBeInTheDocument();
   });
 

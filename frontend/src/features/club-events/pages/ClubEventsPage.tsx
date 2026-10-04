@@ -24,9 +24,11 @@ export function ClubEventsPage() {
     }
   }, [events.error, qc]);
   const list = events.data;
+  // Only a list fetched since mount: a cached one may predate an event this device just joined.
+  const fresh = events.isFetchedAfterMount && !events.isFetching;
   useEffect(() => {
-    if (list !== undefined) pruneToList(list);
-  }, [list]);
+    if (fresh && list !== undefined) pruneToList(list);
+  }, [fresh, list]);
   const [pastOpen, setPastOpen] = useState(readPastOpen);
   const toggle = () => {
     writePastOpen(!pastOpen);

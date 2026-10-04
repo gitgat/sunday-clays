@@ -315,12 +315,12 @@ describe('SignUpSheet', () => {
         return HttpResponse.json(signedUp, { status: 201 });
       }),
     );
-    const { user, onSignedUp } = renderSheet();
+    const { user, onSignedUp, queryClient } = renderSheet();
     await user.type(dialog().getByRole('searchbox', { name: 'Who are you?' }), 'hadley');
     await user.click(await dialog().findByRole('button', { name: 'Hadley, Ike' }));
     await user.click(await screen.findByRole('button', { name: 'Sign me up' }));
     await waitFor(() => expect(onSignedUp).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 100));
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(checks).toBe(1);
     expect(screen.queryByText(/already on the list/)).not.toBeInTheDocument();
   });

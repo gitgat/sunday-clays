@@ -18,9 +18,11 @@ export function ComingUpCard() {
   const feature = useFeature('events');
   const events = useClubEvents({ enabled: feature.visible });
   const list = events.data;
+  // Only a list fetched since mount: a cached one may predate an event this device just joined.
+  const fresh = events.isFetchedAfterMount && !events.isFetching;
   useEffect(() => {
-    if (feature.visible && list !== undefined) pruneToList(list);
-  }, [feature.visible, list]);
+    if (feature.visible && fresh && list !== undefined) pruneToList(list);
+  }, [feature.visible, fresh, list]);
   if (!feature.visible || list === undefined) return null;
   const upcoming = list.upcoming;
   const next = upcoming.find((e) => e.state !== 'cancelled');

@@ -89,6 +89,8 @@ export function guestsRule(e: Pick<ClubEventSummary, 'allow_guests' | 'max_guest
 export const KEPT_SPOT = 'Your spot is kept in case the organizers restore this club event.';
 
 export function statusLine(row: Mine, ctx: Ctx = {}): string {
+  // past first: a past cancelled event keeps no spot to speak of
+  if (ctx.upcoming === false && ctx.state === 'cancelled') return 'This club event was cancelled.';
   if (ctx.state === 'cancelled') return KEPT_SPOT;
   if (ctx.upcoming === false) {
     if (row.status === 'waitlist') return 'You were on the waitlist.';
@@ -103,6 +105,14 @@ export function statusLine(row: Mine, ctx: Ctx = {}): string {
   return row.guests > 0
     ? `You're in, plus ${plural(row.guests, 'guest')}. See you there!`
     : "You're in. See you there!";
+}
+
+/** Announced when this device signs up someone else: names them, never says "you". */
+export function signedUpLine(name: string, row: Mine): string {
+  if (row.status === 'waitlist') {
+    return `${name} is on the waitlist${row.waitlist_position === null ? '' : `: #${row.waitlist_position}`}.`;
+  }
+  return row.guests > 0 ? `${name} is in, plus ${plural(row.guests, 'guest')}.` : `${name} is in.`;
 }
 
 export function chipText(row: Mine): string {

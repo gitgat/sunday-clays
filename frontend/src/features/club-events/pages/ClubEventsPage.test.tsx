@@ -2,8 +2,9 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
-import { renderWithProviders } from '../../../test/render';
+import { createTestQueryClient, renderWithProviders } from '../../../test/render';
 import { FeatureGate } from '../../../components/FeatureGate';
+import { CLUB_EVENTS_KEY } from '../api';
 import { banquetPast, clubEventList, fallFunShoot, fallFunSummary } from '../mocks';
 import { allSignups, PAST_OPEN_KEY, saveSignup } from '../tokens';
 import { ClubEventsPage } from './ClubEventsPage';
@@ -65,9 +66,9 @@ describe('ClubEventsPage', () => {
         return HttpResponse.json(fallFunShoot);
       }),
     );
-    renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    const { queryClient } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
     expect(await screen.findByText('Cancelled')).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, 100)); // time for any chip fetch to settle
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0)); // any chip fetch has settled
     expect(detailReads).toBe(0);
     expect(screen.queryByText('Waitlist #1')).not.toBeInTheDocument();
   });
@@ -80,6 +81,18 @@ describe('ClubEventsPage', () => {
     renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
     await screen.findByRole('link', { name: /Fall Fun Shoot/ });
     await waitFor(() => expect(allSignups().map((s) => s.registrationId)).toEqual([11]));
+  });
+
+  it('keeps a token saved after the cached list was read (no prune from stale cache)', async () => {
+    featuresOn();
+    const queryClient = createTestQueryClient();
+    // the list was cached before an organizer added event 5; this device then signed up for it
+    queryClient.setQueryData(CLUB_EVENTS_KEY, clubEventList);
+    saveSignup(61, { eventId: 5, token: 'new', status: 'going' });
+    renderWithProviders(<ClubEventsPage />, { route: '/club-events', queryClient });
+    await screen.findByRole('link', { name: /Fall Fun Shoot/ });
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(allSignups().map((s) => s.registrationId)).toEqual([61]);
   });
 
   it('says when nothing is coming up', async () => {
