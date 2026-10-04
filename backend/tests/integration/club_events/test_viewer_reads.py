@@ -22,6 +22,7 @@ from .seed import (
     seed_shooter,
 )
 
+BASE = "/api/admin/club-events"
 pytestmark = pytest.mark.usefixtures("events_on")
 LATE = datetime(2026, 10, 18, 6, 30, tzinfo=UTC)  # Sat Oct 17, 23:30 in Los Angeles
 
@@ -123,16 +124,25 @@ def test_the_upcoming_flag_matches_the_list_it_is_in_on_list_and_detail(
 
 
 def test_late_evening_event_stays_upcoming(
-    session: Session, viewer_client: TestClient, clock: Callable[[datetime], None]
+    session: Session,
+    viewer_client: TestClient,
+    admin_client: TestClient,
+    clock: Callable[[datetime], None],
 ) -> None:
     event_id = seed_event(session, starts_at=LATE, deadline=LATE - timedelta(hours=1))
     clock(datetime(2026, 10, 18, 6, 45, tzinfo=UTC))  # 23:45 in Los Angeles, Sunday in UTC
     body = _list(viewer_client)
     assert [(e["id"], e["state"]) for e in body["upcoming"]] == [(event_id, "started")]
+    assert body["upcoming"][0]["upcoming"] is True
+    assert viewer_client.get(f"/api/club-events/{event_id}").json()["upcoming"] is True
+    assert admin_client.get(BASE).json()[0]["upcoming"] is True
     clock(datetime(2026, 10, 18, 7, 1, tzinfo=UTC))  # 00:01 on Sunday in Los Angeles
     body = _list(viewer_client)
     assert body["upcoming"] == []
     assert [e["id"] for e in body["past"]] == [event_id]
+    assert body["past"][0]["upcoming"] is False
+    assert viewer_client.get(f"/api/club-events/{event_id}").json()["upcoming"] is False
+    assert admin_client.get(BASE).json()[0]["upcoming"] is False
 
 
 def test_a_purged_event_reports_its_final_counts_and_no_roster(

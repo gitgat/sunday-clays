@@ -195,12 +195,19 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    if its state should survive) to the fleet restic set (nightly at 03:30 to lakitu, then
    Backblaze). Do **not** back up the raw `db/` directory: a copy of a live PGDATA is not a
    consistent backup, and it would keep deleted sign-ups and the `club_event_attempts` table
-   (IP fingerprints) that the dumps leave out. Give the `backups` path this retention, so the About
-   page's "within about two months" holds (14 daily + 8 weekly dumps is at most 56 days, plus slack):
+   (IP fingerprints) that the dumps leave out. Keep `backups/` in its own restic snapshot group,
+   backed up in a separate invocation with its own tag, and prune it on its own:
 
    ```bash
-   restic forget --keep-within 60d --path /var/data/sunday-clays/backups --prune
+   restic backup --tag sundayclays-backups /var/data/sunday-clays/backups
+   restic forget --tag sundayclays-backups --keep-within 7d --prune
    ```
+
+   The local prune keeps dumps for at most 56 days (14 daily + 8 weekly) and each off-site
+   snapshot is kept 7 days more, so a deleted sign-up is gone from every copy in about 63 days,
+   which is the About page's "within about two months". A per-path or per-tag `forget` only works
+   when `backups/` is its own snapshot: in a snapshot that also holds other paths, the whole
+   snapshot is kept and the dumps with it. The Backblaze copy must get the same `forget`.
 
    The app's own dump runs at 02:30 America/Los_Angeles, before restic.
 
@@ -644,7 +651,7 @@ Before turning on Club events:
 
 1. Run the `ALTER DATABASE` and `SHOW` commands below.
 2. Force-update `sundayclays_api`, then `sundayclays_worker`.
-3. Confirm the off-site restic set leaves out `db/` and keeps at most 60 days of `backups/`
+3. Confirm the off-site restic set leaves out `db/` and prunes `backups/` in its own tagged snapshot group (`--keep-within 7d`)
    ("Off-site copies", step 4 of the first-time setup).
 4. Only then turn on the switch in Admin → Features.
 
@@ -671,7 +678,8 @@ email unused for 730 days. The nightly backups keep a copy for up to 8 more week
 the About page says. The backups leave out `club_event_attempts` (rate-limit rows with IP
 fingerprints), and so does every copy: the dumps skip the table and the off-site set holds only the
 dumps, never the raw `db/` directory. Registrations and contacts stay in the dumps. Off-site copies
-follow the same limit of about two months (`restic forget --keep-within 60d`).
+follow the same limit of about two months: 56 days local plus 7 days off-site
+(`restic forget --tag sundayclays-backups --keep-within 7d`), on Backblaze too.
 
 ## Backups and restore
 
