@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from sunday_clays.models import ShooterContact
 
-from .seed import NOW, seed_contact, seed_shooter
+from .seed import NOW, add_rule, seed_contact, seed_shooter
 
 BASE = "/api/admin/shooter-contacts"
 
@@ -60,3 +60,21 @@ def test_an_organizer_edit_sets_updated_at_to_the_store_clock_and_leaves_last_us
     assert body["updated_at"] == "2026-10-02T18:00:00Z"
     assert body["last_used_at"] == "2026-09-02T18:00:00Z"
     assert body["last_used_on"] == "2026-09-02"
+
+
+def test_a_merged_away_or_not_listed_shooter_cannot_get_a_contact(
+    session: Session, admin_client: TestClient
+) -> None:
+    target = seed_shooter(session, "Hadley, Ike")
+    source = seed_shooter(session, "Hadly, Ike", profile=False)
+    gone = seed_shooter(session, "Quill, Dana", status="deceased")
+    add_rule(session, "merge_shooter", {"source_shooter_id": source, "target_shooter_id": target})
+    body = {"email": "ike@example.com"}
+    merged = admin_client.put(f"{BASE}/{source}", json=body)
+    assert (merged.status_code, merged.json()["error"]["code"]) == (404, "shooter_not_found")
+    deceased = admin_client.put(f"{BASE}/{gone}", json=body)
+    assert (deceased.status_code, deceased.json()["error"]["code"]) == (404, "shooter_not_found")
+    assert (
+        session.scalar(select(ShooterContact.shooter_id).where(ShooterContact.shooter_id == source))
+        is None
+    )

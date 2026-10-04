@@ -25,7 +25,6 @@ from sunday_clays.models import (
     ClubEvent,
     ClubEventAttempt,
     ClubEventRegistration,
-    Shooter,
     ShooterContact,
 )
 
@@ -263,7 +262,7 @@ def set_guests(
 
 def reset_cancel_limit(session: Session, event_id: int, registration_id: int) -> int:
     """Deletes the registration's failed email cancels; returns how many."""
-    store.get_event(session, event_id)
+    store.lock_event(session, event_id)
     owned = session.scalar(select(R.id).where(R.id == registration_id, R.event_id == event_id))
     if owned is None:
         raise NotFoundError("registration_not_found", NOT_ON_LIST)
@@ -301,12 +300,19 @@ def link_registration(
         raise NotFoundError("shooter_not_found", "That shooter is not on the list.")
     if store.shooter_is_active(session, event_id, sid, merges):
         raise ConflictError("already_signed_up", f"{live[sid]} is already on the list.")
-    has_contact = store.contact_for(session, sid, merges) is not None
+    existing = store.contact_for(session, sid, merges)
     session.execute(
         update(R).where(R.id == registration_id).values(shooter_id=sid, registrant_email=None)
     )
     moved = False
-    if email is not None and not has_contact:
+    if existing is not None:
+        # The sign-up now uses the contact on file, and a use stamps `last_used_at` (§5.2).
+        session.execute(
+            update(ShooterContact)
+            .where(ShooterContact.shooter_id == existing.shooter_id)
+            .values(last_used_at=now)
+        )
+    if email is not None and existing is None:
         inserted = session.execute(
             pg_insert(ShooterContact)
             .values(shooter_id=sid, email=email, source="link", updated_at=now, last_used_at=now)
@@ -346,10 +352,15 @@ class AdminRosterRow:
     cancel_fail_count: int
 
 
-def suggest(typed: str, live: dict[int, str]) -> int | None:
+def _by_key(live: dict[int, str]) -> dict[str, int]:
+    return {name_key(name): sid for sid, name in sorted(live.items())}
+
+
+def suggest(typed: str, live: dict[int, str], by_key: dict[str, int] | None = None) -> int | None:
     """D15 with this plan's Decision 9: `similar_name_keys` with empty date sets, tried on the
-    typed key and on its last-word-first rotation ("ike hadly" and "hadly ike")."""
-    by_key = {name_key(name): sid for sid, name in sorted(live.items())}
+    typed key and on its last-word-first rotation ("ike hadly" and "hadly ike"). A caller with
+    many rows passes `by_key` (built once from `live`)."""
+    by_key = _by_key(live) if by_key is None else by_key
     candidates: dict[str, frozenset[date]] = {key: frozenset() for key in by_key}
     words = name_key(typed).split()
     keys = {" ".join(words), " ".join(words[-1:] + words[:-1])}
@@ -400,6 +411,7 @@ def admin_roster(session: Session, event_id: int, now: datetime) -> list[AdminRo
         )
         if rid is not None
     }
+    by_key = _by_key(live)
     contacts: dict[int, store.Contact | None] = {}
 
     def contact(sid: int) -> store.Contact | None:
@@ -422,7 +434,7 @@ def admin_roster(session: Session, event_id: int, now: datetime) -> list[AdminRo
         else:
             name, email_out = str(typed), email
             source = None if email is None else "registration"
-            hit = suggest(str(typed), live)
+            hit = suggest(str(typed), live, by_key)
             if hit is not None:
                 suggestion = SuggestedShooter(hit, live[hit], contact(hit) is not None)
         out.append(
@@ -495,7 +507,7 @@ def list_contacts(session: Session, shooter_id: int | None = None) -> list[Conta
 def set_contact(session: Session, shooter_id: int, raw_email: str, now: datetime) -> ContactRow:
     """Upsert with source `organizer`: only an organizer changes an email on file (D5). Sets
     `updated_at` (the "last email change") to the store clock; `last_used_at` is untouched."""
-    if session.scalar(select(Shooter.id).where(Shooter.id == shooter_id)) is None:
+    if shooter_id in merge_map(session) or shooter_id not in store.live_shooters(session):
         raise NotFoundError("shooter_not_found", "That shooter is not on the list.")
     email = rules.normalise_email(raw_email)
     session.execute(

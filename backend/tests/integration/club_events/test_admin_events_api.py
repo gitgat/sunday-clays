@@ -267,7 +267,7 @@ def test_lowering_the_guest_limit_never_alters_existing_registrations(
 ) -> None:
     event_id = seed_event(session, capacity=10, allow_guests=True, max_guests=3)
     seed_registration(session, event_id, name="Amy Ace", guests=3)
-    seed_registration(session, event_id, name="Bob Bee", guests=2, status="waitlist")
+    seed_registration(session, event_id, name="Bob Bee", guests=2)
     clock(NOW)
     body = admin_client.patch(f"{BASE}/{event_id}", json={"max_guests": 1}).json()
     assert (body["max_guests"], body["spots_taken"]) == (1, 4 + 3)
@@ -275,7 +275,7 @@ def test_lowering_the_guest_limit_never_alters_existing_registrations(
     assert [tuple(r) for r in rows] == [("Amy Ace", 3, "going"), ("Bob Bee", 2, "going")]
 
 
-def test_capacity_and_restore_never_promote_on_a_started_event(
+def test_a_capacity_raise_never_promotes_on_a_started_event(
     session: Session, admin_client: TestClient, clock: Callable[[datetime], None]
 ) -> None:
     event_id = seed_event(session, capacity=1)

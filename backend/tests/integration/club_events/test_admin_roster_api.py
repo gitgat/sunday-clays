@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from sunday_clays.auth.deps import fingerprint
@@ -20,6 +21,7 @@ from .seed import (
     IP,
     NOW,
     STARTS,
+    add_rule,
     seed_attempts,
     seed_contact,
     seed_event,
@@ -301,7 +303,7 @@ def test_a_link_that_moves_an_email_stamps_the_contact_clock(
     assert tuple(stamps) == (NOW, NOW)
 
 
-def test_a_link_that_discards_leaves_the_contact_untouched(
+def test_a_link_that_discards_stamps_last_used_and_keeps_updated_at(
     session: Session,
     admin_client: TestClient,
     world: dict[str, int],
@@ -316,12 +318,42 @@ def test_a_link_that_discards_leaves_the_contact_untouched(
     clock(NOW)
     other = seed_event(session, title="Banquet")
     typed = seed_registration(session, other, name="Ike Hadly", email="ike.typo@example.com")
-    admin_client.post(
+    response = admin_client.post(
         f"{BASE}/{other}/registrations/{typed}/link", json={"shooter_id": world["ike"]}
     )
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["email_discarded"], body["email_moved"]) == (True, False)
     stamps = session.execute(
         select(ShooterContact.updated_at, ShooterContact.last_used_at).where(
             ShooterContact.shooter_id == world["ike"]
         )
     ).one()
-    assert tuple(stamps) == (old, None)
+    assert tuple(stamps) == (old, NOW)
+
+
+def test_the_link_race_message_names_the_resolved_shooter(
+    session: Session,
+    admin_client: TestClient,
+    world: dict[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old = seed_shooter(session, "Hadly, Ike", profile=False)
+    add_rule(
+        session, "merge_shooter", {"source_shooter_id": old, "target_shooter_id": world["ike"]}
+    )
+
+    class Diag:
+        constraint_name = "uq_club_event_registrations_shooter"
+
+    class Orig(Exception):
+        diag = Diag()
+
+    def race(*_args: Any, **_kwargs: Any) -> None:
+        raise DBAPIError("INSERT", {}, Orig())
+
+    monkeypatch.setattr("sunday_clays.domain.club_event_admin.link_registration", race)
+    url = f"{BASE}/{world['event']}/registrations/{world['typo']}/link"
+    response = admin_client.post(url, json={"shooter_id": old})
+    assert _error(response) == (409, "already_signed_up")
+    assert response.json()["error"]["message"] == "Hadley, Ike is already on the list."

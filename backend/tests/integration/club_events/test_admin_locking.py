@@ -23,6 +23,7 @@ ACTIONS: dict[str, Action] = {
     "restore": lambda s, w: admin.restore_event(s, w["event"], NOW),
     "delete": lambda s, w: admin.delete_event(s, w["event"]),
     "remove": lambda s, w: admin.remove_registration(s, w["event"], w["reg"], NOW),
+    "reset": lambda s, w: admin.reset_cancel_limit(s, w["event"], w["reg"]),
     "guests": lambda s, w: admin.set_guests(s, w["event"], w["reg"], 1, NOW),
     "link": lambda s, w: admin.link_registration(s, w["event"], w["typed"], w["shooter"], NOW),
 }
