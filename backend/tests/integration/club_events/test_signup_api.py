@@ -396,7 +396,7 @@ def _stamps(session: Session, shooter_id: int) -> tuple[datetime | None, datetim
     return row[0], row[1]
 
 
-def test_reusing_a_contact_refreshes_both_timestamps(
+def test_reusing_a_contact_stamps_only_last_used_at(
     session: Session, viewer_client: TestClient, clock: Callable[[datetime], None]
 ) -> None:
     clock(FROZEN)
@@ -404,7 +404,7 @@ def test_reusing_a_contact_refreshes_both_timestamps(
     sid = seed_shooter(session, "Hadley, Ike")
     seed_contact(session, sid, "ike.hadley@example.com", updated_at=LONG_AGO, last_used_at=LONG_AGO)
     assert _post(viewer_client, event_id, shooter_id=sid).status_code == 201
-    assert _stamps(session, sid) == (FROZEN, FROZEN)
+    assert _stamps(session, sid) == (FROZEN, LONG_AGO)
 
 
 def test_a_new_contact_is_stamped_with_the_stores_clock(
@@ -415,4 +415,59 @@ def test_a_new_contact_is_stamped_with_the_stores_clock(
     sid = seed_shooter(session, "Hadley, Ike")
     response = _post(viewer_client, event_id, shooter_id=sid, email="ike.hadley@example.com")
     assert response.status_code == 201
-    assert _stamps(session, sid)[0] == FROZEN
+    assert _stamps(session, sid) == (FROZEN, FROZEN)
+
+
+# --- cleanup round -------------------------------------------------------------------------------
+
+
+def test_cancelled_rows_do_not_count_toward_the_active_limit(
+    session: Session, viewer_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    event_id = seed_event(session)
+    seed_registration(session, event_id, name="Pat Kim", status="cancelled", cancelled_via="device")
+    monkeypatch.setattr(rules, "MAX_ACTIVE_PER_EVENT", 1)
+    assert _post(viewer_client, event_id, name="Amy Ace", email="a@example.com").status_code == 201
+
+
+def _race_duplicate(
+    session: Session, viewer_client: TestClient, monkeypatch: pytest.MonkeyPatch, **body: Any
+) -> Any:
+    """Sign up twice with the pre-checks bypassed, so the second hits the unique index."""
+    from sunday_clays.domain import club_event_store as store
+
+    event_id = seed_event(session)
+    monkeypatch.setattr(store, "shooter_is_active", lambda *a, **k: False)
+    monkeypatch.setattr(store, "name_key_is_active", lambda *a, **k: False)
+    assert _post(viewer_client, event_id, **body).status_code == 201
+    return _post(viewer_client, event_id, **body)
+
+
+def test_a_raced_duplicate_names_the_merged_target_shooter(
+    session: Session, viewer_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = seed_shooter(session, "Hadley, Ike")
+    source = seed_shooter(session, "Hadly, Ike", profile=False)
+    add_rule(session, "merge_shooter", {"source_shooter_id": source, "target_shooter_id": target})
+    seed_contact(session, target, "ike.hadley@example.com")
+    response = _race_duplicate(session, viewer_client, monkeypatch, shooter_id=source)
+    assert _error(response) == (409, "already_signed_up")
+    assert response.json()["error"]["message"] == "Hadley, Ike is already on the list."
+
+
+def test_a_raced_duplicate_uses_the_cleaned_typed_name(
+    session: Session, viewer_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    response = _race_duplicate(
+        session, viewer_client, monkeypatch, name="\uff30at   Kim", email="pat.kim@example.com"
+    )
+    assert _error(response) == (409, "already_signed_up")
+    assert response.json()["error"]["message"] == "Pat Kim is already on the list."
+
+
+def test_an_invalid_typed_name_is_a_domain_error_not_a_crash(
+    session: Session, viewer_client: TestClient
+) -> None:
+    event_id = seed_event(session)
+    response = _post(viewer_client, event_id, name="Cher", email="cher@example.com")
+    assert _error(response) == (400, "name_needs_last")

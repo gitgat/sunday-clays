@@ -23,6 +23,7 @@ from sunday_clays.db import SessionDep
 from sunday_clays.domain import club_event_store as store
 from sunday_clays.domain import club_events as rules
 from sunday_clays.domain.errors import DomainError
+from sunday_clays.domain.identity import merge_map
 
 router = APIRouter(
     prefix="/api/club-events",
@@ -187,10 +188,15 @@ def sign_up(
         raise TooManyRequestsError("rate_limited", rules.TOO_MANY)
     # A sign-up that loses a race on a unique index gets the spec's "{name} is already on the
     # list." (§5.4), not the generic fallback.
+    who: str | None
     if body.shooter_id is not None:
-        who = store.display_names(session, [body.shooter_id]).get(body.shooter_id)
+        resolved = store.resolve(merge_map(session), body.shooter_id)
+        who = store.display_names(session, [resolved]).get(resolved)
     else:
-        who = " ".join((body.name or "").split())
+        try:
+            who = rules.typed_name(body.name or "")[0]
+        except DomainError:
+            who = None  # the store raises the same refusal; the generic fallback is never shown
     duplicate = f"{who} is already on the list." if who else "That name is already on the list."
     with rules.scrub_db_errors(session, duplicate_message=duplicate):
         result = store.sign_up(

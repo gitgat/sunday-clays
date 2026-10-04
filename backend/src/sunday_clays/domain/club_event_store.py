@@ -414,9 +414,7 @@ def _use_contact(session: Session, owner: int, given: str | None, now: datetime)
         if inserted is not None:
             return "given"
     session.execute(
-        update(ShooterContact)
-        .where(ShooterContact.shooter_id == owner)
-        .values(last_used_at=now, updated_at=now)
+        update(ShooterContact).where(ShooterContact.shooter_id == owner).values(last_used_at=now)
     )
     return "on_file"
 

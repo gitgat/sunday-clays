@@ -126,7 +126,7 @@ def test_queue_order_follows_lock_order(committed_engine: Engine, test_settings:
         b.commit()
         a_result = _typed(event_id, "Dana Quill")(a)
         a.commit()
-        queue_at = dict(a.execute(select(R.id, R.queue_at)).all())  # type: ignore[arg-type]
+        queue_at = {row[0]: row[1] for row in a.execute(select(R.id, R.queue_at))}
     finally:
         a.close()
         b.close()

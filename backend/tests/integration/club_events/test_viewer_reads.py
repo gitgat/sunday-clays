@@ -151,8 +151,8 @@ def test_the_roster_lists_going_then_the_waitlist_by_display_name(
     target = seed_shooter(session, "Ace, Amy")
     source = seed_shooter(session, "Ace, Aimee", profile=False)
     add_rule(session, "merge_shooter", {"source_shooter_id": source, "target_shooter_id": target})
-    a = seed_registration(session, event_id, shooter_id=renamed, guests=1)
     b = seed_registration(session, event_id, name="Dana Quill", status="waitlist", guests=2)
+    a = seed_registration(session, event_id, shooter_id=renamed, guests=1)  # going, later id
     c = seed_registration(session, event_id, shooter_id=source, status="waitlist")
     d = seed_registration(session, event_id, shooter_id=profile_gone, status="waitlist")
     seed_registration(

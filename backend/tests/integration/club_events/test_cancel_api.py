@@ -2,7 +2,7 @@
 
 from collections import Counter
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -229,3 +229,51 @@ def test_token_cancel_ignores_registration_fail_limit(
     for n in range(5):
         _cancel(viewer_client, event_id, rid, ip=f"198.51.100.{n + 1}", email="wrong@example.com")
     assert _cancel(viewer_client, event_id, rid, ip="198.51.100.77", token=TOKEN).status_code == 200
+
+
+# --- contact_for ordering (merged shooters) ------------------------------------------------------
+
+OLD = datetime(2025, 1, 1, tzinfo=UTC)
+NEWER = datetime(2026, 1, 1, tzinfo=UTC)
+NEWEST = datetime(2026, 6, 1, tzinfo=UTC)
+
+
+def _merged_family(session: Session, canonical_email: str | None) -> tuple[int, int, int, int]:
+    from .seed import add_rule
+
+    event_id = seed_event(session)
+    target = seed_shooter(session, "Hadley, Ike")
+    older = seed_shooter(session, "Hadly, Ike", profile=False)
+    newer = seed_shooter(session, "Hadlee, Ike", profile=False)
+    for source in (older, newer):
+        add_rule(
+            session, "merge_shooter", {"source_shooter_id": source, "target_shooter_id": target}
+        )
+    if canonical_email is not None:
+        seed_contact(session, target, canonical_email, updated_at=OLD)
+    seed_contact(session, older, "older.source@example.com", updated_at=NEWER)
+    seed_contact(session, newer, "newer.source@example.com", updated_at=NEWEST)
+    rid = seed_registration(session, event_id, shooter_id=target)
+    return event_id, rid, target, newer
+
+
+def test_the_canonical_contact_cancels_and_a_source_contact_does_not(
+    session: Session, viewer_client: TestClient
+) -> None:
+    event_id, rid, _, _ = _merged_family(session, "ike.hadley@example.com")
+    assert (
+        _cancel(viewer_client, event_id, rid, email="newer.source@example.com").status_code == 403
+    )
+    assert _cancel(viewer_client, event_id, rid, email="ike.hadley@example.com").status_code == 200
+
+
+def test_without_a_canonical_contact_the_newest_updated_source_wins(
+    session: Session, viewer_client: TestClient
+) -> None:
+    event_id, rid, _, _ = _merged_family(session, None)
+    assert (
+        _cancel(viewer_client, event_id, rid, email="older.source@example.com").status_code == 403
+    )
+    assert (
+        _cancel(viewer_client, event_id, rid, email="newer.source@example.com").status_code == 200
+    )
