@@ -1,5 +1,7 @@
 import type { Page } from '@playwright/test';
 
+import { expect } from './fixtures';
+
 /** Helpers for the specs of pages that follow the header time window (`?w=`). */
 
 export type Preset = '8w' | '12m' | 'ytd' | 'all';
@@ -7,15 +9,15 @@ export type Preset = '8w' | '12m' | 'ytd' | 'all';
 /** Picks a preset in the header time window: the segmented control on desktop, the select on a phone. */
 export async function chooseWindow(page: Page, preset: Preset): Promise<void> {
   const select = page.getByRole('combobox', { name: 'Time window' });
+  const group = page.getByRole('group', { name: 'Time window' });
+  // The control renders after the lazy route and the session: wait for one before branching.
+  await expect(select.or(group).first()).toBeVisible();
   if (await select.isVisible()) {
     await select.selectOption(preset);
     return;
   }
   const label = { '8w': '8W', '12m': '12M', ytd: 'YTD', all: 'All' }[preset];
-  await page
-    .getByRole('group', { name: 'Time window' })
-    .getByRole('button', { name: label, exact: true })
-    .click();
+  await group.getByRole('button', { name: label, exact: true }).click();
 }
 
 /** Aug 3, 2026 (the wording of lib/format.ts formatDate, from an ISO date). */

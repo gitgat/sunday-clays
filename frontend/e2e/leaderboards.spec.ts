@@ -3,7 +3,12 @@ import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from './fixtures';
-import { expectNoSideScroll, expectTapTargets, expectTitlesUntruncated } from './layout';
+import {
+  expectNoSideScroll,
+  expectTapTargets,
+  expectTitlesUntruncated,
+  whenSettled,
+} from './layout';
 import { chooseWindow, datesText, longDate, monthsBack } from './window';
 
 interface Board {
@@ -71,6 +76,11 @@ test('the header window is the only date control: each preset is the API board f
   ] as const) {
     const api = await board(page, `period=${period}&metric=wins`);
     await chooseWindow(page, preset);
+    // 8W is the default window, so the URL drops `w`; every other preset names itself.
+    await expect(page).toHaveURL(
+      preset === '8w' ? /^[^?]*\?(?!.*\bw=)/ : new RegExp(`[?&]w=${preset}(&|$)`),
+    );
+    await whenSettled(page);
     const rows = standings(page);
     await expect(rows).toHaveCount(Math.min(10, api.rows.length));
     const top = api.rows[0];
