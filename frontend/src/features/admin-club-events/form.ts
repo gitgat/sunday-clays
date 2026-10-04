@@ -94,12 +94,23 @@ export function sourceLabel(row: AdminRosterRow): string {
   return row.typed_name === null ? 'List' : 'New name';
 }
 
-/** Upcoming club events soonest first, then past ones most recent first. */
-export function sortEvents(events: readonly AdminEvent[], now: number): AdminEvent[] {
+/** Upcoming club events soonest first, then past ones most recent first; the split is the
+ * server's `upcoming` flag, never the device clock. */
+export function sortEvents(events: readonly AdminEvent[]): AdminEvent[] {
   const time = (e: AdminEvent) => Date.parse(e.starts_at);
-  const upcoming = events.filter((e) => time(e) >= now).sort((a, b) => time(a) - time(b));
-  const past = events.filter((e) => time(e) < now).sort((a, b) => time(b) - time(a));
+  const upcoming = events.filter((e) => e.upcoming).sort((a, b) => time(a) - time(b));
+  const past = events.filter((e) => !e.upcoming).sort((a, b) => time(b) - time(a));
   return [...upcoming, ...past];
+}
+
+/** `deadline` moved by the same number of whole days as `from` to `to` (all YYYY-MM-DD). */
+export function shiftDate(deadline: string, from: string, to: string): string {
+  const day = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return Date.UTC(y as number, (m as number) - 1, d as number);
+  };
+  const moved = new Date(day(deadline) + day(to) - day(from));
+  return moved.toISOString().slice(0, 10);
 }
 
 export const CONTACT_SOURCES: Record<string, string> = {

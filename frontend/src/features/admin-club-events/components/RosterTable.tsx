@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
 import { Sheet } from '../../../components/ui/Sheet';
 import { useIsDesktop } from '../../../lib/useMediaQuery';
@@ -39,6 +39,16 @@ export function RosterTable({
   const [action, setAction] = useState<Action | null>(null);
   const [guests, setGuests] = useState('0');
   const [result, setResult] = useState<string | null>(null);
+  const [resultCount, setResultCount] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // After an action the row it acted on may be gone, so focus lands on the roster itself.
+  useEffect(() => {
+    if (resultCount > 0) containerRef.current?.focus();
+  }, [resultCount]);
+  const announce = (text: string) => {
+    setResult(text);
+    setResultCount((n) => n + 1);
+  };
   const remove = useRemoveRegistration(eventId);
   const setGuestsMutation = useSetGuests(eventId);
   const link = useLinkRegistration(eventId);
@@ -128,7 +138,7 @@ export function RosterTable({
       { registrationId, shooterId },
       {
         onSuccess: (done) => {
-          setResult(
+          announce(
             done.email_discarded
               ? 'Linked. The email typed at sign-up was deleted; the email on file stays.'
               : done.email_moved
@@ -154,8 +164,15 @@ export function RosterTable({
   };
 
   return (
-    <div className="flex flex-col gap-2">
-      {result !== null && <p role="status">{result}</p>}
+    <div
+      ref={containerRef}
+      tabIndex={-1}
+      data-testid="roster-container"
+      className="flex flex-col gap-2 outline-none"
+    >
+      <p role="status" className={result === null ? 'sr-only' : undefined}>
+        {result}
+      </p>
       {reset.isError && <AdminError error={reset.error} />}
       {isDesktop ? (
         <table className="w-full text-left text-sm">
@@ -208,7 +225,15 @@ export function RosterTable({
         confirm="Remove"
         busy={remove.isPending}
         onClose={close}
-        onConfirm={() => action !== null && remove.mutate(action.row.id, { onSuccess: close })}
+        onConfirm={() =>
+          action !== null &&
+          remove.mutate(action.row.id, {
+            onSuccess: () => {
+              announce(`${action.row.name} was removed.`);
+              close();
+            },
+          })
+        }
       >
         <p>{action?.kind === 'remove' ? `Remove ${action.row.name} from the list?` : ''}</p>
         {remove.isError && <AdminError error={remove.error} />}

@@ -11,6 +11,7 @@ export const adminEvent: AdminEvent = {
   deadline_local_date: '2026-10-16',
   deadline_local_time: '20:00',
   state: 'open',
+  upcoming: true,
   capacity: 20,
   spots_taken: 2,
   waitlist_count: 1,

@@ -263,6 +263,7 @@ class EventSummary:
     waitlist_count: int
     signups: int
     purged: bool
+    upcoming: bool
 
 
 def _counts(session: Session, event_ids: Sequence[int]) -> dict[int, tuple[int, int, int]]:
@@ -304,6 +305,7 @@ def summarize(
                 waiting,
                 going,
                 purged,
+                rules.is_upcoming(event.starts_at, now, tz),
             )
         )
     return out

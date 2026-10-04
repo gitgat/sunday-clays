@@ -284,3 +284,19 @@ def test_a_capacity_raise_never_promotes_on_a_started_event(
     clock(STARTS + timedelta(minutes=1))
     assert admin_client.patch(f"{BASE}/{event_id}", json={"capacity": 5}).status_code == 200
     assert [s for _, s in _statuses(session, event_id)] == ["going", "waitlist"]
+
+
+def test_admin_list_and_create_say_whether_an_event_is_upcoming(
+    session: Session, admin_client: TestClient, clock: Callable[[datetime], None]
+) -> None:
+    clock(NOW)
+    old = seed_event(
+        session,
+        title="Lesson day",
+        starts_at=datetime(2026, 9, 5, 16, tzinfo=UTC),
+        deadline=datetime(2026, 9, 5, 3, tzinfo=UTC),
+    )
+    created = admin_client.post(BASE, json=NEW)
+    assert created.json()["upcoming"] is True
+    flags = {e["id"]: e["upcoming"] for e in admin_client.get(BASE).json()}
+    assert flags == {old: False, created.json()["id"]: True}

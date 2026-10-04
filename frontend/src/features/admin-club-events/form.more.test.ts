@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminEvent, rosterRows } from './mocks';
 import { CONTACT_SOURCES, fromEvent, headHint, sortEvents, statusLabel } from './form';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('organizer form helpers, edges', () => {
   it('starts a new form empty and an edit form from the event', () => {
@@ -54,18 +58,21 @@ describe('organizer form helpers, edges', () => {
     expect(CONTACT_SOURCES).toEqual({ signup: 'Sign-up', organizer: 'Organizer', link: 'Linked' });
   });
 
-  it('lists upcoming club events soonest first, then past ones most recent first', () => {
-    const at = (id: number, starts_at: string) => ({ ...adminEvent, id, starts_at });
-    const now = Date.parse('2026-10-10T00:00:00Z');
-    const sorted = sortEvents(
-      [
-        at(1, '2026-09-01T00:00:00Z'),
-        at(2, '2026-11-01T00:00:00Z'),
-        at(3, '2026-10-20T00:00:00Z'),
-        at(4, '2026-09-20T00:00:00Z'),
-      ],
-      now,
-    );
+  it("splits upcoming from past on the server's flag, not the device clock", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-12-31T00:00:00Z'));
+    const at = (id: number, starts_at: string, upcoming: boolean) => ({
+      ...adminEvent,
+      id,
+      starts_at,
+      upcoming,
+    });
+    const sorted = sortEvents([
+      at(1, '2026-09-01T00:00:00Z', false),
+      at(2, '2026-11-01T00:00:00Z', true),
+      at(3, '2026-10-20T00:00:00Z', true),
+      at(4, '2026-09-20T00:00:00Z', false),
+    ]);
     expect(sorted.map((e) => e.id)).toEqual([3, 2, 4, 1]);
   });
 });
