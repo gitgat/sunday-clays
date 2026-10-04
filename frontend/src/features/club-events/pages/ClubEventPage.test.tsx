@@ -367,6 +367,8 @@ describe('ClubEventPage', () => {
       expect(screen.getByTestId('club-event-announcer')).toHaveTextContent('Dana Quill is in.'),
     );
     expect(screen.getByTestId('club-event-announcer')).not.toHaveTextContent(/You're in/);
+    // This device's own sign-up was already on screen, so focus stays put.
+    expect(screen.getByRole('region', { name: 'Your sign-up' })).not.toHaveFocus();
   });
 
   it('announces cancelling someone else by name', async () => {

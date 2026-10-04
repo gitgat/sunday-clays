@@ -23,12 +23,12 @@ export function MyStatus({
   focusOnMount?: boolean;
 }) {
   const ref = useRef<HTMLElement>(null);
-  const focused = useRef(false);
+  // Read once: only a section that appears because of a sign-up takes focus, never one already
+  // on screen when this device signs up someone else.
+  const focusAtMount = useRef(focusOnMount);
   useEffect(() => {
-    if (!focusOnMount || focused.current) return;
-    focused.current = true; // once, when this section first appears
-    ref.current?.focus();
-  }, [focusOnMount]);
+    if (focusAtMount.current) ref.current?.focus();
+  }, []);
   return (
     <section
       ref={ref}
