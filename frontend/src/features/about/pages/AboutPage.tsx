@@ -5,6 +5,7 @@ import { AdminPreviewBadge } from '../../../components/ui/AdminPreviewBadge';
 import { Card } from '../../../components/ui/Card';
 import { useFeature } from '../../../lib/features';
 import { useRoundTypeLink } from '../../../lib/roundTypes';
+import { LINK_PREVIEWS_LINE, privacyLines } from '../privacy';
 
 /** The production shooter id of the site's builder; the profile link is only meaningful there. */
 export const BUILDER_SHOOTER_ID = 187;
@@ -20,20 +21,10 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
   );
 }
 
-/** Plan 19 §4: shown only while `link_previews` is visible (it describes that feature). */
-export const LINK_PREVIEWS_LINE =
-  'Links shared in chat apps show only the club name, and for a Sunday its date (or a special shoot’s title), how many shot and the round type. Never shooter names or scores.';
-
-export const PRIVACY = [
-  'No accounts. There are no logins beyond the club’s shared password.',
-  'We don’t collect your name, email or anything else about you. The site only processes the club’s score sheets and analyses them.',
-  '“Which one are you?” is remembered on your device and never sent anywhere.',
-  'Fist bumps and visit counts are anonymous. They use a random ID your browser makes up, never tied to a name. We don’t store IP addresses for any of it.',
-  'No ads, no third-party trackers.',
-];
-
 export function AboutPage() {
   const previews = useFeature('link_previews');
+  const clubEvents = useFeature('events');
+  const privacy = privacyLines(clubEvents.visible);
   const profile = useRoundTypeLink(`/shooters/${BUILDER_SHOOTER_ID}`);
   return (
     <div className="flex flex-col gap-4">
@@ -72,18 +63,20 @@ export function AboutPage() {
       </Card>
       <Card title="Your privacy" className="space-y-3">
         <ul className="list-disc space-y-2 pl-5">
-          {PRIVACY.map((line) => (
-            <li key={line}>{line}</li>
+          {privacy.map((line) => (
+            <li key={line.text}>
+              {line.text}
+              {line.feature !== undefined && (
+                <>
+                  {' '}
+                  <AdminPreviewBadge feature={line.feature} />
+                </>
+              )}
+            </li>
           ))}
           {previews.visible && (
             <li>
-              {LINK_PREVIEWS_LINE}
-              {previews.preview && (
-                <>
-                  {' '}
-                  <AdminPreviewBadge feature="link_previews" />
-                </>
-              )}
+              {LINK_PREVIEWS_LINE} <AdminPreviewBadge feature="link_previews" />
             </li>
           )}
         </ul>

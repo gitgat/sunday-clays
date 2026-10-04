@@ -386,9 +386,8 @@ At 390 the roster table becomes stacked rows (the DataTable mobile pattern) with
 1. "No accounts. There are no logins beyond the club’s shared password." (unchanged)
 2. "Browsing the site collects nothing about you: no name, no email. The site processes the club’s score sheets and analyses them." (replaces "We don’t collect your name, email or anything else about you…")
 3. **New, shown when `events` is on or preview:** "If you sign up for a club event, we keep your name and the email you give us so organizers can reach you."
-4. **New, same condition:** "Only organizers see emails. We never show them on the site and never send email from it. Sign-ups are deleted 30 days after the event (the nightly backups keep a copy for up to 8 more weeks); an email saved for a shooter stays for quicker sign-ups until an organizer removes it or it goes two years unused."
-5. "“Which one are you?” is remembered on your device and never sent anywhere." (unchanged)
-6. "Fist bumps and visit counts are anonymous. They use a random ID your browser makes up, never tied to a name. We don’t store IP addresses for any of it." → "…We don’t store IP addresses for any of it, sign-ups included."
+4. **New, same condition:** "Only organizers see emails. We never show them on the site and never send email from it. Sign-ups are deleted 30 days after the event; an email saved for a shooter stays for quicker sign-ups until an organizer removes it X "“Which one are you?” is remembered on your device and never sent anywhere." (unchanged)
+6. "Fist bumps and visit counts are anonymous. They use a random ID your browser makes up, never tied to a name. We don’t store IP addresses for any of it." → "…We don’t store IP addresses for any of it, sign-ups included." only while `events` is on or in preview; otherwise the line is unchanged.
 7. "No ads, no third-party trackers." (unchanged)
 
 ### 5.8 Copy
@@ -475,7 +474,7 @@ A Vitest copy lint (as `insights` lints do) scans `features/club-events/**` and 
 4. **No IPs.** `club_event_attempts.ip` stores `ip_fingerprint(request)`. `audit_log.ip` stays the owner's raw admin trail (existing rule, admin actions only).
 5. **Deletion.** Cancel and organizer removal scrub email and token immediately. The daily job deletes every registration of an event 30 days after its start (keeping only the two counts `final_signups` and `final_spots`) and contacts unused for 730 days. Audit rows identify registrations by id only, so they keep no name or email past the purge. Deleting an event deletes its registrations at once. An organizer can delete any shooter contact at any time.
 6. **No outbound email,** no third parties, no new external request; the CSP is unchanged (all calls same-origin).
-7. **Backups.** The existing nightly Postgres backup includes these tables, so a purged sign-up or contact survives in backups for the rotation period in `deploy/README.md`: daily dumps for 14 days and weekly dumps for 8 weeks, so at most about 8 weeks past the purge. The About bullet says so ("the nightly backups keep a copy for up to 8 more weeks").
+7. **Backups.** The existing nightly Postgres backup includes these tables, so a purged sign-up or contact survives in backups for the rotation period in `deploy/README.md`: daily dumps for 14 days and weekly dumps for 8 weeks, so at most about 8 weeks past the purge. The About bullet says so ("Nightly backups that still hold deleted data are themselves deleted within about two months.").
 
 ---
 
