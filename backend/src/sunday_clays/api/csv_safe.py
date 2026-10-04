@@ -1,3 +1,5 @@
+"""csv_safe (Plan 20 §5.5): the only escaping path for server-side CSV cells."""
+
 import re
 
 _FORMULA = re.compile(r"[=+\-@\t\r]|\s+[=+\-@]")

@@ -198,18 +198,22 @@ def token_matches(stored_hash: str | None, token: str) -> bool:
 # --- club time (D21) -----------------------------------------------------------------------------
 
 
+_LOCAL_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
+
+
 def local_to_utc(local: str, tz: str) -> datetime:
     """`YYYY-MM-DDTHH:MM` in the club zone as an instant. A time inside the spring-forward gap is
     refused; one inside the fall-back hour is its first occurrence."""
-    day, sep, clock = local.partition("T")
-    wall_day: date | None
-    wall_time: time | None
-    try:
-        wall_day = date.fromisoformat(day)
-        wall_time = time.fromisoformat(clock).replace(fold=0)
-    except ValueError:
-        wall_day = wall_time = None
-    if not sep or wall_day is None or wall_time is None:
+    wall_day: date | None = None
+    wall_time: time | None = None
+    if _LOCAL_TIME.fullmatch(local):
+        day, _, clock = local.partition("T")
+        try:
+            wall_day = date.fromisoformat(day)
+            wall_time = time.fromisoformat(clock).replace(fold=0)
+        except ValueError:
+            wall_day = wall_time = None
+    if wall_day is None or wall_time is None:
         raise DomainError("bad_local_time", "Enter a date and a time.")
     zone = ZoneInfo(tz)
     instant = datetime.combine(wall_day, wall_time, tzinfo=zone).astimezone(UTC)
@@ -246,7 +250,7 @@ def is_upcoming(starts_at: datetime, now: datetime, tz: str) -> bool:
 
 def check_guests(guests: int, allow_guests: bool, max_guests: int) -> None:
     if not allow_guests and guests != 0:
-        raise DomainError("bad_guests", "This event is members only, no guests.")
+        raise DomainError("bad_guests", "This club event is members only, no guests.")
     if not 0 <= guests <= max_guests:
         raise DomainError("bad_guests", f"Bring up to {max_guests} guests.")
 
@@ -271,19 +275,31 @@ def scrub_db_errors(
 
     The block's statements are flushed at the end, so a violation surfaces here and never at the
     request's commit. A `DBAPIError` rolls the session back, logs its class and constraint name
-    only, and becomes a plain `DomainError` raised from None: neither the message (Postgres's
-    "Failing row contains (…)") nor the cause chain reaches a log. A race on the duplicate
-    indexes, which the event lock should already prevent, is 409 `already_signed_up`.
+    only, and becomes a plain `DomainError` with no cause or context: neither the message
+    (Postgres's "Failing row contains (…)") nor the cause chain reaches a log. A race on the
+    duplicate indexes, which the event lock should already prevent, is 409 `already_signed_up`.
     """
+    failure: tuple[str, str | None] | None = None
     try:
         yield
         session.flush()
     except DBAPIError as exc:
-        constraint = _constraint(exc)
-        session.rollback()
-        logger.error(
-            "club event write failed: %s on %s", type(exc).__name__, constraint or "no constraint"
-        )
-        if constraint in DUPLICATE_INDEXES:
-            raise ConflictError("already_signed_up", duplicate_message) from None
-        raise InternalError("internal", "Internal server error") from None
+        failure = (type(exc).__name__, _constraint(exc))
+    if failure is None:
+        return
+    # Raised after the except block, so the DBAPIError (and its failing row) is never chained.
+    name, constraint = failure
+    session.rollback()
+    logger.error("club event write failed: %s on %s", name, constraint or "no constraint")
+    refusal: DomainError = (
+        ConflictError("already_signed_up", duplicate_message)
+        if constraint in DUPLICATE_INDEXES
+        else InternalError("internal", "Internal server error")
+    )
+    try:
+        raise refusal
+    except DomainError as scrubbed:
+        # `with` runs this while the DBAPIError is still the handled exception, so raising
+        # would chain it: clear that link, then re-raise (a bare raise leaves it cleared).
+        scrubbed.__context__ = None
+        raise

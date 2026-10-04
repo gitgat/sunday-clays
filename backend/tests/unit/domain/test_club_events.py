@@ -143,6 +143,7 @@ def test_email_match_non_ascii(settings_env: None) -> None:
 def test_email_match_nothing_stored(settings_env: None) -> None:
     assert rules.email_matches(None, "dana.quill@example.com") is False
     assert rules.email_matches("", "dana.quill@example.com") is False
+    assert rules.email_matches(None, "\x00no-email") is False
 
 
 def test_email_match_folds_the_typed_email(settings_env: None) -> None:
@@ -175,7 +176,21 @@ def test_a_fall_back_time_takes_the_first_occurrence() -> None:
     assert rules.local_to_utc("2026-11-01T01:30", LA) == datetime(2026, 11, 1, 8, 30, tzinfo=UTC)
 
 
-@pytest.mark.parametrize("raw", ["2026-10-17", "2026-10-17T25:00", "tomorrow", "2026-02-30T10:00"])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "2026-10-17",
+        "2026-10-17T25:00",
+        "tomorrow",
+        "2026-02-30T10:00",
+        "2026-10-17T10:00:30",
+        "2026-10-17T10:00:30.5",
+        "2026-W42-6T10:00",
+        "20261017T1000",
+        "2026-10-17T10:00Z",
+        "2026-10-17T10:00+05:00",
+    ],
+)
 def test_an_unreadable_local_time_is_refused(raw: str) -> None:
     with pytest.raises(DomainError, match="Enter a date and a time"):
         rules.local_to_utc(raw, LA)
@@ -208,7 +223,7 @@ def test_a_late_evening_event_is_upcoming_until_club_midnight() -> None:
 @pytest.mark.parametrize(
     ("guests", "allow", "most", "message"),
     [
-        (1, False, 0, "This event is members only, no guests."),
+        (1, False, 0, "This club event is members only, no guests."),
         (3, True, 2, "Bring up to 2 guests."),
         (-1, True, 2, "Bring up to 2 guests."),
     ],
@@ -272,7 +287,7 @@ def test_a_check_violation_becomes_a_bare_500_that_logs_no_values(
         raise _violation("ck_club_event_registrations_inactive_scrubbed")
     assert (info.value.status_code, info.value.code) == (500, "internal")
     assert info.value.__cause__ is None
-    assert info.value.__suppress_context__ is True
+    assert info.value.__context__ is None
     assert fake.calls == ["rollback"]
     assert "IntegrityError" in caplog.text
     assert "ck_club_event_registrations_inactive_scrubbed" in caplog.text
@@ -280,7 +295,10 @@ def test_a_check_violation_becomes_a_bare_500_that_logs_no_values(
     assert "Quill" not in caplog.text
 
 
-def test_a_duplicate_index_violation_is_already_signed_up() -> None:
+def test_a_duplicate_index_violation_is_already_signed_up(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
     fake = _FakeSession()
     with (
         pytest.raises(ConflictError) as info,
@@ -291,6 +309,11 @@ def test_a_duplicate_index_violation_is_already_signed_up() -> None:
         "already_signed_up",
         "Dana Quill is already on the list.",
     )
+    assert info.value.__cause__ is None
+    assert info.value.__context__ is None
+    assert fake.calls == ["rollback"]
+    assert "@" not in caplog.text
+    assert "Quill" not in caplog.text
 
 
 def test_a_violation_at_the_closing_flush_is_caught_too() -> None:
