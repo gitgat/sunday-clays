@@ -50,9 +50,10 @@ def schedule_due(
     page_cache_enabled: bool = False,
     app_version: str = "dev",
 ) -> list[int]:
-    """Enqueue page_view_rollup (daily after 03:00 local), page_warm (after every data_version
-    change, deploy and each local midnight, with the page cache on), and with weather on,
-    weather_sync (daily after 14:00 local) and forecast_refresh (every 6 h), when due."""
+    """Enqueue page_view_rollup and club_event_retention (daily after 03:00 local), page_warm
+    (after every data_version change, deploy and each local midnight, with the page cache on),
+    and with weather on, weather_sync (daily after 14:00 local) and forecast_refresh (every 6 h),
+    when due."""
     local_now = now.astimezone(ZoneInfo(timezone))
     job_ids: list[int] = []
     if (
@@ -64,6 +65,11 @@ def schedule_due(
     rollup_slot = local_now.replace(hour=ROLLUP_LOCAL_HOUR, minute=0, second=0, microsecond=0)
     if local_now >= rollup_slot and not _created_since(session, "page_view_rollup", rollup_slot):
         job_ids.append(enqueue(session, "page_view_rollup", dedupe_key="page_view_rollup"))
+    # Plan 20 §5.6: club-event sign-ups and unused emails, in the same daily 03:00 slot.
+    if local_now >= rollup_slot and not _created_since(
+        session, "club_event_retention", rollup_slot
+    ):
+        job_ids.append(enqueue(session, "club_event_retention", dedupe_key="club_event_retention"))
     if not weather_enabled:
         return job_ids
     slot_start = local_now.replace(hour=WEATHER_SYNC_LOCAL_HOUR, minute=0, second=0, microsecond=0)

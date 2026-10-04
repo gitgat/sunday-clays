@@ -34,7 +34,9 @@ dump_once() {
   tmp="$BACKUP_DIR/sc-$stamp.dump.tmp"
   dump="$BACKUP_DIR/sc-$stamp.dump"
   # response_cache is a disposable UNLOGGED cache (Plan 19 D22): keep its definition, not its rows.
-  pg_dump --format=custom --exclude-table-data=response_cache --file="$tmp" || return 1
+  # club_event_attempts is ephemeral rate-limit rows (IP fingerprints, Plan 20): never dumped either.
+  pg_dump --format=custom --exclude-table-data=response_cache \
+    --exclude-table-data=club_event_attempts --file="$tmp" || return 1
   pg_restore --list "$tmp" >/dev/null || return 1
   mv "$tmp" "$dump" || return 1
   python3 "$TOOLS" prune "$BACKUP_DIR" || return 1
