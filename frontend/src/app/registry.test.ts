@@ -91,6 +91,8 @@ const EXPECTED: Record<string, PageFilters> = {
   '/admin/recap': { roundType: false, window: false },
   '/admin/features': NO_FILTERS,
   '/glossary': NO_FILTERS,
+  '/club-events': NO_FILTERS,
+  '/club-events/:id': NO_FILTERS,
   '/login': NO_FILTERS,
 };
 

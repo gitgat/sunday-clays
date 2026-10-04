@@ -14,6 +14,7 @@ const BY_SEGMENT = new Map<string, PageKind>([
   ['achievements', 'achievements'],
   ['race', 'race'],
   ['compare', 'compare'],
+  ['club-events', 'club-events'],
   ['admin', 'admin'],
 ]);
 
