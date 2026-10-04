@@ -20,7 +20,7 @@ function FeaturesProbe() {
 }
 
 describe('FeaturesPage', () => {
-  it('lists exactly the six switches with labels, descriptions and dates', async () => {
+  it('lists exactly the seven switches with labels, descriptions and dates', async () => {
     renderWithProviders(<FeaturesPage />, { role: 'admin', route: '/admin/features' });
     expect(screen.getByRole('heading', { level: 1, name: 'Features' })).toBeInTheDocument();
     const launch = await screen.findByRole('region', { name: 'Launch switches' });

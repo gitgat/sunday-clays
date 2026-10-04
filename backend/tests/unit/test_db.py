@@ -74,3 +74,8 @@ def test_connect_with_retry_gives_up_after_timeout(closed_port: int) -> None:
 
     elapsed = time.monotonic() - started
     assert 0.2 <= elapsed < 5.0
+
+
+def test_make_engine_hides_bound_parameters_from_errors() -> None:
+    # Plan 20 D22.1: a failing statement's message never carries its values (an email, say)
+    assert make_engine("postgresql://u:p@db:5432/x").hide_parameters is True

@@ -24,7 +24,8 @@ SessionFactory: sessionmaker[Session] = sessionmaker(expire_on_commit=False)
 
 
 def make_engine(url: str) -> Engine:
-    """Engine for ``url``; bare ``postgresql://`` URLs use psycopg 3; sessions run in UTC."""
+    """Engine for ``url``; bare ``postgresql://`` URLs use psycopg 3; sessions run in UTC; bound
+    parameters are hidden from errors."""
     for scheme in _BARE_SCHEMES:
         if url.startswith(scheme):
             url = "postgresql+psycopg://" + url.removeprefix(scheme)
@@ -32,6 +33,9 @@ def make_engine(url: str) -> Engine:
     return create_engine(
         url,
         pool_pre_ping=True,
+        # Plan 20 D22.1: a failing statement's message and log line never carry bound values
+        # (an email on a sign-up, say). Nothing in the app relies on seeing them.
+        hide_parameters=True,
         connect_args={"options": "-c timezone=UTC", "connect_timeout": CONNECT_TIMEOUT_SECONDS},
     )
 

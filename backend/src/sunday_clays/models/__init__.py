@@ -8,6 +8,12 @@ from sunday_clays.models.analytics import (
 )
 from sunday_clays.models.base import Base
 from sunday_clays.models.bumps import BumpAttempt, FistBump
+from sunday_clays.models.club_events import (
+    ClubEvent,
+    ClubEventAttempt,
+    ClubEventRegistration,
+    ShooterContact,
+)
 from sunday_clays.models.identity import AuditLog, LoginAttempt, Rule, Shooter, ShooterAlias
 from sunday_clays.models.insights import Insight, InsightPick
 from sunday_clays.models.live import (
@@ -43,6 +49,9 @@ __all__ = [
     "AuditLog",
     "Base",
     "BumpAttempt",
+    "ClubEvent",
+    "ClubEventAttempt",
+    "ClubEventRegistration",
     "DataIssue",
     "Event",
     "EventMetric",
@@ -71,6 +80,7 @@ __all__ = [
     "Rule",
     "Shooter",
     "ShooterAlias",
+    "ShooterContact",
     "ShooterProfile",
     "StationHit",
     "StationLayout",

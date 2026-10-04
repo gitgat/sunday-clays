@@ -9,7 +9,11 @@ import { whenSettled } from './layout';
 // restores them. The e2e stack starts with every feature on (FEATURES_DEFAULT_ON).
 test.use({ storageState: ADMIN_STATE });
 
-/** The six launch switches. */
+/**
+ * Plan 19's six launch switches. The Plan 20 `events` switch stays off on the e2e stack and is
+ * left out on purpose: the all-off test expects no stored switches, and
+ * club-events.admin-mutations.spec.ts restores `events` itself.
+ */
 const FEATURE_KEYS = [
   'link_previews',
   'tour_glossary',
@@ -65,9 +69,10 @@ test.afterEach(async ({ baseURL }) => {
   const api = await pwRequest.newContext({ baseURL, storageState: ADMIN_STATE });
   const failures: string[] = [];
   try {
-    // Only the six launch switches and the page cache, only those recorded in beforeEach, and
-    // only those a test changed: a blind PUT of every row would also store infrastructure
-    // switches that are meant to stay at their default. Each key gets its own attempt.
+    // Only Plan 19's six launch switches (not `events`, which stays off here) and the page cache,
+    // only those recorded in beforeEach, and only those a test changed: a blind PUT of every row
+    // would also store infrastructure switches that are meant to stay at their default. Each key
+    // gets its own attempt.
     // If the current values cannot be read, nothing can be confirmed as changed: restore nothing
     // blindly (a blind PUT of page_cache would clear the cache and its last warm-up), fail once.
     let now: Record<string, boolean> | null = null;
