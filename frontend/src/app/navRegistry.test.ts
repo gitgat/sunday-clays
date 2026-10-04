@@ -6,6 +6,7 @@ import { featureRoutes, navItems, type FeatureModule } from './registry';
 const FIXED_ORDER: Record<string, number> = {
   home: 10,
   events: 20,
+  'club-events': 25, // Plan 20 §5.7.1: right after Events, before Leaderboards
   leaderboards: 30,
   shooters: 40,
   club: 50,
@@ -21,6 +22,7 @@ const FIXED_ORDER: Record<string, number> = {
   about: 140,
   admin: 900,
   'admin-identity': 910,
+  'admin-club-events': 915, // Plan 20 §5.7.5
   'admin-ops': 920,
   'admin-analytics': 930,
   'admin-recap': 935,
