@@ -25,7 +25,7 @@ test('club events stay invisible to members while the switch is off', async ({
     ).toHaveCount(0);
     await page.keyboard.press('Escape');
   }
-  await expect(page.getByRole('heading', { name: 'Coming up' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Coming up' })).toHaveCount(0);
 
   const api = await page.request.get('/api/club-events');
   expect(api.status()).toBe(404);

@@ -11,6 +11,13 @@ import { readFile } from 'node:fs/promises';
 import { ADMIN_STATE, VIEWER_STATE } from './authState';
 import { expect, test } from './fixtures';
 import { expectNoSideScroll, whenSettled } from './layout';
+import {
+  CANCELLED,
+  EMPTY_ROSTER,
+  PROMOTED,
+  SWITCHED_OFF,
+  WAITLIST_WARNING,
+} from '../src/features/club-events/format';
 
 // Project `admin-mutations` (one worker, after every read-only spec). It turns the `events`
 // switch on and creates "Fall Fun Shoot"; `beforeEach` and `afterEach`, each on a fresh admin
@@ -53,13 +60,17 @@ async function hadleyId(api: APIRequestContext): Promise<number> {
 async function cleanUp(baseURL: string | undefined): Promise<void> {
   const api = await pwRequest.newContext({ baseURL, storageState: ADMIN_STATE });
   try {
-    const events = (await (await api.get('/api/admin/club-events')).json()) as AdminEvent[];
-    for (const event of events.filter((e) => e.title === TITLE)) {
-      await api.delete(`/api/admin/club-events/${event.id}`);
-    }
-    await api.delete(`/api/admin/shooter-contacts/${await hadleyId(api)}`);
+    // The switch comes off first, so a failure in the deletes below can never leave it on.
     const off = await api.put('/api/admin/features/events', { data: { enabled: false } });
     expect(off.ok(), 'turn the events switch off').toBe(true);
+    const events = (await (await api.get('/api/admin/club-events')).json()) as AdminEvent[];
+    for (const event of events.filter((e) => e.title === TITLE)) {
+      const gone = await api.delete(`/api/admin/club-events/${event.id}`);
+      expect(gone.status(), `delete club event ${event.id}`).toBe(204);
+    }
+    // 204 when an email was on file, 404 when there was none.
+    const contact = await api.delete(`/api/admin/shooter-contacts/${await hadleyId(api)}`);
+    expect([204, 404], 'delete the email on file for Hadley').toContain(contact.status());
   } finally {
     await api.dispose();
   }
@@ -73,22 +84,23 @@ test.afterEach(async ({ baseURL }) => {
   await cleanUp(baseURL);
 });
 
-/** A member's phone: a fresh context with the viewer session, recording every club-event body. */
+/** A member's browser (a phone by default): a fresh context with the viewer session, recording every club-event body. */
 async function member(
   browser: Browser,
   baseURL: string | undefined,
   bodies: Promise<string>[],
+  viewport: { width: number; height: number } = PHONE,
 ): Promise<{ context: BrowserContext; page: Page }> {
-  // As Plan 19's `viewerPage`: a phone (touch), service workers blocked (page.route and fresh
-  // assets), and Plan 19's `tourSeen`/`installTipSeen` marks, which the `test` fixtures give only
-  // the test's own `page`. Without them the first-visit tour (tour_glossary is on in the e2e
+  // Plan 19's `viewerPage` options (touch on a phone, service workers blocked so page.route and
+  // fresh assets work) plus the `tourSeen`/`installTipSeen` marks, which the `test` fixtures give
+  // only the test's own `page`. Without them the first-visit tour (tour_glossary is on in the e2e
   // stack) opens over the Coming up card on viewer A's Home.
   const context = await browser.newContext({
     baseURL,
     storageState: VIEWER_STATE,
-    viewport: PHONE,
-    isMobile: true,
-    hasTouch: true,
+    viewport,
+    isMobile: viewport.width < 600,
+    hasTouch: viewport.width < 600,
     serviceWorkers: 'block',
   });
   await context.addInitScript(() => {
@@ -115,14 +127,19 @@ function pageTop(locator: Locator): Promise<number> {
 
 /** The top edge once two reads half a second apart agree. */
 async function settledTop(locator: Locator): Promise<number> {
-  let last = await pageTop(locator);
-  for (let i = 0; i < 20; i++) {
-    await locator.page().waitForTimeout(500);
-    const now = await pageTop(locator);
-    if (now === last) return now;
-    last = now;
-  }
-  throw new Error('the page never stopped moving');
+  let last = -1;
+  await expect
+    .poll(
+      async () => {
+        const now = await pageTop(locator);
+        const still = now === last;
+        last = now;
+        return still;
+      },
+      { intervals: [500], timeout: 15_000, message: 'the page never stopped moving' },
+    )
+    .toBe(true);
+  return last;
 }
 
 async function openSheet(page: Page, eventId: number): Promise<ReturnType<Page['getByRole']>> {
@@ -198,7 +215,7 @@ test('club events end to end: prepare, launch, sign up, waitlist, cancel, export
   await sheetB.getByRole('button', { name: "I'm not listed" }).click();
   await sheetB.getByLabel('Your first and last name').fill('Dana Quill');
   await sheetB.getByLabel('Your email').fill(DANA_EMAIL);
-  await expect(sheetB.getByText('This will put you on the waitlist.')).toBeVisible();
+  await expect(sheetB.getByText(WAITLIST_WARNING)).toBeVisible();
   await sheetB.getByRole('button', { name: 'Sign me up' }).click();
   await expect(
     b.page.getByText("You're on the waitlist: #1. If a spot opens, you move up automatically."),
@@ -241,7 +258,7 @@ test('club events end to end: prepare, launch, sign up, waitlist, cancel, export
   await a.page.getByRole('dialog').getByRole('button', { name: 'Cancel my spot' }).click();
   await expect(a.page.getByRole('button', { name: 'Sign up', exact: true })).toBeVisible(SLOW);
   await b.page.reload();
-  await expect(b.page.getByText("Good news: a spot opened and you're in.")).toBeVisible(SLOW);
+  await expect(b.page.getByText(PROMOTED)).toBeVisible(SLOW);
 
   // 7. Viewer C cancels Dana's spot by email: a wrong one first, then the right one.
   await c.page.reload();
@@ -315,7 +332,7 @@ test('club events end to end: prepare, launch, sign up, waitlist, cancel, export
     release();
     const comingUp = page.getByRole('region', { name: 'Coming up' });
     await expect(comingUp).toBeVisible(SLOW);
-    await page.waitForTimeout(500);
+    // The card's insertion is the only thing that could shift Next Sunday, and it is in already.
     const after = await pageTop(nextSunday);
     const below = await pageTop(comingUp);
     expect(after, `Next Sunday moved at ${viewport.width}px`).toBe(before);
@@ -492,26 +509,36 @@ for (const viewport of VIEWPORTS) {
     await expect(page.getByText('Club event cancelled')).toBeVisible(SLOW);
     await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible();
 
-    const viewer = await browser.newContext({ storageState: VIEWER_STATE, viewport });
+    const viewer = await member(browser, baseURL, [], viewport);
     try {
-      const member = await viewer.newPage();
-      await member.goto(`/club-events/${id}`);
-      await expect(member.getByText('This event was cancelled by the organizers.')).toBeVisible(
-        SLOW,
-      );
-      await expect(member.getByRole('button', { name: 'Sign up', exact: true })).toHaveCount(0);
-      await expectNoSideScroll(member);
+      const memberPage = viewer.page;
+      await memberPage.goto(`/club-events/${id}`);
+      await expect(memberPage.getByText(CANCELLED)).toBeVisible(SLOW);
+      await expect(memberPage.getByRole('button', { name: 'Sign up', exact: true })).toHaveCount(0);
+      await expectNoSideScroll(memberPage);
 
       await page.getByRole('button', { name: 'Restore' }).click();
       const restore = page.getByRole('dialog', { name: 'Restore this club event' });
       await restore.getByRole('button', { name: 'Restore' }).click();
       await expect(page.getByText('Club event restored')).toBeVisible(SLOW);
 
-      await member.reload();
-      await expect(member.getByRole('button', { name: 'Sign up', exact: true })).toBeVisible(SLOW);
-      await expect(member.getByText('This event was cancelled by the organizers.')).toHaveCount(0);
+      await memberPage.reload();
+      await expect(memberPage.getByRole('button', { name: 'Sign up', exact: true })).toBeVisible(
+        SLOW,
+      );
+      await expect(memberPage.getByText(CANCELLED)).toHaveCount(0);
+
+      // The sign-up sheet with a 60-character typed name fits at this size too (Review Focus 5).
+      await memberPage.getByRole('button', { name: 'Sign up', exact: true }).click();
+      const sheet = memberPage.getByRole('dialog', { name: 'Sign up' });
+      await sheet.getByRole('button', { name: "I'm not listed" }).click();
+      await sheet.getByLabel('Your first and last name').fill(LONG_NAME);
+      await sheet.getByLabel('Your email').fill('marigold@example.com');
+      await expectNoSideScroll(memberPage);
+      await sheet.getByRole('button', { name: 'Close' }).click();
+      await expect(sheet).toHaveCount(0);
     } finally {
-      await viewer.close();
+      await viewer.context.close();
     }
   });
 }
@@ -530,13 +557,16 @@ test('turning the switch off mid-visit saves nothing and hides club events from 
     await sheet.getByRole('button', { name: "I'm not listed" }).click();
     await sheet.getByLabel('Your first and last name').fill('Quincy Ames');
     await sheet.getByLabel('Your email').fill('quincy.ames@example.com');
-    // The organizer turns the switch off while the sheet is open. The sign-up is refused, the
-    // page's own refetch of the switches swaps the whole page for "Page not found", and the API
-    // answers as for an unknown route.
+    // The organizer turns the switch off while the sheet is open. The sign-up is refused with
+    // "Nothing was saved" (§5.1, §5.9), and the API answers as for an unknown route.
     await withApi(baseURL, ADMIN_STATE, async (api) =>
       ok(await api.put('/api/admin/features/events', { data: { enabled: false } }), 'switch off'),
     );
     await sheet.getByRole('button', { name: 'Sign me up' }).click();
+    // The sheet says so and stays up; closing it lets the page learn the switch is off.
+    await expect(sheet.getByText(SWITCHED_OFF)).toBeVisible(SLOW);
+    await expectNoSideScroll(m.page);
+    await sheet.getByRole('button', { name: 'Close' }).click();
     await expect(m.page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible(
       SLOW,
     );
@@ -553,7 +583,7 @@ test('turning the switch off mid-visit saves nothing and hides club events from 
     await expect(page.getByRole('heading', { level: 1, name: TITLE })).toBeVisible(SLOW);
     await expect(page.getByText('Admin preview').first()).toBeVisible();
     await expect(page.getByText('Quincy Ames')).toHaveCount(0);
-    await expect(page.getByText('No one has signed up yet. Be the first.')).toBeVisible();
+    await expect(page.getByText(EMPTY_ROSTER)).toBeVisible();
   } finally {
     await m.context.close();
   }

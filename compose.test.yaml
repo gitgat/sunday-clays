@@ -23,7 +23,8 @@ services:
       # Every club-event sign-up and sign-up check comes from that one IP too (Plan 20 §7.4).
       CLUB_EVENT_SIGNUP_LIMIT: "1000"
       CLUB_EVENT_CHECK_LIMIT: "100000"
-      # Wrong-email cancels (two per run) also share that IP; the default 10 / window would 403 re-runs.
+      # Wrong-email cancels (5 per run: 1 in the main flow, 2 at each viewport) share that IP too; the
+      # default 10 per window would 403 a re-run.
       CLUB_EVENT_CANCEL_FAIL_LIMIT: "1000"
       # Plan 19 D4: the read-only e2e projects see every feature without a mutating setup step.
       # Production leaves FEATURES_DEFAULT_ON empty, so every feature starts off.
