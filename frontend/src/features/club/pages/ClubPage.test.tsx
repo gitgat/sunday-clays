@@ -113,10 +113,10 @@ describe('ClubPage', { timeout: 15_000 }, () => {
   it('every data chart exposes Table and CSV controls', async () => {
     renderWithProviders(<ClubPage />, { route: '/club' });
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(13),
+      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(14),
       SETTLED,
     );
-    expect(screen.getAllByRole('button', { name: /table/i })).toHaveLength(13);
+    expect(screen.getAllByRole('button', { name: /table/i })).toHaveLength(14);
     for (const title of CHART_TITLES) {
       expectChartControls(screen.getByRole('region', { name: title }));
     }
@@ -125,7 +125,7 @@ describe('ClubPage', { timeout: 15_000 }, () => {
   it('explains every chart, stat and regulars list in plain words', async () => {
     renderWithProviders(<ClubPage />, { route: '/club' });
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(13),
+      () => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(14),
       SETTLED,
     );
     for (const title of CHART_TITLES) {
@@ -162,7 +162,7 @@ describe('ClubPage', { timeout: 15_000 }, () => {
   it('tags each chart with the dates it covers', async () => {
     renderWithProviders(<ClubPage />, { route: '/club' });
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(13),
+      () => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(14),
       SETTLED,
     );
     // Time series and the turnout card follow the window; the per-year and all-history charts do not.
@@ -186,7 +186,7 @@ describe('ClubPage', { timeout: 15_000 }, () => {
   it('says "all years" on the year-by-year charts, which the time window does not move', async () => {
     renderWithProviders(<ClubPage />, { route: '/club' });
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(13),
+      () => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(14),
       SETTLED,
     );
     for (const title of ['Seasonality', 'Newcomer retention', 'How open is the competition?']) {
@@ -201,7 +201,7 @@ describe('ClubPage', { timeout: 15_000 }, () => {
     // Every URL change re-renders the round-type-aware charts; their models must stay put.
     const { user } = renderWithProviders(<ClubPage />, { route: '/club' });
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(13),
+      () => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(14),
       SETTLED,
     );
     const builds = vi.mocked(distributionModel).mock.calls.length;
@@ -226,7 +226,7 @@ describe('ClubPage', { timeout: 15_000 }, () => {
     // While loading, the placeholder card is not a second region called "Attendance".
     expect(screen.getAllByRole('region', { name: 'Attendance' })).toHaveLength(1);
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(13),
+      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(14),
       SETTLED,
     );
     for (const title of CHART_TITLES) {
@@ -238,7 +238,7 @@ describe('ClubPage', { timeout: 15_000 }, () => {
   it('says which charts the round-type filter does not apply to', async () => {
     renderWithProviders(<ClubPage />, { route: '/club?rt=super_sporting' });
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(13),
+      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(14),
       SETTLED,
     );
     for (const title of [
@@ -262,7 +262,7 @@ describe('ClubPage', { timeout: 15_000 }, () => {
   it('adds no filter note without a round-type filter', async () => {
     renderWithProviders(<ClubPage />, { route: '/club' });
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(13),
+      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(14),
       SETTLED,
     );
     expect(screen.queryByText(/all round types/i)).not.toBeInTheDocument();
@@ -293,7 +293,7 @@ describe('ClubPage', { timeout: 15_000 }, () => {
       await screen.findByText("Couldn't load guest → member conversion", {}, SETTLED),
     ).toBeInTheDocument();
     await waitFor(
-      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(12),
+      () => expect(screen.getAllByRole('button', { name: /csv/i })).toHaveLength(13),
       SETTLED,
     );
   });

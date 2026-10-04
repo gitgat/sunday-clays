@@ -1,5 +1,6 @@
 import type { QueryKey } from '@tanstack/react-query';
 import type { EChartsOption } from 'echarts';
+import type { GlossaryTermId } from '../../features/glossary/terms';
 
 /** Column/row data every chart, table and CSV export consumes (C10). Never schema types. */
 export type ColumnType = 'date' | 'number' | 'string' | 'int';
@@ -44,6 +45,10 @@ export interface Explainer {
    * every Sunday, 'lifetime' = a career total, 'year' = one calendar year at a time.
    */
   scope?: 'windowed' | 'all-time' | 'lifetime' | 'year';
+  /** Plan 19 D13: glossary terms the copy uses; shown as "Words used here" links. */
+  terms?: readonly GlossaryTermId[];
+  /** Terms the text names on purpose without linking (the glossary lint skips them). */
+  noTerms?: readonly GlossaryTermId[];
 }
 
 /** What fullscreen and the CSV show instead of the inline data. Every field is optional. */

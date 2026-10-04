@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import type {
+  ClubMilestones,
   AttendancePoint,
   ClubSummary,
   ClubTrends,
@@ -265,7 +266,96 @@ export const clubTrends: ClubTrends = {
 };
 
 // Default handlers are branch-free (every line runs in routes.test.tsx); tests needing other data use server.use.
+export const clubMilestones: ClubMilestones = {
+  as_of: '2026-09-27',
+  milestones: [
+    {
+      metric: 'clays_thrown',
+      threshold: 350000,
+      event_date: '2026-09-13',
+      label: '350,000 clays thrown',
+      first_on_record: false,
+    },
+    {
+      metric: 'sundays_held',
+      threshold: 300,
+      event_date: '2026-03-08',
+      label: '300 Sundays held',
+      first_on_record: false,
+    },
+    {
+      metric: 'shooters',
+      threshold: 25,
+      event_date: '2020-01-05',
+      label: '25 different shooters',
+      first_on_record: true,
+    },
+  ],
+  latest: {
+    metric: 'clays_thrown',
+    threshold: 350000,
+    event_date: '2026-09-13',
+    label: '350,000 clays thrown',
+    first_on_record: false,
+  },
+  next: [
+    {
+      metric: 'sundays_held',
+      threshold: 350,
+      current: 310,
+      remaining: 40,
+      label: '350 Sundays held',
+    },
+    {
+      metric: 'clays_thrown',
+      threshold: 400000,
+      current: 358750,
+      remaining: 41250,
+      label: '400,000 clays thrown',
+    },
+    {
+      metric: 'shooters',
+      threshold: 400,
+      current: 332,
+      remaining: 68,
+      label: '400 different shooters',
+    },
+    {
+      metric: 'rounds',
+      threshold: 10000,
+      current: 7175,
+      remaining: 2825,
+      label: '10,000 rounds shot',
+    },
+  ],
+  series: [
+    { event_date: '2020-01-05', clays_thrown: 1400, sundays_held: 1, shooters: 28, rounds: 28 },
+    {
+      event_date: '2026-09-13',
+      clays_thrown: 357500,
+      sundays_held: 309,
+      shooters: 331,
+      rounds: 7150,
+    },
+    {
+      event_date: '2026-09-20',
+      clays_thrown: 357500,
+      sundays_held: 310,
+      shooters: 332,
+      rounds: 7150,
+    },
+    {
+      event_date: '2026-09-27',
+      clays_thrown: 358750,
+      sundays_held: 310,
+      shooters: 332,
+      rounds: 7175,
+    },
+  ],
+};
+
 export const handlers = [
+  http.get('*/api/club/milestones', () => HttpResponse.json(clubMilestones)),
   http.get('*/api/club/summary', () => HttpResponse.json(clubSummary)),
   http.get('*/api/club/attendance', () => HttpResponse.json(clubAttendance)),
   http.get('*/api/club/cohorts', () => HttpResponse.json(clubCohorts)),

@@ -24,6 +24,7 @@ export const explainers = {
       'Hardest and easiest Sunday: of the Sundays with complete results, the highest and lowest difficulty, the same figure as on the Sunday page. Difficulty is how many targets harder (plus) or easier (minus) the day played than a normal Sunday.',
       'Trophies earned: trophies awarded to anyone on a Sunday in the year.',
     ],
+    terms: ['difficulty'],
   },
   leaders: {
     what: 'Who topped the club’s standings this year.',

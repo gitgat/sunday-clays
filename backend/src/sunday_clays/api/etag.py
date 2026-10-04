@@ -16,14 +16,22 @@ from sunday_clays.api.routes import _filters
 from sunday_clays.auth.sessions import COOKIE_NAME
 from sunday_clays.config import get_settings
 from sunday_clays.db import get_session
+from sunday_clays.domain.features import page_cache_on
 
 NO_ETAG_PREFIXES: tuple[str, ...] = (
     "/api/health",
     "/api/auth/",
     "/api/admin/",
     "/api/predictions/",
+    "/api/features/",
+    "/api/og/",  # Plan 19 D6: public previews set their own Cache-Control
 )
-NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/")
+# Plan 19: routes whose own Cache-Control must stand (the middleware sets none for them)
+OWN_CACHE_CONTROL_PREFIXES: tuple[str, ...] = ("/api/og/",)
+NO_STORE_PREFIXES: tuple[str, ...] = ("/api/auth/", "/api/admin/", "/api/features/")
+# Plan 19 D3: switches change without a data_version bump. Matched exactly (plus the "/"
+# prefixes above), so a sibling such as /api/features-x is not swept in.
+SWITCH_PATH = "/api/features"
 # Plan 15: fist-bump counts change without a data_version bump, so a data_version ETag would
 # answer 304 with stale counts. They are never tagged and never stored.
 NO_STORE_SUFFIXES: tuple[str, ...] = ("/bumps",)
@@ -34,15 +42,23 @@ def etag_eligible(method: str, path: str) -> bool:
     return (
         method == "GET"
         and path.startswith("/api/")
+        and path != SWITCH_PATH
         and not path.startswith(NO_ETAG_PREFIXES)
         and not path.endswith(NO_STORE_SUFFIXES)
     )
 
 
 def cache_control_for(path: str) -> str | None:
-    """`no-store` for auth, admin and bump counts, `private, no-cache` for other /api paths."""
-    if path.startswith(NO_STORE_PREFIXES) or (
-        path.startswith("/api/") and path.endswith(NO_STORE_SUFFIXES)
+    """`no-store` for auth, admin and bump counts, `private, no-cache` for other /api paths.
+
+    None for link previews (their route sets public caching) and for non-API paths.
+    """
+    if path.startswith(OWN_CACHE_CONTROL_PREFIXES):
+        return None
+    if (
+        path == SWITCH_PATH
+        or path.startswith(NO_STORE_PREFIXES)
+        or (path.startswith("/api/") and path.endswith(NO_STORE_SUFFIXES))
     ):
         return "no-store"
     if path == "/api" or path.startswith("/api/"):
@@ -86,14 +102,16 @@ class _TagInputs(NamedTuple):
     local_date: str
 
 
-def _tag_inputs(app: FastAPI) -> _TagInputs:
-    """Everything the tag needs except the URL, read before the route runs (D2)."""
+def _tag_inputs(app: FastAPI) -> tuple[_TagInputs, bool]:
+    """Everything the tag needs except the URL, read before the route runs (D2), plus whether
+    the page cache is on (Plan 19 D31: same session, so the cache costs no extra connection)."""
     settings = _dependency(app, get_settings)()
     provider = cast(Callable[[], Iterator[Session]], _dependency(app, get_session))
     with contextlib.contextmanager(provider)() as session:
         data_version = cache.read_data_version(session)
+        cache_on = page_cache_on(session, settings)
     local_date = _filters.today_local(settings.timezone).isoformat()
-    return _TagInputs(settings.app_version, data_version, local_date)
+    return _TagInputs(settings.app_version, data_version, local_date), cache_on
 
 
 class CacheHeadersMiddleware(BaseHTTPMiddleware):
@@ -102,14 +120,18 @@ class CacheHeadersMiddleware(BaseHTTPMiddleware):
     data_version and the local date are read once per eligible request, before the route
     runs, so the tag can only be older than the body, never newer. A request without a
     session cookie skips that read: every eligible path needs a viewer, so it can never be
-    a 200. The route always runs; nothing short-circuits.
+    a 200. The route runs unless the inner page cache (Plan 19) answers from a stored body; the
+    tag and the 304 are computed here either way.
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
         inputs: _TagInputs | None = None
         if etag_eligible(request.method, path) and request.cookies.get(COOKIE_NAME):
-            inputs = await run_in_threadpool(_tag_inputs, cast(FastAPI, request.app))
+            inputs, cache_on = await run_in_threadpool(_tag_inputs, cast(FastAPI, request.app))
+            # Plan 19 D31: the page cache (the inner middleware) keys on these same values.
+            request.state.tag_inputs = inputs
+            request.state.page_cache_on = cache_on
         response = await call_next(request)
         cache_control = cache_control_for(path)
         if cache_control is not None:

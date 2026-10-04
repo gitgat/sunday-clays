@@ -153,6 +153,7 @@ export function HomeInsights({ meId }: { meId: number | null }) {
       )}
       {hasInsights && (
         <Card
+          tour="insights"
           title="Insights"
           subtitle={
             f.as_of == null

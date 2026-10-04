@@ -16,6 +16,10 @@ from sunday_clays.api import etag
         ("GET", "/api/predictions/next", False),
         ("GET", "/api/insights/home", True),
         ("GET", "/api/bumps", False),
+        ("GET", "/api/features", False),
+        ("GET", "/api/og/page/events/2026-09-27", False),
+        ("GET", "/api/features/", False),
+        ("GET", "/api/features-x", True),
         ("GET", "/index.html", False),
     ],
 )
@@ -32,6 +36,11 @@ def test_etag_eligibility(method: str, path: str, eligible: bool) -> None:
         ("/api/admin/jobs/1", "no-store"),
         ("/api/insights/home", "private, no-cache"),
         ("/api/bumps", "no-store"),
+        ("/api/features", "no-store"),
+        ("/api/og/image/generic.png", None),  # the route's own Cache-Control stands
+        ("/api/og/page/", None),
+        ("/api/features/", "no-store"),
+        ("/api/features-x", "private, no-cache"),
         ("/assets/app.js", None),
         ("/assets/bumps", None),
     ],

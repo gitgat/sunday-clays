@@ -72,17 +72,12 @@ export function resetFontCache(): void {
   robotoCss = undefined;
 }
 
-/**
- * Renders `el` to a PNG and hands it to the Web Share API when the browser can share files,
- * otherwise downloads it. Resolves 'cancelled' when the user dismisses the share sheet. A
- * NotAllowedError also downloads: Safari drops the tap's transient activation during the async
- * render, so it refuses the share even though canShare said yes.
- */
-export async function shareElementAsImage(
-  el: HTMLElement,
-  filename: string,
-): Promise<ShareOutcome> {
-  const name = filename.endsWith('.png') ? filename : `${filename}.png`;
+function pngName(filename: string): string {
+  return filename.endsWith('.png') ? filename : `${filename}.png`;
+}
+
+/** Renders `el` to a PNG blob (2x, Roboto embedded, `data-share-exclude` left out). */
+export async function renderElementToPng(el: HTMLElement): Promise<Blob> {
   const blob = await toBlob(el, {
     pixelRatio: 2,
     cacheBust: true,
@@ -93,6 +88,26 @@ export async function shareElementAsImage(
     backgroundColor: getComputedStyle(document.body).backgroundColor,
   });
   if (!blob) throw new Error('Could not render the image');
+  return blob;
+}
+
+/** Renders `el` and saves it as a file; never opens the share sheet (Plan 19 D20). */
+export async function downloadElementAsImage(el: HTMLElement, filename: string): Promise<void> {
+  downloadBlob(await renderElementToPng(el), pngName(filename));
+}
+
+/**
+ * Renders `el` to a PNG and hands it to the Web Share API when the browser can share files,
+ * otherwise downloads it. Resolves 'cancelled' when the user dismisses the share sheet. A
+ * NotAllowedError also downloads: Safari drops the tap's transient activation during the async
+ * render, so it refuses the share even though canShare said yes.
+ */
+export async function shareElementAsImage(
+  el: HTMLElement,
+  filename: string,
+): Promise<ShareOutcome> {
+  const name = pngName(filename);
+  const blob = await renderElementToPng(el);
   const file = new File([blob], name, { type: 'image/png' });
   if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
     try {

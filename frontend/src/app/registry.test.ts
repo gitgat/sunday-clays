@@ -88,6 +88,9 @@ const EXPECTED: Record<string, PageFilters> = {
   '/admin/identity': NO_FILTERS,
   '/admin/ops': NO_FILTERS,
   '/admin/analytics': { roundType: false, window: true },
+  '/admin/recap': { roundType: false, window: false },
+  '/admin/features': NO_FILTERS,
+  '/glossary': NO_FILTERS,
   '/login': NO_FILTERS,
 };
 

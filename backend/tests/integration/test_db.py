@@ -205,7 +205,7 @@ def session_dep_app(
 ) -> FastAPI:
     """create_app() with router discovery emptied (Decision 28) plus two SessionDep POST probes."""
     monkeypatch.setattr(app_module, "discover_routers", lambda: [])
-    app = app_module.create_app()
+    app = app_module.create_app(page_cache_allowlist=())
 
     @app.post("/api/_probe/insert")
     def insert(session: SessionDep) -> dict[str, bool]:

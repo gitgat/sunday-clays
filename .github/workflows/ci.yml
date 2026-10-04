@@ -23,7 +23,7 @@ env:
 jobs:
   backend:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17
@@ -61,7 +61,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy --strict src
-      - run: uv run pytest --cov --cov-branch --cov-report=term --cov-report=xml
+      - run: uv run pytest --durations=25 --cov --cov-branch --cov-report=term --cov-report=xml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-coverage
@@ -333,6 +333,8 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - run: IMAGE_TAG=ci docker compose -f compose.yaml -f compose.test.yaml up -d --wait
+      # Plan 19: Caddyfile validation and crawler routing against the running stack
+      - run: deploy/caddy/test_crawler_ua.sh http://localhost:8080 ghcr.io/gitgat/sunday-clays-frontend:ci
       - run: pnpm exec playwright test
         working-directory: frontend
         env:

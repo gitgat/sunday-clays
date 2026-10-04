@@ -4,7 +4,9 @@ import { renderWithProviders } from '../../../test/render';
 import { BumpsProvider } from '../../bumps/BumpsProvider';
 import { insightFixture } from '../mocks';
 import { Segments } from '../segments';
+import { CardHeadingLevel } from '../../../components/ui/Card';
 import { InsightCard } from './InsightCard';
+import { InsightExplainer } from './InsightExplainer';
 
 function renderCard(props: Parameters<typeof InsightCard>[0]) {
   return renderWithProviders(
@@ -225,5 +227,21 @@ describe('InsightCard bumps', () => {
     expect(headline).not.toBeNull();
     expect(headline?.textContent).toContain('New personal best for');
     expect(button).toHaveAccessibleDescription(/New personal best for.*Ike Hadley/);
+  });
+});
+
+describe('InsightExplainer heading level', () => {
+  it('is an h3 under a card h2 and an h4 under a grouped h3', () => {
+    const { unmount } = renderWithProviders(
+      <InsightExplainer id="a" insight={insightFixture()} you={false} />,
+    );
+    expect(screen.getByRole('heading', { level: 3, name: 'How we worked it out' })).toBeVisible();
+    unmount();
+    renderWithProviders(
+      <CardHeadingLevel value={3}>
+        <InsightExplainer id="b" insight={insightFixture()} you={false} />
+      </CardHeadingLevel>,
+    );
+    expect(screen.getByRole('heading', { level: 4, name: 'How we worked it out' })).toBeVisible();
   });
 });

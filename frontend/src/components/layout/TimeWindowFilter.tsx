@@ -46,7 +46,7 @@ export function TimeWindowFilter({ variant = 'segmented' }: { variant?: 'segment
   const sheet = <CustomWindowSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />;
   if (variant === 'select') {
     return (
-      <span className="inline-flex shrink-0">
+      <span data-tour="window" className="inline-flex shrink-0">
         <select
           aria-label="Time window"
           aria-describedby={`${descriptionId}-selected`}
@@ -82,7 +82,12 @@ export function TimeWindowFilter({ variant = 'segmented' }: { variant?: 'segment
     );
   }
   return (
-    <div role="group" aria-label="Time window" className="flex flex-wrap items-center gap-1">
+    <div
+      role="group"
+      aria-label="Time window"
+      data-tour="window"
+      className="flex flex-wrap items-center gap-1"
+    >
       {TIME_WINDOWS.map((w) => (
         <span key={w} className="contents">
           <button

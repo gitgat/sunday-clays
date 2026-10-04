@@ -21,6 +21,8 @@ describe('pageKind', () => {
     ['/race', 'race'],
     ['/compare', 'compare'],
     ['/admin/analytics', 'admin'],
+    ['/admin/recap', 'admin'], // Plan 19 T8's page
+    ['/glossary', 'other'], // Plan 19: no kind of its own
     ['/login', 'other'],
     ['/constructor', 'other'],
     ['/no-such-page', 'other'],

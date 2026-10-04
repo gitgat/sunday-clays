@@ -28,7 +28,10 @@ export function HomePage({ widgets = homeWidgets }: { widgets?: HomeWidget[] }) 
   }, [slot]);
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-medium">Sunday Clays</h1>
+      {/* tabIndex -1: the tour returns focus here without adding a Tab stop (Plan 19). */}
+      <h1 id="home-title" tabIndex={-1} className="text-2xl font-medium focus:outline-none">
+        Sunday Clays
+      </h1>
       <WidgetSlot slot="hero" widgets={widgets} meId={meId} />
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
@@ -37,7 +40,12 @@ export function HomePage({ widgets = homeWidgets }: { widgets?: HomeWidget[] }) 
           <WidgetSlot slot="main" widgets={widgets} meId={meId} />
         </div>
         {/* Named apart from the "Your panel" card inside it: landmark names stay unique. */}
-        <aside ref={personal} aria-label="Personal" className="flex min-w-0 flex-col gap-4">
+        <aside
+          ref={personal}
+          aria-label="Personal"
+          data-tour="you"
+          className="flex min-w-0 flex-col gap-4"
+        >
           {asking ? (
             <WhichOneAreYou onPicked={setMeId} onSkipped={() => setSkipped(true)} />
           ) : (

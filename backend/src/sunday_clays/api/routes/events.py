@@ -8,6 +8,8 @@ from fastapi import APIRouter, Path, Query
 from pydantic import BaseModel, ConfigDict
 
 from sunday_clays.analytics import frames
+from sunday_clays.analytics.personal_best import PB_MIN_PRIOR_ROUNDS as PB_MIN_PRIOR_ROUNDS
+from sunday_clays.analytics.personal_best import is_new_pb
 from sunday_clays.api.routes._convert import opt_float, opt_int, opt_str, rows
 from sunday_clays.api.routes._filters import round_type_param
 from sunday_clays.db import SessionDep
@@ -16,7 +18,6 @@ from sunday_clays.domain.round_type import RoundType
 
 router = APIRouter()
 
-PB_MIN_PRIOR_ROUNDS = 5
 EventKind = Literal["regular", "special"]
 
 
@@ -343,7 +344,7 @@ def event_notables(
     }
     for r in rows(best):
         previous, n_prior = prior.get(int(r["shooter_id"]), (0, 0))
-        if n_prior >= PB_MIN_PRIOR_ROUNDS and int(r["score"]) > previous:
+        if is_new_pb(int(r["score"]), previous, n_prior):
             notables.append(
                 NotableOut(
                     kind="pb",

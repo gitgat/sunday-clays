@@ -17,11 +17,14 @@ const FIXED_ORDER: Record<string, number> = {
   yir: 110,
   records: 120,
   race: 130,
+  glossary: 135,
   about: 140,
   admin: 900,
   'admin-identity': 910,
   'admin-ops': 920,
   'admin-analytics': 930,
+  'admin-recap': 935,
+  'admin-features': 940,
 };
 /** C10: exactly these features are mobile tabs. */
 const MOBILE_TABS = new Set(['home', 'events', 'leaderboards', 'shooters']);

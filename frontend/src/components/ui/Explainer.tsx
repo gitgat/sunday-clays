@@ -5,6 +5,7 @@ import { useTimeWindow } from '../../lib/timeWindow';
 import { windowTagText } from '../../lib/windowText';
 import { CardHeadingLevel } from './Card';
 import { cx } from './cx';
+import { WordsUsedHere } from './WordsUsedHere';
 
 export interface ExplainerToggleProps {
   /** The accessible name, e.g. "About this chart". */
@@ -97,6 +98,9 @@ export function ExplainerPanel({ id, explainer }: { id: string; explainer: Expla
       <Part title="How it's worked out" level={level}>
         <Bullets items={explainer.computed} />
       </Part>
+      {explainer.terms !== undefined && explainer.terms.length > 0 && (
+        <WordsUsedHere terms={explainer.terms} />
+      )}
     </div>
   );
 }
