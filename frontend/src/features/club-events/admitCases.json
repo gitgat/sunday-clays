@@ -1,0 +1,50 @@
+[
+  {
+    "case": "no capacity always goes",
+    "capacity": null,
+    "going_spots": 40,
+    "waitlist": 3,
+    "new_spots": 3,
+    "expect": "going"
+  },
+  {
+    "case": "an empty event",
+    "capacity": 2,
+    "going_spots": 0,
+    "waitlist": 0,
+    "new_spots": 1,
+    "expect": "going"
+  },
+  {
+    "case": "an exact fit",
+    "capacity": 20,
+    "going_spots": 18,
+    "waitlist": 0,
+    "new_spots": 2,
+    "expect": "going"
+  },
+  {
+    "case": "one spot over",
+    "capacity": 20,
+    "going_spots": 19,
+    "waitlist": 0,
+    "new_spots": 2,
+    "expect": "waitlist"
+  },
+  {
+    "case": "full",
+    "capacity": 20,
+    "going_spots": 20,
+    "waitlist": 0,
+    "new_spots": 1,
+    "expect": "waitlist"
+  },
+  {
+    "case": "a waitlist blocks a newcomer who would fit",
+    "capacity": 20,
+    "going_spots": 12,
+    "waitlist": 1,
+    "new_spots": 1,
+    "expect": "waitlist"
+  }
+]
