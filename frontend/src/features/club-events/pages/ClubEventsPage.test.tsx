@@ -36,18 +36,40 @@ describe('ClubEventsPage', () => {
     expect(localStorage.getItem(PAST_OPEN_KEY)).toBe('1');
   });
 
-  it("marks a cancelled event and this device's place", async () => {
+  it('says Cancelled, not "N came", for a past cancelled event', async () => {
     featuresOn();
+    server.use(
+      http.get('*/api/club-events', () =>
+        HttpResponse.json({
+          upcoming: [],
+          past: [{ ...banquetPast, state: 'cancelled', signups: 5 }],
+        }),
+      ),
+    );
+    const { user } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    await user.click(await screen.findByRole('button', { name: 'Past events (1)' }));
+    expect(screen.getByText('Sat, Aug 1 · Cancelled')).toBeInTheDocument();
+    expect(screen.queryByText(/came/)).not.toBeInTheDocument();
+  });
+
+  it("marks a cancelled event and keeps this device's chip off it", async () => {
+    featuresOn();
+    let detailReads = 0;
     saveSignup(13, { eventId: 1, token: 'tok-13', status: 'waitlist' });
     server.use(
       http.get('*/api/club-events', () =>
         HttpResponse.json({ upcoming: [{ ...fallFunSummary, state: 'cancelled' }], past: [] }),
       ),
-      http.get('*/api/club-events/:id', () => HttpResponse.json(fallFunShoot)),
+      http.get('*/api/club-events/:id', () => {
+        detailReads += 1;
+        return HttpResponse.json(fallFunShoot);
+      }),
     );
     renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
     expect(await screen.findByText('Cancelled')).toBeInTheDocument();
-    expect(await screen.findByText('Waitlist #1')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 100)); // time for any chip fetch to settle
+    expect(detailReads).toBe(0);
+    expect(screen.queryByText('Waitlist #1')).not.toBeInTheDocument();
   });
 
   it('says when nothing is coming up', async () => {

@@ -78,7 +78,7 @@ export function ClubEventPage() {
   const mineIds = new Set(mine.map((s) => s.registrationId));
   const myRow = data.roster.find((r) => mineIds.has(r.registration_id));
   const mySignup = mine.find((s) => s.registrationId === myRow?.registration_id);
-  const canCancel = data.state !== 'started';
+  const canCancel = data.state !== 'started' && data.upcoming;
   const deadline = deadlineLine(data);
   const url = `${window.location.origin}/club-events/${data.id}`;
 
@@ -144,6 +144,7 @@ export function ClubEventPage() {
                   : null
               }
               canCancel={canCancel}
+              event={data}
               onCancel={() => cancelRow(myRow)}
             />
           </div>

@@ -76,7 +76,8 @@ export function ClubEventsPage() {
                         {event.title}
                       </Link>
                       <span className="text-sm text-text-muted">
-                        {formatEventDate(event.local_date)} · {cameLine(event)}
+                        {formatEventDate(event.local_date)} ·{' '}
+                        {event.state === 'cancelled' ? 'Cancelled' : cameLine(event)}
                       </span>
                     </li>
                   ))}

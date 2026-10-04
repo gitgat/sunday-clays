@@ -1,5 +1,5 @@
 import { Button } from '../../../components/ui/Button';
-import type { RosterRow } from '../api';
+import type { ClubEventSummary, RosterRow } from '../api';
 import { onFileAfterRace, PROMOTED, statusLine } from '../format';
 
 /** This device's sign-up: going or its waitlist place, and how to cancel it (§5.8). */
@@ -9,12 +9,14 @@ export function MyStatus({
   onFileName,
   canCancel,
   onCancel,
+  event,
 }: {
   row: RosterRow;
   promoted: boolean;
   onFileName: string | null;
   canCancel: boolean;
   onCancel: () => void;
+  event: Pick<ClubEventSummary, 'upcoming' | 'state'>;
 }) {
   return (
     <section
@@ -22,7 +24,7 @@ export function MyStatus({
       className="flex flex-col gap-2 rounded-card border border-accent bg-elevated p-4 text-text"
     >
       {promoted && <p className="font-medium">{PROMOTED}</p>}
-      <p>{statusLine(row)}</p>
+      <p>{statusLine(row, event)}</p>
       {onFileName !== null && (
         <p className="text-sm text-text-muted">{onFileAfterRace(onFileName)}</p>
       )}

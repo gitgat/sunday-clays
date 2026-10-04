@@ -155,13 +155,52 @@ describe('ClubEventPage', () => {
 
   it('closes sign-ups and cancels once started; trusts state over the device clock', async () => {
     featuresOn();
-    serve({ state: 'started' });
+    serve({ state: 'started', upcoming: false });
     renderPage();
     expect(await screen.findByRole('button', { name: 'Sign-ups closed' })).toBeDisabled();
     expect(
       screen.queryByRole('button', { name: "Cancel Dana Quill's spot" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText('Happening now')).toBeInTheDocument();
+    expect(screen.queryByText('Happening now')).not.toBeInTheDocument();
+  });
+
+  it('uses past tense and offers no action once the event is over (Ruling F3)', async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    serve({ state: 'started', upcoming: false, spots_taken: 4, waitlist_count: 0 });
+    renderPage();
+    expect(await screen.findByText('You signed up.')).toBeInTheDocument();
+    expect(screen.queryByText(/See you there/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/join the waitlist/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sign up by/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel my spot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Cancel .*spot$/ })).not.toBeInTheDocument();
+  });
+
+  it('shows a past cancelled event as past, with no cancel action either', async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    serve({ state: 'cancelled', upcoming: false });
+    renderPage();
+    expect(await screen.findByText('This event was cancelled by the organizers.')).toBeVisible();
+    expect(
+      screen.getByText('Your spot is kept in case the organizers restore this club event.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/See you there/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel my spot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Cancel .*spot$/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps this device's spot on a cancelled event, with Cancel, and no see-you-there", async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    serve({ state: 'cancelled' });
+    renderPage();
+    expect(
+      await screen.findByText('Your spot is kept in case the organizers restore this club event.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/See you there/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel my spot' })).toBeInTheDocument();
   });
 
   it('shows the empty and the purged roster lines', async () => {

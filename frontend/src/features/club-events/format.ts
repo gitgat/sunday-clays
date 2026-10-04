@@ -11,11 +11,14 @@ export const EMAIL_HELP = 'Only organizers see it. This site never sends email.'
 export const WAITLIST_WARNING = 'This will put you on the waitlist.';
 export const EMAIL_ON_FILE = "We'll use the email we have for you.";
 
-type Spots = Pick<ClubEventSummary, 'capacity' | 'spots_taken' | 'waitlist_count'>;
+/** `upcoming` and `state` default to "still coming, open" when a caller leaves them out. */
+type Spots = Pick<ClubEventSummary, 'capacity' | 'spots_taken' | 'waitlist_count'> &
+  Partial<Pick<ClubEventSummary, 'upcoming' | 'state'>>;
 type When = Pick<
   ClubEventSummary,
-  'local_date' | 'local_time' | 'deadline_local_date' | 'deadline_local_time' | 'state'
+  'local_date' | 'local_time' | 'deadline_local_date' | 'deadline_local_time' | 'state' | 'upcoming'
 >;
+type Ctx = Partial<Pick<ClubEventSummary, 'upcoming' | 'state'>>;
 type Mine = Pick<RosterRow, 'status' | 'guests' | 'waitlist_position'>;
 
 function plural(n: number, word: string): string {
@@ -46,15 +49,15 @@ export function whenLine(e: Pick<ClubEventSummary, 'local_date' | 'local_time'>)
   return `${formatEventDate(e.local_date)} · ${formatEventTime(e.local_time)}`;
 }
 
-/** The deadline while open; afterwards what is true now; nothing for a cancelled event. */
+/** The deadline while open; "Sign-ups closed" while closed; nothing once the event has started
+ * (the server's `upcoming` is false) or for a cancelled event: no present tense for the past. */
 export function deadlineLine(e: When): string | null {
+  if (!e.upcoming) return null;
   switch (e.state) {
     case 'open':
       return `Sign up by ${formatEventDate(e.deadline_local_date)}, ${formatEventTime(e.deadline_local_time)}`;
     case 'closed':
       return 'Sign-ups closed';
-    case 'started':
-      return 'Happening now';
     default:
       return null;
   }
@@ -63,9 +66,10 @@ export function deadlineLine(e: When): string | null {
 export function spotsLine(e: Spots): string {
   if (e.capacity === null) return `${e.spots_taken} going`;
   if (e.spots_taken >= e.capacity) {
-    return e.waitlist_count > 0
-      ? `Full · ${e.waitlist_count} on the waitlist`
-      : 'Full · join the waitlist';
+    if (e.waitlist_count > 0) return `Full · ${e.waitlist_count} on the waitlist`;
+    return (e.upcoming ?? true) && (e.state ?? 'open') === 'open'
+      ? 'Full · join the waitlist'
+      : 'Full';
   }
   return `${e.spots_taken} of ${e.capacity} spots taken`;
 }
@@ -82,7 +86,16 @@ export function guestsRule(e: Pick<ClubEventSummary, 'allow_guests' | 'max_guest
   return e.allow_guests ? `Guests welcome, up to ${e.max_guests} each` : 'Members only, no guests';
 }
 
-export function statusLine(row: Mine): string {
+export const KEPT_SPOT = 'Your spot is kept in case the organizers restore this club event.';
+
+export function statusLine(row: Mine, ctx: Ctx = {}): string {
+  if (ctx.state === 'cancelled') return KEPT_SPOT;
+  if (ctx.upcoming === false) {
+    if (row.status === 'waitlist') return 'You were on the waitlist.';
+    return row.guests > 0
+      ? `You signed up, plus ${plural(row.guests, 'guest')}.`
+      : 'You signed up.';
+  }
   if (row.status === 'waitlist') {
     const place = row.waitlist_position === null ? '.' : `: #${row.waitlist_position}.`;
     return `You're on the waitlist${place} If a spot opens, you move up automatically.`;
