@@ -5,7 +5,7 @@ import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import { FeatureGate } from '../../../components/FeatureGate';
 import { banquetPast, fallFunShoot, fallFunSummary } from '../mocks';
-import { PAST_OPEN_KEY, saveSignup } from '../tokens';
+import { allSignups, PAST_OPEN_KEY, saveSignup } from '../tokens';
 import { ClubEventsPage } from './ClubEventsPage';
 
 function featuresOn() {
@@ -70,6 +70,16 @@ describe('ClubEventsPage', () => {
     await new Promise((r) => setTimeout(r, 100)); // time for any chip fetch to settle
     expect(detailReads).toBe(0);
     expect(screen.queryByText('Waitlist #1')).not.toBeInTheDocument();
+  });
+
+  it('drops stored sign-ups for events that are gone or purged', async () => {
+    featuresOn();
+    saveSignup(11, { eventId: 1, token: 'keep', status: 'going' });
+    saveSignup(12, { eventId: 2, token: 'purged', status: 'going' }); // banquetPast is purged
+    saveSignup(13, { eventId: 77, token: 'gone', status: 'going' });
+    renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    await screen.findByRole('link', { name: /Fall Fun Shoot/ });
+    await waitFor(() => expect(allSignups().map((s) => s.registrationId)).toEqual([11]));
   });
 
   it('says when nothing is coming up', async () => {

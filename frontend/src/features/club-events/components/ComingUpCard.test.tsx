@@ -6,7 +6,7 @@ import { renderWithProviders } from '../../../test/render';
 import { WidgetSlot } from '../../home/components/WidgetSlot';
 import { homeWidgets } from '../../home/widgets';
 import { fallFunShoot, fallFunSummary } from '../mocks';
-import { saveSignup } from '../tokens';
+import { allSignups, saveSignup } from '../tokens';
 import { ComingUpCard } from './ComingUpCard';
 
 function switches(value: Record<string, boolean>) {
@@ -105,16 +105,52 @@ describe('ComingUpCard (§5.7.4)', () => {
           past: [],
         }),
       ),
-      http.get('*/api/club-events/:id', () => {
+      http.get('*/api/club-events/:id', ({ params }) => {
         detailCalls += 1;
-        return HttpResponse.json(fallFunShoot);
+        return HttpResponse.json({ ...fallFunShoot, id: Number(params.id) });
       }),
     );
     renderWithProviders(<ComingUpCard />);
     expect(
       await screen.findByText('Fall Fun Shoot on Sat, Oct 17 was cancelled.'),
     ).toBeInTheDocument();
-    expect(detailCalls).toBe(0); // D13: no token for the shown event, so no extra fetch
+    expect(detailCalls).toBe(1); // only the cancelled event's roster, to confirm this device is on it
+  });
+
+  it('asks Sign up, with no chip, when the token is stale (the roster no longer lists it)', async () => {
+    switches({ events: true });
+    saveSignup(99, { eventId: 1, token: 'removed', status: 'going' });
+    renderWithProviders(<ComingUpCard />);
+    expect(await screen.findByRole('link', { name: 'Sign up' })).toBeInTheDocument();
+    expect(screen.queryByText("You're in")).not.toBeInTheDocument();
+  });
+
+  it('prunes tokens for events missing from the list', async () => {
+    switches({ events: true });
+    saveSignup(50, { eventId: 404, token: 'gone', status: 'going' });
+    renderWithProviders(<ComingUpCard />);
+    await screen.findByRole('region', { name: 'Coming up' });
+    await waitFor(() => expect(allSignups()).toEqual([]));
+  });
+
+  it('does not say cancelled for an event this device is no longer on', async () => {
+    switches({ events: true });
+    saveSignup(55, { eventId: 9, token: 'removed', status: 'going' }); // not on its roster
+    server.use(
+      http.get('*/api/club-events', () =>
+        HttpResponse.json({
+          upcoming: [
+            { ...fallFunSummary, id: 9, state: 'cancelled' },
+            { ...fallFunSummary, id: 1 },
+          ],
+          past: [],
+        }),
+      ),
+    );
+    renderWithProviders(<ComingUpCard />);
+    await screen.findByRole('link', { name: 'Sign up' });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.queryByText(/was cancelled/)).not.toBeInTheDocument();
   });
 
   it('renders nothing when the only upcoming club event is cancelled, even one this device joined', async () => {

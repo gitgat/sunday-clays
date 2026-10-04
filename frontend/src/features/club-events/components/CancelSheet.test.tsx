@@ -3,8 +3,21 @@ import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
+import { useFeatures } from '../../../lib/features';
+import { useClubEvent } from '../api';
+import { fallFunShoot } from '../mocks';
 import { allSignups, saveSignup } from '../tokens';
 import { CancelSheet } from './CancelSheet';
+
+function Watcher() {
+  useClubEvent(1);
+  return null;
+}
+
+function FeaturesWatcher() {
+  useFeatures();
+  return null;
+}
 
 describe('CancelSheet', () => {
   it("cancels this device's own spot with its token and forgets it", async () => {
@@ -63,6 +76,76 @@ describe('CancelSheet', () => {
     expect(await sheet.findByRole('alert')).toHaveTextContent(
       "That email doesn't match this sign-up. Check it and try again.",
     );
+  });
+
+  it.each(['registration_not_found', 'event_started'])(
+    'refetches the event when the server says %s',
+    async (code) => {
+      let reads = 0;
+      server.use(
+        http.get('*/api/club-events/1', () => {
+          reads += 1;
+          return HttpResponse.json(fallFunShoot);
+        }),
+        http.post('*/api/club-events/1/registrations/13/cancel', () =>
+          HttpResponse.json({ error: { code, message: 'Already gone.' } }, { status: 409 }),
+        ),
+      );
+      const { user } = renderWithProviders(
+        <>
+          <Watcher />
+          <CancelSheet
+            eventId={1}
+            target={{ kind: 'other', registrationId: 13, name: 'Pat Kim' }}
+            onClose={vi.fn()}
+          />
+        </>,
+      );
+      await waitFor(() => expect(reads).toBe(1));
+      const sheet = within(screen.getByRole('dialog'));
+      await user.type(
+        sheet.getByLabelText('Type the email used for this sign-up.'),
+        'p@example.com',
+      );
+      await user.click(sheet.getByRole('button', { name: 'Cancel spot' }));
+      expect(await sheet.findByRole('alert')).toHaveTextContent('Already gone.');
+      await waitFor(() => expect(reads).toBe(2));
+    },
+  );
+
+  it("shows the switched-off message on the gate's 404 and refetches the switches on close", async () => {
+    let switchReads = 0;
+    server.use(
+      http.get('*/api/features', () => {
+        switchReads += 1;
+        return HttpResponse.json({ switches: { events: true } });
+      }),
+      http.post('*/api/club-events/1/registrations/13/cancel', () =>
+        HttpResponse.json({ detail: 'Not Found' }, { status: 404 }),
+      ),
+    );
+    const onClose = vi.fn();
+    const { user } = renderWithProviders(
+      <>
+        <FeaturesWatcher />
+        <CancelSheet
+          eventId={1}
+          target={{ kind: 'other', registrationId: 13, name: 'Pat Kim' }}
+          onClose={onClose}
+        />
+      </>,
+    );
+    await waitFor(() => expect(switchReads).toBe(1));
+    const sheet = within(screen.getByRole('dialog'));
+    await user.type(sheet.getByLabelText('Type the email used for this sign-up.'), 'p@example.com');
+    await user.click(sheet.getByRole('button', { name: 'Cancel spot' }));
+    expect(await sheet.findByRole('alert')).toHaveTextContent(
+      "Club events aren't available right now. Nothing was saved.",
+    );
+    expect(switchReads).toBe(1); // not yet: the message must stay readable
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(switchReads).toBe(2));
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('shows the rate message on 429', async () => {

@@ -274,6 +274,29 @@ describe('SignUpSheet', () => {
     expect(dialog().getByRole('button', { name: 'Sign me up' })).toBeDisabled();
   });
 
+  it('does not re-run the name check after a 201, so "already on the list" never flashes', async () => {
+    let checks = 0;
+    let signedUpNow = false;
+    server.use(
+      http.get('*/api/club-events/:id/signup-check', () => {
+        checks += 1;
+        return HttpResponse.json({ has_email: true, already_signed_up: signedUpNow });
+      }),
+      http.post('*/api/club-events/:id/registrations', () => {
+        signedUpNow = true;
+        return HttpResponse.json(signedUp, { status: 201 });
+      }),
+    );
+    const { user, onSignedUp } = renderSheet();
+    await user.type(dialog().getByRole('searchbox', { name: 'Who are you?' }), 'hadley');
+    await user.click(await dialog().findByRole('button', { name: 'Hadley, Ike' }));
+    await user.click(await screen.findByRole('button', { name: 'Sign me up' }));
+    await waitFor(() => expect(onSignedUp).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 100));
+    expect(checks).toBe(1);
+    expect(screen.queryByText(/already on the list/)).not.toBeInTheDocument();
+  });
+
   it('announces the already-on-the-list line in a polite live region', async () => {
     server.use(
       http.get('*/api/club-events/:id/signup-check', () =>

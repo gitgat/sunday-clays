@@ -1,10 +1,12 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/errors';
 import { Button } from '../../../components/ui/Button';
 import { Sheet } from '../../../components/ui/Sheet';
 import { useIsDesktop } from '../../../lib/useMediaQuery';
-import { useCancelSignup } from '../api';
-import { cancelOwnQuestion } from '../format';
+import { FEATURES_QUERY_KEY } from '../../../lib/features';
+import { clubEventKey, useCancelSignup } from '../api';
+import { cancelOwnQuestion, SWITCHED_OFF } from '../format';
 import { forgetSignup } from '../tokens';
 
 export type CancelTarget =
@@ -28,10 +30,14 @@ export function CancelSheet({
   const cancel = useCancelSignup(eventId);
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [switchedOff, setSwitchedOff] = useState(false);
+  const qc = useQueryClient();
   const emailId = useId();
   if (target === null) return null;
 
   const close = () => {
+    if (switchedOff) void qc.invalidateQueries({ queryKey: FEATURES_QUERY_KEY });
+    setSwitchedOff(false);
     setEmail('');
     setError(null);
     cancel.reset();
@@ -50,7 +56,19 @@ export function CancelSheet({
         close();
       },
       onError: (err) => {
-        setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+        if (err instanceof ApiError && err.status === 404 && err.code === 'http_404') {
+          // The switches are refetched on close, so the message can be read first (see SignUpSheet).
+          setError(SWITCHED_OFF);
+          setSwitchedOff(true);
+        } else {
+          if (
+            err instanceof ApiError &&
+            (err.code === 'registration_not_found' || err.code === 'event_started')
+          ) {
+            void qc.invalidateQueries({ queryKey: clubEventKey(eventId) });
+          }
+          setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
+        }
       },
     });
   };

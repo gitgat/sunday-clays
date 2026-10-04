@@ -9,7 +9,7 @@ import { FEATURES_QUERY_KEY } from '../../../lib/features';
 import { useClubEvents } from '../api';
 import { EventCard } from '../components/EventCard';
 import { cameLine, formatEventDate } from '../format';
-import { readPastOpen, writePastOpen } from '../tokens';
+import { pruneToList, readPastOpen, writePastOpen } from '../tokens';
 
 /** /club-events (§5.7.2): upcoming cards, past events collapsed. No filters (D12). */
 export function ClubEventsPage() {
@@ -21,6 +21,10 @@ export function ClubEventsPage() {
       void qc.invalidateQueries({ queryKey: FEATURES_QUERY_KEY });
     }
   }, [events.error, qc]);
+  const list = events.data;
+  useEffect(() => {
+    if (list !== undefined) pruneToList(list);
+  }, [list]);
   const [pastOpen, setPastOpen] = useState(readPastOpen);
   const toggle = () => {
     writePastOpen(!pastOpen);
