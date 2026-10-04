@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  signedUpLine,
   cameLine,
   cancelOwnQuestion,
   chipText,
@@ -109,5 +110,22 @@ describe('club-event copy edge cases', () => {
 
   it('returns the raw text for a date it cannot read instead of throwing', () => {
     expect(formatEventDate('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('signedUpLine', () => {
+  it('names the person, with guests or a waitlist place', () => {
+    expect(
+      signedUpLine('Dana Quill', { status: 'going', guests: 0, waitlist_position: null }),
+    ).toBe('Dana Quill is in.');
+    expect(
+      signedUpLine('Dana Quill', { status: 'going', guests: 2, waitlist_position: null }),
+    ).toBe('Dana Quill is in, plus 2 guests.');
+    expect(
+      signedUpLine('Dana Quill', { status: 'waitlist', guests: 0, waitlist_position: 3 }),
+    ).toBe('Dana Quill is on the waitlist: #3.');
+    expect(
+      signedUpLine('Dana Quill', { status: 'waitlist', guests: 0, waitlist_position: null }),
+    ).toBe('Dana Quill is on the waitlist.');
   });
 });
