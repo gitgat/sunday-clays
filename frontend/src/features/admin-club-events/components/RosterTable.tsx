@@ -44,6 +44,10 @@ export function RosterTable({
   const link = useLinkRegistration(eventId);
   const reset = useResetCancelLimit(eventId);
   const guestsId = useId();
+  const openAction = (next: Action) => {
+    setResult(null);
+    setAction(next);
+  };
   const close = () => {
     setAction(null);
     remove.reset();
@@ -59,7 +63,7 @@ export function RosterTable({
         <Button
           variant="ghost"
           aria-label={`Remove ${row.name}`}
-          onClick={() => setAction({ kind: 'remove', row })}
+          onClick={() => openAction({ kind: 'remove', row })}
         >
           Remove
         </Button>
@@ -68,7 +72,7 @@ export function RosterTable({
           aria-label={`Guests for ${row.name}`}
           onClick={() => {
             setGuests(String(row.guests));
-            setAction({ kind: 'guests', row });
+            openAction({ kind: 'guests', row });
           }}
         >
           Guests
@@ -77,16 +81,20 @@ export function RosterTable({
           <Button
             variant="ghost"
             aria-label={`Link ${row.name}`}
-            onClick={() => setAction({ kind: 'link', row, shooter: null, hasEmail: null })}
+            onClick={() => openAction({ kind: 'link', row, shooter: null, hasEmail: null })}
           >
             Link
           </Button>
         )}
-        {row.cancel_fail_count >= 5 && (
+        {row.cancel_fail_count > 0 && (
           <Button
             variant="ghost"
             aria-label={`Reset cancel limit for ${row.name}`}
-            onClick={() => reset.mutate(row.id)}
+            loading={reset.isPending && reset.variables === row.id}
+            onClick={() => {
+              setResult(null);
+              reset.mutate(row.id);
+            }}
           >
             Reset cancel limit
           </Button>
@@ -96,12 +104,13 @@ export function RosterTable({
   };
   const hint = (row: AdminRosterRow) => {
     const s = row.suggested_shooter;
-    if (row.shooter_id !== null || s === null) return null;
+    const active = row.status === 'going' || row.status === 'waitlist';
+    if (!active || row.shooter_id !== null || s === null) return null;
     return (
       <Button
         variant="ghost"
         onClick={() =>
-          setAction({
+          openAction({
             kind: 'link',
             row,
             shooter: { shooter_id: s.id, display_name: s.name },
@@ -146,7 +155,8 @@ export function RosterTable({
 
   return (
     <div className="flex flex-col gap-2">
-      {result !== null && <p role="note">{result}</p>}
+      {result !== null && <p role="status">{result}</p>}
+      {reset.isError && <AdminError error={reset.error} />}
       {isDesktop ? (
         <table className="w-full text-left text-sm">
           <thead>

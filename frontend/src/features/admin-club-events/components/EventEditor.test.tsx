@@ -57,7 +57,14 @@ describe('EventEditor', () => {
       }),
     );
     await user.click(screen.getByRole('button', { name: 'Cancel event' }));
+    expect(cancelled).toBe(false);
+    const sheet = within(screen.getByRole('dialog'));
+    expect(
+      sheet.getByText('Cancel this club event? Everyone signed up will see it was cancelled.'),
+    ).toBeInTheDocument();
+    await user.click(sheet.getByRole('button', { name: 'Cancel event' }));
     await waitFor(() => expect(cancelled).toBe(true));
+    expect(await screen.findByText('Club event cancelled')).toBeInTheDocument();
   });
 
   it('deletes after the exact confirm', async () => {

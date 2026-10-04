@@ -23,22 +23,37 @@ export function EventEditor({ event, onDeleted }: { event: AdminEvent; onDeleted
   const cancel = useCancelEvent(event.id);
   const restore = useRestoreEvent(event.id);
   const remove = useDeleteEvent(event.id);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [failure, setFailure] = useState<Error | null>(null);
+  const [confirm, setConfirm] = useState<'cancel' | 'restore' | 'delete' | null>(null);
+  const [message, setMessage] = useState<{ notice: string | null; failure: Error | null }>({
+    notice: null,
+    failure: null,
+  });
+  const setNotice = (notice: string) => setMessage({ notice, failure: null });
+  const setFailure = (failure: Error) => setMessage({ notice: null, failure });
+  const closeConfirm = () => {
+    setConfirm(null);
+    cancel.reset();
+    restore.reset();
+  };
   const hint = roster.data ? headHint(roster.data, event.capacity) : null;
 
   const copyEmails = async () => {
+    let emails: string[];
     try {
-      const emails = await fetchEmails(event.id, 'going');
-      if (emails.length === 0) {
-        setNotice('No emails to copy');
-        return;
-      }
+      emails = await fetchEmails(event.id, 'going');
+    } catch (error) {
+      setFailure(error instanceof Error ? error : new Error('Could not read the emails.'));
+      return;
+    }
+    if (emails.length === 0) {
+      setNotice('No emails to copy');
+      return;
+    }
+    try {
       await navigator.clipboard.writeText(emails.join(', '));
       setNotice(`Copied ${emails.length} email${emails.length === 1 ? '' : 's'}`);
-    } catch (error) {
-      setFailure(error instanceof Error ? error : new Error('Could not copy the emails.'));
+    } catch {
+      setFailure(new Error('Could not copy the emails.'));
     }
   };
   const exportCsv = async () => {
@@ -63,39 +78,73 @@ export function EventEditor({ event, onDeleted }: { event: AdminEvent; onDeleted
             Copy emails
           </Button>
           {event.state === 'cancelled' ? (
-            <Button variant="tonal" loading={restore.isPending} onClick={() => restore.mutate()}>
+            <Button variant="tonal" onClick={() => setConfirm('restore')}>
               Restore
             </Button>
           ) : (
-            <Button variant="tonal" loading={cancel.isPending} onClick={() => cancel.mutate()}>
+            <Button variant="tonal" onClick={() => setConfirm('cancel')}>
               Cancel event
             </Button>
           )}
-          <Button variant="danger" onClick={() => setConfirmDelete(true)}>
+          <Button variant="danger" onClick={() => setConfirm('delete')}>
             Delete
           </Button>
         </div>
-        {notice !== null && (
-          <p aria-live="polite" className="text-sm text-text-muted">
-            {notice}
-          </p>
-        )}
-        {failure !== null && <AdminError error={failure} />}
-        {cancel.isError && <AdminError error={cancel.error} />}
-        {restore.isError && <AdminError error={restore.error} />}
+        <p aria-live="polite" className="text-sm text-text-muted">
+          {message.notice ?? ''}
+        </p>
+        {message.failure !== null && <AdminError error={message.failure} />}
         {hint !== null && <p className="text-sm">{hint}</p>}
-        {roster.data === undefined ? (
+        {roster.isError ? (
+          <AdminError error={roster.error} />
+        ) : roster.data === undefined ? (
           <Skeleton label="Loading sign-ups" />
         ) : (
           <RosterTable eventId={event.id} rows={roster.data} />
         )}
       </Card>
       <ConfirmSheet
-        open={confirmDelete}
+        open={confirm === 'cancel'}
+        title="Cancel this club event"
+        confirm="Cancel event"
+        busy={cancel.isPending}
+        onClose={closeConfirm}
+        onConfirm={() =>
+          cancel.mutate(undefined, {
+            onSuccess: () => {
+              closeConfirm();
+              setNotice('Club event cancelled');
+            },
+          })
+        }
+      >
+        <p>Cancel this club event? Everyone signed up will see it was cancelled.</p>
+        {cancel.isError && <AdminError error={cancel.error} />}
+      </ConfirmSheet>
+      <ConfirmSheet
+        open={confirm === 'restore'}
+        title="Restore this club event"
+        confirm="Restore"
+        busy={restore.isPending}
+        onClose={closeConfirm}
+        onConfirm={() =>
+          restore.mutate(undefined, {
+            onSuccess: () => {
+              closeConfirm();
+              setNotice('Club event restored');
+            },
+          })
+        }
+      >
+        <p>Restore this club event?</p>
+        {restore.isError && <AdminError error={restore.error} />}
+      </ConfirmSheet>
+      <ConfirmSheet
+        open={confirm === 'delete'}
         title="Delete this club event"
         confirm="Delete"
         busy={remove.isPending}
-        onClose={() => setConfirmDelete(false)}
+        onClose={closeConfirm}
         onConfirm={() => remove.mutate(undefined, { onSuccess: onDeleted })}
       >
         <p>{`Delete ${event.title} and its sign-up list? This can't be undone.`}</p>

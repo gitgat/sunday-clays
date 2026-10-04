@@ -28,6 +28,7 @@ export function ContactsTab() {
     setEditing(null);
     save.reset();
   };
+  if (contacts.isError) return <AdminError error={contacts.error} />;
   if (contacts.data === undefined) return <Skeleton label="Loading emails on file" />;
   const source = (c: Contact) => CONTACT_SOURCES[c.source] ?? c.source;
   const lastUsed = (c: Contact) => (c.last_used_on === null ? '—' : formatDate(c.last_used_on));

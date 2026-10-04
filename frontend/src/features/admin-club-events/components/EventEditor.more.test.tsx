@@ -92,7 +92,12 @@ describe('EventEditor, more', () => {
     );
     expect(screen.queryByRole('button', { name: 'Cancel event' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Restore' }));
+    expect(restored).toBe(false);
+    const sheet = within(screen.getByRole('dialog'));
+    expect(sheet.getByText('Restore this club event?')).toBeInTheDocument();
+    await user.click(sheet.getByRole('button', { name: 'Restore' }));
     await waitFor(() => expect(restored).toBe(true));
+    expect(await screen.findByText('Club event restored')).toBeInTheDocument();
   });
 
   it('shows why a cancel, a restore or a delete was refused', async () => {
@@ -106,7 +111,13 @@ describe('EventEditor, more', () => {
       role: 'admin',
     });
     await first.user.click(screen.getByRole('button', { name: 'Cancel event' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Already cancelled.');
+    await first.user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel event' }),
+    );
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+      'Already cancelled.',
+    );
+    await first.user.click(screen.getByRole('button', { name: 'Keep it' }));
     await first.user.click(screen.getByRole('button', { name: 'Delete' }));
     await first.user.click(
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }),
@@ -120,7 +131,12 @@ describe('EventEditor, more', () => {
       { role: 'admin' },
     );
     await second.user.click(screen.getByRole('button', { name: 'Restore' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Already in the past.');
+    await second.user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Restore' }),
+    );
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+      'Already in the past.',
+    );
   });
 
   it('says Saved after the form saves', async () => {
@@ -141,5 +157,55 @@ describe('EventEditor, more', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Keep it' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps one live region mounted and clears the older message when a new one arrives', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.get('*/api/admin/club-events/1/roster.csv', () =>
+        refused('The CSV is not available.', 500),
+      ),
+      http.patch('*/api/admin/club-events/1', () => HttpResponse.json(adminEvent)),
+    );
+    const { user, container } = renderWithProviders(
+      <EventEditor event={adminEvent} onDeleted={vi.fn()} />,
+      { role: 'admin' },
+    );
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The CSV is not available.');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Saved')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(container.querySelector('[aria-live="polite"]')).toBe(live);
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+  });
+
+  it('says plainly when the clipboard is missing', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.get('*/api/admin/club-events/1/emails', () =>
+        HttpResponse.json({ emails: ['a@example.com'] }),
+      ),
+    );
+    const { user } = renderWithProviders(<EventEditor event={adminEvent} onDeleted={vi.fn()} />, {
+      role: 'admin',
+    });
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    await user.click(screen.getByRole('button', { name: 'Copy emails' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not copy the emails.');
+  });
+
+  it('shows an alert, not a skeleton, when the sign-ups cannot be loaded', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.get('*/api/admin/club-events/1/roster', () => refused('No sign-ups for you.', 500)),
+    );
+    renderWithProviders(<EventEditor event={adminEvent} onDeleted={vi.fn()} />, { role: 'admin' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('No sign-ups for you.');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

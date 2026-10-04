@@ -10,7 +10,7 @@ import { RosterTable } from './RosterTable';
 
 const error = (code: string, message: string, status = 409) =>
   HttpResponse.json({ error: { code, message } }, { status });
-const locked = rosterRows.map((r) => (r.id === 41 ? { ...r, cancel_fail_count: 5 } : r));
+const locked = rosterRows.map((r) => (r.id === 41 ? { ...r, cancel_fail_count: 1 } : r));
 const typed = rosterRows.map((r) => (r.id === 42 ? { ...r, suggested_shooter: null } : r));
 
 describe('RosterTable, more', () => {
@@ -139,5 +139,53 @@ describe('RosterTable, more', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'That shooter is already on this list.',
     );
+  });
+
+  it('shows no reset button when nothing failed', () => {
+    stubViewport('desktop');
+    renderWithProviders(<RosterTable eventId={1} rows={rosterRows} />, { role: 'admin' });
+    expect(screen.queryByRole('button', { name: /Reset cancel limit/ })).not.toBeInTheDocument();
+  });
+
+  it('shows why a reset was refused', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.post('*/api/admin/club-events/1/registrations/41/reset-cancel-limit', () =>
+        error('not_active', 'That sign-up is not active.'),
+      ),
+    );
+    const { user } = renderWithProviders(<RosterTable eventId={1} rows={locked} />, {
+      role: 'admin',
+    });
+    await user.click(screen.getByRole('button', { name: 'Reset cancel limit for Hadley, Ike' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('That sign-up is not active.');
+  });
+
+  it('offers the match hint only on going and waitlist rows', () => {
+    stubViewport('desktop');
+    const cancelled = rosterRows.map((r) =>
+      r.id === 43
+        ? { ...r, suggested_shooter: { id: 3, name: 'Hadley, Ike', has_email: false } }
+        : r,
+    );
+    renderWithProviders(<RosterTable eventId={1} rows={cancelled} />, { role: 'admin' });
+    expect(screen.getAllByRole('button', { name: 'Looks like Hadley, Ike? Link' })).toHaveLength(1);
+  });
+
+  it('announces the link result as a status and clears it on the next action', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.post('*/api/admin/club-events/1/registrations/42/link', () =>
+        HttpResponse.json({ shooter_id: 3, email_moved: false, email_discarded: false }),
+      ),
+    );
+    const { user } = renderWithProviders(<RosterTable eventId={1} rows={rosterRows} />, {
+      role: 'admin',
+    });
+    await user.click(screen.getByRole('button', { name: 'Looks like Hadley, Ike? Link' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Link' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Linked.');
+    await user.click(screen.getByRole('button', { name: 'Remove Hadley, Ike' }));
+    expect(screen.queryByText('Linked.')).not.toBeInTheDocument();
   });
 });

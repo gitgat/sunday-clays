@@ -66,4 +66,37 @@ describe('EventsTab', () => {
       expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument(),
     );
   });
+
+  it('does not carry messages over to the next club event', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.get('*/api/admin/club-events', () =>
+        HttpResponse.json([adminEvent, { ...adminEvent, id: 2, title: 'Banquet' }]),
+      ),
+      http.get('*/api/admin/club-events/1/emails', () => HttpResponse.json({ emails: [] })),
+    );
+    const { user } = renderWithProviders(<EventsTab />, { role: 'admin' });
+    const list = await screen.findByRole('list', { name: 'Club events' });
+    await user.click(within(list).getByRole('button', { name: /Fall Fun Shoot/ }));
+    await user.click(await screen.findByRole('button', { name: 'Copy emails' }));
+    expect(await screen.findByText('No emails to copy')).toBeInTheDocument();
+    await user.click(within(list).getByRole('button', { name: /Banquet/ }));
+    await screen.findByRole('heading', { name: 'Banquet' });
+    expect(screen.queryByText('No emails to copy')).not.toBeInTheDocument();
+  });
+
+  it('shows an alert, not a skeleton, when the list cannot be loaded', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.get('*/api/admin/club-events', () =>
+        HttpResponse.json(
+          { error: { code: 'boom', message: 'The list is down.' } },
+          { status: 500 },
+        ),
+      ),
+    );
+    renderWithProviders(<EventsTab />, { role: 'admin' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('The list is down.');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
 });

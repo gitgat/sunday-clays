@@ -90,4 +90,14 @@ describe('ContactsTab, more', () => {
     fireEvent.submit(sheet.getByLabelText('Email').closest('form') as HTMLFormElement);
     expect(sent).toBe(false);
   });
+
+  it('shows an alert, not a skeleton, when the emails cannot be loaded', async () => {
+    stubViewport('desktop');
+    server.use(
+      http.get('*/api/admin/shooter-contacts', () => refused('boom', 'The emails are down.', 500)),
+    );
+    renderWithProviders(<ContactsTab />, { role: 'admin' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('The emails are down.');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
 });

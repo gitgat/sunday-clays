@@ -94,6 +94,14 @@ export function sourceLabel(row: AdminRosterRow): string {
   return row.typed_name === null ? 'List' : 'New name';
 }
 
+/** Upcoming club events soonest first, then past ones most recent first. */
+export function sortEvents(events: readonly AdminEvent[], now: number): AdminEvent[] {
+  const time = (e: AdminEvent) => Date.parse(e.starts_at);
+  const upcoming = events.filter((e) => time(e) >= now).sort((a, b) => time(a) - time(b));
+  const past = events.filter((e) => time(e) < now).sort((a, b) => time(b) - time(a));
+  return [...upcoming, ...past];
+}
+
 export const CONTACT_SOURCES: Record<string, string> = {
   signup: 'Sign-up',
   organizer: 'Organizer',

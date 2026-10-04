@@ -3,16 +3,21 @@ import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
+import { AdminError } from '../../admin/components/AdminError';
 import { useAdminClubEvents } from '../api';
+import { sortEvents } from '../form';
 import { EventEditor } from './EventEditor';
 import { EventForm } from './EventForm';
 
-/** Upcoming first (the API lists newest first), each with its counts; one opens in the editor. */
+/** Upcoming first (soonest), then past (most recent), each with its counts; one opens in the editor. */
 export function EventsTab() {
   const events = useAdminClubEvents();
+  const [now] = useState(() => Date.now());
   const [selected, setSelected] = useState<number | 'new' | null>(null);
+  if (events.isError) return <AdminError error={events.error} />;
   if (events.data === undefined) return <Skeleton label="Loading club events" />;
-  const current = events.data.find((e) => e.id === selected);
+  const sorted = sortEvents(events.data, now);
+  const current = sorted.find((e) => e.id === selected);
   return (
     <div className="flex flex-col gap-4">
       <Button className="self-start" onClick={() => setSelected('new')}>
@@ -23,11 +28,11 @@ export function EventsTab() {
           <EventForm event={null} onSaved={(id) => setSelected(id)} />
         </Card>
       )}
-      {events.data.length === 0 ? (
+      {sorted.length === 0 ? (
         <EmptyState title="No club events yet." />
       ) : (
         <ul aria-label="Club events" className="flex flex-col">
-          {events.data.map((event) => (
+          {sorted.map((event) => (
             <li key={event.id}>
               <button
                 type="button"
@@ -45,7 +50,9 @@ export function EventsTab() {
           ))}
         </ul>
       )}
-      {current !== undefined && <EventEditor event={current} onDeleted={() => setSelected(null)} />}
+      {current !== undefined && (
+        <EventEditor key={current.id} event={current} onDeleted={() => setSelected(null)} />
+      )}
     </div>
   );
 }
