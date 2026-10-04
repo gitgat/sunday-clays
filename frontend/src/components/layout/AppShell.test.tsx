@@ -398,3 +398,33 @@ describe('AppShell keeps the global round-type filter while navigating', () => {
     expect(router.state.location).toMatchObject({ pathname: '/', search: '?rt=sporting' });
   });
 });
+
+describe('AppShell launch switches', () => {
+  const GATED: NavItem[] = [
+    ...ITEMS,
+    { label: 'Glossary', path: '/glossary', icon: Compass, order: 135, feature: 'tour_glossary' },
+  ];
+
+  it('lists a gated nav item only when featureVisible says so', () => {
+    stubViewport('desktop');
+    const { unmount } = renderShell('/', { items: GATED });
+    expect(screen.queryByRole('link', { name: 'Glossary' })).not.toBeInTheDocument();
+    unmount();
+    renderShell('/', { items: GATED, featureVisible: () => true });
+    expect(screen.getByRole('link', { name: 'Glossary' })).toBeInTheDocument();
+  });
+});
+
+describe('AppShell tour targets', () => {
+  it('puts a nav item tourId on its link as data-tour', () => {
+    stubViewport('desktop');
+    renderShell('/', {
+      items: [
+        ...ITEMS,
+        { label: 'Trophies', path: '/trophies', icon: Trophy, order: 70, tourId: 'trophies' },
+      ],
+    });
+    expect(screen.getByRole('link', { name: 'Trophies' })).toHaveAttribute('data-tour', 'trophies');
+    expect(screen.getByRole('link', { name: 'Explorer' })).not.toHaveAttribute('data-tour');
+  });
+});

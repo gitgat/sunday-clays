@@ -93,3 +93,33 @@ def test_caddys_own_413_answers_exactly_what_the_api_answers() -> None:
     # Every route that takes a body is under /api/auth/ or /api/admin/: the API sends no-store.
     assert caddy.group("cache_control") == cache_control_for("/api/auth/login")
     assert caddy.group("cache_control") == cache_control_for(IMPORTS_PATH)
+
+
+def _site_block() -> str:
+    text = CADDYFILE.read_text()
+    return text[text.index(":80 {") :]
+
+
+def test_crawlers_and_share_links_are_routed_before_the_spa() -> None:
+    """Plan 19 D7: the crawler check and /l/ handling exist, and /l/ checks crawlers first."""
+    site = _site_block()
+    share = site[site.index("\thandle /l/* {") :]
+    share = share[: share.index("\n\t}\n")]
+    assert share.index("handle @crawler") < share.index("handle @share_unsafe")
+    assert share.index("handle @share_unsafe") < share.index("uri strip_prefix /l")
+    assert "\thandle @crawler {" in site  # crawlers on every other SPA path
+    assert "rewrite * /api/og/page{path}?{query}" in site
+    # Crawler handles take GET/HEAD only, so they carry no body cap of their own (the limit tests
+    # above would otherwise have to guard them): only /api/* and the imports route cap a body.
+    assert site.count("request_body {") == 2
+
+
+def test_the_spa_varies_by_user_agent_and_the_csp_allows_the_pwa() -> None:
+    site = _site_block()
+    catch_all = site[site.rindex("\thandle {") :]
+    assert "header Vary User-Agent" in catch_all
+    csp = CADDYFILE.read_text()
+    assert "manifest-src 'self'" in csp
+    assert "worker-src 'self'" in csp
+    for path in ("/sw.js", "/manifest.webmanifest", "/icons/*"):
+        assert f"\thandle {path} {{" in site, path

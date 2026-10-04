@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { server } from '../../../test/msw/server';
@@ -62,10 +62,11 @@ describe('ClubPage code splitting', { timeout: 15_000 }, () => {
     expect(screen.queryAllByRole('button', { name: 'CSV' })).toHaveLength(0);
 
     echarts.release();
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(11), {
-      timeout: 5000,
-    });
-    // The turnout card waits for the window's anchor, then runs its query.
-    expect(await screen.findByText('No data for these filters')).toBeInTheDocument();
+    // The turnout card is the last to settle (it waits for the window's anchor, then runs its
+    // query), so once it has, every chart is drawn and the count is final.
+    expect(
+      await screen.findByText('No data for these filters', {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'CSV' })).toHaveLength(13);
   });
 });

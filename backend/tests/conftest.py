@@ -42,6 +42,14 @@ def _fresh_settings_cache() -> Iterator[None]:
     get_settings.cache_clear()
 
 
+# Plan 19 T11: the page cache is off in tests unless a test turns it on (D36)
+@pytest.fixture(autouse=True)
+def _page_cache_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Many integration tests write fixture rows without bumping data_version; with the cache on
+    they would read each other's stored bodies. The page-cache tests set PAGE_CACHE_ENABLED=true."""
+    monkeypatch.setenv("PAGE_CACHE_ENABLED", "false")
+
+
 @pytest.fixture
 def closed_port() -> int:
     """A localhost TCP port with nothing listening (connections are refused at once)."""
@@ -507,5 +515,15 @@ def fx_special_viewer_client(
     fx_special_client: TestClient, auth_env: Settings
 ) -> Iterator[TestClient]:
     logged_in = _logged_in(_use_env_settings(fx_special_client), "viewer")
+    yield logged_in
+    logged_in.close()
+
+
+@pytest.fixture
+def fx_special_admin_client(
+    fx_special_client: TestClient, auth_env: Settings
+) -> Iterator[TestClient]:
+    """Plan 19 T8: an admin over the special-Sunday world."""
+    logged_in = _logged_in(_use_env_settings(fx_special_client), "admin")
     yield logged_in
     logged_in.close()

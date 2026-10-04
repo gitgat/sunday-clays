@@ -62,4 +62,4 @@ def test_create_app_includes_a_newly_added_module(routes_dirs: tuple[Path, Path]
     first, _second = routes_dirs
     (first / "zz_probe.py").write_text(PROBE_ROUTER.format(name="zz_probe"))
 
-    assert "/api/zz_probe" in create_app().openapi()["paths"]
+    assert "/api/zz_probe" in create_app(page_cache_allowlist=()).openapi()["paths"]

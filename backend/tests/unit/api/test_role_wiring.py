@@ -46,7 +46,7 @@ def _probe_routers() -> list[tuple[str, APIRouter]]:
 @pytest.fixture
 def probe_client(monkeypatch: pytest.MonkeyPatch, auth_env: Settings) -> TestClient:
     monkeypatch.setattr(app_module, "discover_routers", _probe_routers)
-    return TestClient(app_module.create_app())
+    return TestClient(app_module.create_app(page_cache_allowlist=()))
 
 
 def _as(test_client: TestClient, settings: Settings, role: Role | None) -> TestClient:

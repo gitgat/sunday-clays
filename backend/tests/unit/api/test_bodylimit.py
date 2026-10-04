@@ -238,7 +238,7 @@ def upload_probe(settings_env: None, monkeypatch: pytest.MonkeyPatch) -> Iterato
     monkeypatch.setattr(starlette.formparsers, "SpooledTemporaryFile", RecordingSpool)
     monkeypatch.setattr(app_module, "discover_routers", lambda: [])
     route_calls: list[str] = []
-    app = app_module.create_app()
+    app = app_module.create_app(page_cache_allowlist=())
 
     @app.post("/api/admin/imports")
     async def upload(file: UploadFile) -> dict[str, int]:

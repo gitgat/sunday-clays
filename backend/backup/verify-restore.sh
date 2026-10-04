@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Take a fresh verified dump, restore it into a scratch DB and compare row counts of every
-# public table with the live DB (run by the CI e2e job after Playwright; C11).
+# public table with the live DB (run by the CI e2e job after Playwright; C11). response_cache is
+# skipped: it is a disposable cache whose rows are not dumped and which the worker rewrites at any
+# moment (Plan 19 D22).
 set -euo pipefail
 
 SCRATCH_DB=sc_restore_check
@@ -23,7 +25,7 @@ cleanup() {
 row_counts() {
   local db="$1" table
   psql -At -v ON_ERROR_STOP=1 -d "$db" -c \
-    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1" |
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> 'response_cache' ORDER BY 1" |
     while read -r table; do
       printf '%s %s\n' "$table" "$(psql -At -v ON_ERROR_STOP=1 -d "$db" -c "SELECT count(*) FROM public.\"$table\"")"
     done

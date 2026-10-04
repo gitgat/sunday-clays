@@ -106,3 +106,55 @@ def test_a_dump_that_fails_part_way_leaves_the_database_as_it_was(
     assert exit_code != 0, output
     assert tables(postgres, "keep_me") == ["added_later", "big", "kept"], output
     assert psql(postgres, "keep_me", "SELECT count(*) FROM kept") == "3", output
+
+
+def make_database_with_a_response_cache(postgres: PostgresContainer, db: str) -> None:
+    """<db> holds one real table and the disposable UNLOGGED page cache (Plan 19 D22)."""
+    psql(postgres, "test", f"CREATE DATABASE {db}")
+    psql(postgres, db, "CREATE TABLE kept (id int); INSERT INTO kept VALUES (1), (2)")
+    psql(
+        postgres,
+        db,
+        "CREATE UNLOGGED TABLE response_cache (key text PRIMARY KEY, body text);"
+        " INSERT INTO response_cache VALUES ('a', 'x'), ('b', 'y'), ('c', 'z')",
+    )
+
+
+def run_backup_tool(postgres: PostgresContainer, script: str, db: str) -> tuple[int, str]:
+    """backup.sh and verify-restore.sh need python3 only for locking and pruning, and the
+    postgres image has none, so a no-op python3 stands in (the tools have their own tests)."""
+    prelude = (
+        "printf '#!/bin/sh\\nexit 0\\n' > /usr/local/bin/python3\n"
+        "chmod +x /usr/local/bin/python3\n"
+        "mkdir -p /work/backups\n"
+    )
+    return run(
+        postgres,
+        f"{prelude}PGDATABASE={db} BACKUP_DIR=/work/backups /backup/{script}",
+    )
+
+
+def test_backup_leaves_the_response_cache_rows_out_of_the_dump(
+    postgres: PostgresContainer,
+) -> None:
+    """R3: the cache is disposable; its table definition is kept but its data is not dumped.
+    Kills: a plain pg_dump (up to 4 GiB of bodies in every daily dump)."""
+    make_database_with_a_response_cache(postgres, "dump_cache")
+    exit_code, output = run_backup_tool(postgres, "backup.sh --once", "dump_cache")
+    assert exit_code == 0, output
+    listing = sh(postgres, "pg_restore --list $(ls -t /work/backups/sc-*.dump | head -1)")
+    assert "TABLE public response_cache" in listing  # the definition survives
+    assert "TABLE DATA public response_cache" not in listing
+    assert "TABLE DATA public kept" in listing
+
+
+def test_verify_restore_ignores_the_response_cache_row_count(
+    postgres: PostgresContainer,
+) -> None:
+    """R3: live has 3 cache rows, the restore has 0 (excluded from the dump) and the check must
+    still pass, since the worker rewrites that table at any moment. Kills: counting
+    response_cache in row_counts."""
+    make_database_with_a_response_cache(postgres, "verify_cache")
+    exit_code, output = run_backup_tool(postgres, "verify-restore.sh", "verify_cache")
+    assert exit_code == 0, output
+    assert "tables match" in output

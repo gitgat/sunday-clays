@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 
+import { AdminPreviewBadge } from '../../../components/ui/AdminPreviewBadge';
 import { Card } from '../../../components/ui/Card';
+import { useFeature } from '../../../lib/features';
 import { useRoundTypeLink } from '../../../lib/roundTypes';
 
 /** The production shooter id of the site's builder; the profile link is only meaningful there. */
@@ -18,7 +20,11 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
   );
 }
 
-const PRIVACY = [
+/** Plan 19 §4: shown only while `link_previews` is visible (it describes that feature). */
+export const LINK_PREVIEWS_LINE =
+  'Links shared in chat apps show only the club name, and for a Sunday its date (or a special shoot’s title), how many shot and the round type. Never shooter names or scores.';
+
+export const PRIVACY = [
   'No accounts. There are no logins beyond the club’s shared password.',
   'We don’t collect your name, email or anything else about you. The site only processes the club’s score sheets and analyses them.',
   '“Which one are you?” is remembered on your device and never sent anywhere.',
@@ -27,6 +33,7 @@ const PRIVACY = [
 ];
 
 export function AboutPage() {
+  const previews = useFeature('link_previews');
   const profile = useRoundTypeLink(`/shooters/${BUILDER_SHOOTER_ID}`);
   return (
     <div className="flex flex-col gap-4">
@@ -68,6 +75,17 @@ export function AboutPage() {
           {PRIVACY.map((line) => (
             <li key={line}>{line}</li>
           ))}
+          {previews.visible && (
+            <li>
+              {LINK_PREVIEWS_LINE}
+              {previews.preview && (
+                <>
+                  {' '}
+                  <AdminPreviewBadge feature="link_previews" />
+                </>
+              )}
+            </li>
+          )}
         </ul>
       </Card>
     </div>

@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import type { RouteObject } from 'react-router';
+import type { FeatureKey } from '../lib/features';
 
 /** One navigation entry contributed by a feature's routes.tsx (C10). */
 export interface NavItem {
@@ -9,6 +10,10 @@ export interface NavItem {
   order: number;
   mobileTab?: boolean;
   adminOnly?: boolean;
+  /** Plan 19 D21: hidden unless this launch switch's feature is visible to the viewer. */
+  feature?: FeatureKey;
+  /** Plan 19 tour: rendered as `data-tour` on the nav link (the "trophies" step). */
+  tourId?: string;
 }
 
 /** What every src/features/<name>/routes.tsx exports. */

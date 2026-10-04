@@ -1,0 +1,14 @@
+crawler	facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)
+crawler	WhatsApp/2.23.20.0 A
+crawler	Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)
+crawler	Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)
+crawler	TelegramBot (like TwitterBot)
+crawler	LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)
+crawler	Twitterbot/1.0
+crawler	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)
+crawler	SkypeUriPreview Preview/0.5
+person	Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/400.0.0.0]
+person	LinkedInApp/9.0 (iPhone; iOS 17.0)
+person	Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.0
+person	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9150 Chrome/120.0.0.0 Electron/28.0.0 Safari/537.36
+person	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36

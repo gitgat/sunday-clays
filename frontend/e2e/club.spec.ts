@@ -3,6 +3,7 @@ import { expect, test } from './fixtures';
 import { expectNoSideScroll, whenSettled } from './layout';
 
 const CHART_TITLES = [
+  'Club totals over time',
   'Attendance per Sunday',
   'Shooters and Sundays per year',
   'Seasonality',

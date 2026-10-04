@@ -30,6 +30,33 @@ describe('visibleNav', () => {
   });
 });
 
+describe('visibleNav with launch switches', () => {
+  const gated: NavItem = {
+    label: 'Glossary',
+    path: '/glossary',
+    icon: Compass,
+    order: 135,
+    feature: 'tour_glossary',
+  };
+
+  it('hides an item whose feature is not visible, by default and when the check says no', () => {
+    expect(visibleNav([...ITEMS, gated], true).map((i) => i.label)).not.toContain('Glossary');
+    expect(visibleNav([...ITEMS, gated], false, () => false).map((i) => i.label)).not.toContain(
+      'Glossary',
+    );
+  });
+
+  it('shows it when the check says the feature is visible, asking with its key', () => {
+    const asked: string[] = [];
+    const labels = visibleNav([...ITEMS, gated], false, (key) => {
+      asked.push(key);
+      return true;
+    }).map((i) => i.label);
+    expect(labels).toContain('Glossary');
+    expect(asked).toEqual(['tour_glossary']); // ungated items never ask
+  });
+});
+
 describe('splitMobileNav', () => {
   it('puts the mobile tabs in the tab bar and the rest in More', () => {
     const { tabs, more } = splitMobileNav(visibleNav(ITEMS, true));

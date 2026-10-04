@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { PageTopSlot } from '../../../components/layout/pageTop';
 import { CardHeadingLevel } from '../../../components/ui/Card';
 import { LazyChart } from '../components/LazyChart';
+import { MilestonesSection } from '../components/MilestonesSection';
 import { RegularsCard } from '../components/RegularsCard';
 import { SummaryStats } from '../components/SummaryStats';
 
@@ -45,6 +46,7 @@ export function ClubPage() {
         <SummaryStats />
       </header>
       <PageTopSlot page="club" />
+      <MilestonesSection />
       <Section title="Attendance">
         <Chart title="Attendance per Sunday" name="AttendanceChart" />
         <Chart title="Turnout vs weather" name="TurnoutWeatherCard" />
