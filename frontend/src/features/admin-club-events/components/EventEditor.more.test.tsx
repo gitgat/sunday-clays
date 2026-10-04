@@ -100,6 +100,46 @@ describe('EventEditor, more', () => {
     expect(await screen.findByText('Club event restored')).toBeInTheDocument();
   });
 
+  it('shows Restore as a primary button, and a Delete error does not come back after Keep it', async () => {
+    stubViewport('desktop');
+    let refuse = true;
+    server.use(
+      http.delete('*/api/admin/club-events/1', () =>
+        refuse ? refused('Could not delete.') : new HttpResponse(null, { status: 204 }),
+      ),
+    );
+    const first = renderWithProviders(<EventEditor event={adminEvent} onDeleted={vi.fn()} />, {
+      role: 'admin',
+    });
+    await first.user.click(screen.getByRole('button', { name: 'Delete' }));
+    const danger = within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' });
+    expect(danger.className).not.toContain('bg-primary');
+    await first.user.click(danger);
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toBeInTheDocument();
+    await first.user.click(screen.getByRole('button', { name: 'Keep it' }));
+    refuse = false;
+    await first.user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).not.toBeInTheDocument();
+    first.unmount();
+    const second = renderWithProviders(
+      <EventEditor event={{ ...adminEvent, state: 'cancelled' }} onDeleted={vi.fn()} />,
+      { role: 'admin' },
+    );
+    await second.user.click(screen.getByRole('button', { name: 'Restore' }));
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Restore' }).className,
+    ).toContain('bg-primary');
+  });
+
+  it('links to the member page for the club event', () => {
+    stubViewport('desktop');
+    renderWithProviders(<EventEditor event={adminEvent} onDeleted={vi.fn()} />, { role: 'admin' });
+    expect(screen.getByRole('link', { name: 'Open member page' })).toHaveAttribute(
+      'href',
+      '/club-events/1',
+    );
+  });
+
   it('shows why a cancel, a restore or a delete was refused', async () => {
     stubViewport('desktop');
     server.use(
