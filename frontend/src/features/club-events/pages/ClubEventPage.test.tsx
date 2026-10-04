@@ -5,7 +5,7 @@ import { FeatureGate } from '../../../components/FeatureGate';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import type { ClubEventDetail } from '../api';
-import { fallFunShoot } from '../mocks';
+import { fallFunShoot, signedUp } from '../mocks';
 import { allSignups, saveSignup } from '../tokens';
 import { ClubEventPage } from './ClubEventPage';
 
@@ -240,6 +240,140 @@ describe('ClubEventPage', () => {
     const { user } = renderPage();
     await user.click(await screen.findByRole('button', { name: "Cancel Dana Quill's spot" }));
     expect(screen.getByLabelText('Type the email used for this sign-up.')).toBeInTheDocument();
+  });
+
+  async function signUpTyped(user: ReturnType<typeof renderPage>['user'], name: string) {
+    const sheet = within(screen.getByRole('dialog'));
+    await user.click(sheet.getByRole('button', { name: "I'm not listed" }));
+    await user.type(screen.getByLabelText('Your first and last name'), name);
+    await user.type(screen.getByLabelText('Your email'), 'who@example.com');
+    await user.click(sheet.getByRole('button', { name: 'Sign me up' }));
+  }
+
+  it('lets this device sign up someone else, keeping both tokens', async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    const { user } = renderPage();
+    await screen.findByText("You're in. See you there!");
+    expect(screen.queryByRole('button', { name: 'Sign up' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sign up someone else' }));
+    expect(
+      within(screen.getByRole('dialog')).getByRole('searchbox', { name: 'Who are you?' }),
+    ).toBeInTheDocument();
+    await signUpTyped(user, 'Cal Cy');
+    await waitFor(() =>
+      expect(
+        allSignups()
+          .map((s) => s.registrationId)
+          .sort(),
+      ).toEqual([12, 21]),
+    );
+  });
+
+  it('offers no second sign-up once the event is not open', async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    serve({ state: 'closed' });
+    renderPage();
+    await screen.findByText("You're in. See you there!");
+    expect(screen.queryByRole('button', { name: 'Sign up someone else' })).not.toBeInTheDocument();
+  });
+
+  it('marks every row this device signed up as You', async () => {
+    featuresOn();
+    saveSignup(11, { eventId: 1, token: 'tok-11', status: 'going' });
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    renderPage();
+    await screen.findByText(/You're in/);
+    expect(screen.getAllByText('You')).toHaveLength(2);
+  });
+
+  it('announces the sign-up and moves focus to the new status', async () => {
+    featuresOn();
+    server.use(
+      http.post('*/api/club-events/:id/registrations', () =>
+        HttpResponse.json({ ...signedUp, registration_id: 12, token: 'tok-12' }, { status: 201 }),
+      ),
+    );
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Sign up' }));
+    const live = screen.getByTestId('club-event-announcer');
+    expect(live).toHaveAttribute('aria-live', 'polite');
+    expect(live).toBeEmptyDOMElement();
+    await signUpTyped(user, 'Dana Quill');
+    await waitFor(() => expect(live).toHaveTextContent("You're in. See you there!"));
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Your sign-up' })).toHaveFocus());
+  });
+
+  it('announces a cancel and puts focus on the title', async () => {
+    featuresOn();
+    saveSignup(12, { eventId: 1, token: 'tok-12', status: 'going' });
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Cancel my spot' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel my spot' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('club-event-announcer')).toHaveTextContent(
+        'Your spot was cancelled.',
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Fall Fun Shoot' })).toHaveFocus(),
+    );
+  });
+
+  it('announces cancelling someone else by name', async () => {
+    featuresOn();
+    server.use(
+      http.post('*/api/club-events/1/registrations/12/cancel', () =>
+        HttpResponse.json({ status: 'cancelled', promoted: 0 }),
+      ),
+    );
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: "Cancel Dana Quill's spot" }));
+    await user.type(
+      screen.getByLabelText('Type the email used for this sign-up.'),
+      'dana@example.com',
+    );
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel spot' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('club-event-announcer')).toHaveTextContent(
+        "Dana Quill's spot was cancelled.",
+      ),
+    );
+  });
+
+  it("treats a sign-up made with storage blocked as this device's for the visit", async () => {
+    featuresOn();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    let body: unknown = null;
+    server.use(
+      http.post('*/api/club-events/:id/registrations', () =>
+        HttpResponse.json({ ...signedUp, registration_id: 12, token: 'tok-12' }, { status: 201 }),
+      ),
+      http.post('*/api/club-events/1/registrations/12/cancel', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ status: 'cancelled', promoted: 0 });
+      }),
+    );
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Sign up' }));
+    await signUpTyped(user, 'Dana Quill');
+    expect(await screen.findByRole('region', { name: 'Your sign-up' })).toBeInTheDocument();
+    expect(screen.getByText('You')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel my spot' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel my spot' }),
+    );
+    await waitFor(() => expect(body).toEqual({ token: 'tok-12' }));
   });
 
   it('wraps long notes and names', async () => {

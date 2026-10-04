@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
+import { Button } from '../../../components/ui/Button';
 import { AdminPreviewBadge } from '../../../components/ui/AdminPreviewBadge';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
@@ -15,6 +16,7 @@ import { pruneToList, readPastOpen, writePastOpen } from '../tokens';
 export function ClubEventsPage() {
   const events = useClubEvents();
   const qc = useQueryClient();
+  const gate404 = events.error instanceof ApiError && events.error.code === 'http_404';
   useEffect(() => {
     // The gate's 404: the switch went off while this page was open, so refetch the switches.
     if (events.error instanceof ApiError && events.error.code === 'http_404') {
@@ -41,6 +43,15 @@ export function ClubEventsPage() {
       </p>
       {events.isPending ? (
         <Skeleton label="Loading club events" />
+      ) : events.isError && !gate404 ? (
+        <div className="flex flex-col gap-3">
+          <p role="alert">Could not load club events. Try again.</p>
+          <div>
+            <Button variant="tonal" onClick={() => void events.refetch()}>
+              Try again
+            </Button>
+          </div>
+        </div>
       ) : events.data === undefined ? (
         <EmptyState title="Club events aren't available right now." />
       ) : (

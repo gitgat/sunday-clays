@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
 import { renderWithProviders } from '../../../test/render';
 import { FeatureGate } from '../../../components/FeatureGate';
-import { banquetPast, fallFunShoot, fallFunSummary } from '../mocks';
+import { banquetPast, clubEventList, fallFunShoot, fallFunSummary } from '../mocks';
 import { allSignups, PAST_OPEN_KEY, saveSignup } from '../tokens';
 import { ClubEventsPage } from './ClubEventsPage';
 
@@ -94,9 +94,30 @@ describe('ClubEventsPage', () => {
 });
 
 describe('ClubEventsPage errors', () => {
-  it('says the list is unavailable when it cannot load', async () => {
+  it('offers Try again when the list fails to load, and loads on retry', async () => {
     featuresOn();
-    server.use(http.get('*/api/club-events', () => HttpResponse.json({}, { status: 500 })));
+    let failing = true;
+    server.use(
+      http.get('*/api/club-events', () =>
+        failing ? HttpResponse.json({}, { status: 500 }) : HttpResponse.json(clubEventList),
+      ),
+    );
+    const { user } = renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load club events. Try again.',
+    );
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('link', { name: /Fall Fun Shoot/ })).toBeInTheDocument();
+  });
+
+  it("says the list is unavailable on the gate's 404", async () => {
+    featuresOn();
+    server.use(
+      http.get('*/api/club-events', () =>
+        HttpResponse.json({ detail: 'Not Found' }, { status: 404 }),
+      ),
+    );
     renderWithProviders(<ClubEventsPage />, { route: '/club-events' });
     expect(await screen.findByText("Club events aren't available right now.")).toBeInTheDocument();
   });

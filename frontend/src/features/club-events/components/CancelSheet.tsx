@@ -21,10 +21,13 @@ export function CancelSheet({
   eventId,
   target,
   onClose,
+  onCancelled,
 }: {
   eventId: number;
   target: CancelTarget | null;
   onClose: () => void;
+  /** Called once the spot is cancelled, before the sheet closes, with the words to announce. */
+  onCancelled?: (announcement: string) => void;
 }) {
   const isDesktop = useIsDesktop();
   const cancel = useCancelSignup(eventId);
@@ -53,6 +56,11 @@ export function CancelSheet({
     cancel.mutate(input, {
       onSuccess: () => {
         forgetSignup(target.registrationId);
+        onCancelled?.(
+          target.kind === 'own'
+            ? 'Your spot was cancelled.'
+            : `${target.name}'s spot was cancelled.`,
+        );
         close();
       },
       onError: (err) => {

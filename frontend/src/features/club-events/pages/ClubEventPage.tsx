@@ -14,7 +14,7 @@ import { CancelSheet, type CancelTarget } from '../components/CancelSheet';
 import { MyStatus } from '../components/MyStatus';
 import { Roster } from '../components/Roster';
 import { SignUpSheet, type SignedUp } from '../components/SignUpSheet';
-import { CANCELLED, deadlineLine, guestsRule, spotsLine, whenLine } from '../format';
+import { CANCELLED, deadlineLine, guestsRule, spotsLine, statusLine, whenLine } from '../format';
 import { acknowledgePromotions, forgetEvent, reconcile, useDeviceSignups } from '../tokens';
 
 /** /club-events/:id (§5.7.3). Every open/closed/started decision is the server's `state` (D21). */
@@ -29,6 +29,8 @@ export function ClubEventPage() {
   const [cancelling, setCancelling] = useState<CancelTarget | null>(null);
   const [justSigned, setJustSigned] = useState<SignedUp | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [cancelNote, setCancelNote] = useState('');
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const shareRef = useRef<HTMLDivElement>(null);
   const data = event.data;
 
@@ -45,6 +47,9 @@ export function ClubEventPage() {
       void qc.invalidateQueries({ queryKey: FEATURES_QUERY_KEY });
     }
   }, [event.error, id, qc]);
+  useEffect(() => {
+    if (cancelNote !== '') titleRef.current?.focus(); // the spot is gone: land on the title
+  }, [cancelNote]);
   // The "Good news" line shows during the visit that found the promotion, not on every later one.
   useEffect(() => () => acknowledgePromotions(id), [id]);
 
@@ -74,10 +79,31 @@ export function ClubEventPage() {
   }
   if (data === undefined) return <Skeleton label="Loading the club event" />;
 
-  const mine = signups.filter((s) => s.eventId === data.id);
+  const stored = signups.filter((s) => s.eventId === data.id);
+  // With storage blocked nothing is saved, so this visit's own sign-up stands in for the token
+  // (§5.7.3: it lasts until the page is left).
+  const mine =
+    justSigned !== null &&
+    !stored.some((s) => s.registrationId === justSigned.result.registration_id)
+      ? [
+          ...stored,
+          {
+            registrationId: justSigned.result.registration_id,
+            eventId: data.id,
+            token: justSigned.result.token,
+            status: justSigned.result.status,
+          },
+        ]
+      : stored;
   const mineIds = new Set(mine.map((s) => s.registrationId));
   const myRow = data.roster.find((r) => mineIds.has(r.registration_id));
   const mySignup = mine.find((s) => s.registrationId === myRow?.registration_id);
+  const justRow =
+    justSigned === null
+      ? undefined
+      : data.roster.find((r) => r.registration_id === justSigned.result.registration_id);
+  const announcement = cancelNote !== '' ? cancelNote : justRow ? statusLine(justRow, data) : '';
+  const canSignUpAnother = myRow !== undefined && data.state === 'open' && data.upcoming;
   const canCancel = data.state !== 'started' && data.upcoming;
   const deadline = deadlineLine(data);
   const url = `${window.location.origin}/club-events/${data.id}`;
@@ -89,6 +115,10 @@ export function ClubEventPage() {
         ? { kind: 'own', registrationId: row.registration_id, token: own.token, guests: row.guests }
         : { kind: 'other', registrationId: row.registration_id, name: row.name },
     );
+  };
+  const openSheet = () => {
+    setSheetKey((k) => k + 1);
+    setSigningUp(true);
   };
   const share = async () => {
     await shareElementAsImage(shareRef.current as HTMLDivElement, `club-event-${data.id}`);
@@ -107,7 +137,13 @@ export function ClubEventPage() {
       <div ref={shareRef} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="min-w-0 break-words text-2xl font-bold">{data.title}</h1>
+            <h1
+              ref={titleRef}
+              tabIndex={-1}
+              className="min-w-0 break-words text-2xl font-bold outline-none"
+            >
+              {data.title}
+            </h1>
             <AdminPreviewBadge feature="events" />
           </div>
           <p className="text-text-muted">{whenLine(data)}</p>
@@ -145,6 +181,7 @@ export function ClubEventPage() {
               }
               canCancel={canCancel}
               event={data}
+              focusOnMount={justSigned !== null}
               onCancel={() => cancelRow(myRow)}
             />
           </div>
@@ -168,14 +205,15 @@ export function ClubEventPage() {
         </dl>
       </div>
 
+      {canSignUpAnother && (
+        <div>
+          <Button variant="ghost" onClick={openSheet}>
+            Sign up someone else
+          </Button>
+        </div>
+      )}
       {myRow === undefined && data.state === 'open' && (
-        <Button
-          className="w-full sm:w-auto"
-          onClick={() => {
-            setSheetKey((k) => k + 1);
-            setSigningUp(true);
-          }}
-        >
+        <Button className="w-full sm:w-auto" onClick={openSheet}>
           Sign up
         </Button>
       )}
@@ -194,12 +232,30 @@ export function ClubEventPage() {
         event={data}
         open={signingUp}
         onClose={() => setSigningUp(false)}
+        prePick={myRow === undefined}
         onSignedUp={(done) => {
+          setCancelNote('');
           setJustSigned(done);
           setSigningUp(false);
         }}
       />
-      <CancelSheet eventId={data.id} target={cancelling} onClose={() => setCancelling(null)} />
+      <p
+        data-testid="club-event-announcer"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {announcement}
+      </p>
+      <CancelSheet
+        eventId={data.id}
+        target={cancelling}
+        onClose={() => setCancelling(null)}
+        onCancelled={(text) => {
+          setJustSigned(null);
+          setCancelNote(text);
+        }}
+      />
     </div>
   );
 }
