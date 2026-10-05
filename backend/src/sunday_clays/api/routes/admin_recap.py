@@ -18,6 +18,7 @@ from sunday_clays.analytics import frames
 from sunday_clays.analytics.achievements.participation import THREE_BIRD_LABELS, normalize_label
 from sunday_clays.analytics.club_milestones import club_milestones
 from sunday_clays.analytics.insights.store import insights_table, load_rows
+from sunday_clays.analytics.insights.templates import natural_name
 from sunday_clays.analytics.recap_insights import HORIZON, week_insights
 from sunday_clays.analytics.recap_trophies import recap_trophy_items
 from sunday_clays.api.routes._convert import opt_int, opt_str, rows
@@ -38,7 +39,7 @@ class PodiumPlaceOut(BaseModel):
     place: Literal[1, 2, 3]
     tied: bool
     score: int
-    names: list[str]  # display names, alphabetical
+    names: list[str]  # "First Last", in alphabetical order of last name
 
 
 class RecapPbOut(BaseModel):
@@ -85,7 +86,7 @@ def podium_of(day_rounds: pd.DataFrame) -> list[PodiumPlaceOut]:
             place=place,
             tied=len(entries) > 1,
             score=entries[0][1],
-            names=sorted(name for name, _ in entries),
+            names=[natural_name(name) for name in sorted(name for name, _ in entries)],
         )
         for place, entries in sorted(by_place.items())
     ]
@@ -129,7 +130,7 @@ def get_recap(
     earlier = rounds.loc[rounds["event_date"] < event_date]
     pbs = [
         RecapPbOut(
-            display_name=n.display_name,
+            display_name=natural_name(n.display_name),
             score=int(n.value or 0),
             previous=int(earlier.loc[earlier["shooter_id"] == n.shooter_id, "score"].max()),
         )
@@ -183,9 +184,11 @@ def get_recap(
         podium=[] if special else podium_of(rounds.loc[rounds["event_date"] == event_date]),
         pbs=[] if special else pbs,
         insights=[] if special else this_week(session, event_date),
-        trophies=[RecapTrophiesOut(display_name=n, items=i) for n, i in items.items() if i],
+        trophies=[
+            RecapTrophiesOut(display_name=natural_name(n), items=i) for n, i in items.items() if i
+        ],
         club_milestones=milestones,
-        first_timers=[n.display_name for n in notables if n.kind == "first_timer"],
+        first_timers=[natural_name(n.display_name) for n in notables if n.kind == "first_timer"],
         three_bird_new=new,
         three_bird_holders=holders,
         top_score=top_score,

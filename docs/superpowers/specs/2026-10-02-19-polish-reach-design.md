@@ -435,7 +435,7 @@ pbs: list[RecapPbOut]             # regular only
   previous: int
 trophies: list[RecapTrophiesOut]  # awards dated this Sunday, category != "competition"
   display_name: str
-  items: list[str]                # "Events Attended - 50", "Iron Streak - 4 (Sundays in a row)", "Doubleheader (two rounds in one day)"
+  items: list[str]                # "Events Attended - 50", "Clays Broken - 1,000", "Doubleheader (two rounds in one day)"
 club_milestones: list[str]        # "350,000 clays thrown"; [] unless club_milestones is on
 first_timers: list[str]           # appearance-based, not left_censored
 three_bird_new: int | None        # special whose label is a 3-bird label (THREE_BIRD_LABELS): three_bird_shoot awards dated this Sunday (first-time earners)
@@ -453,7 +453,7 @@ Rules:
 **Amendment (2026-10-04, owner-approved: recap for readers who never visit the site).**
 - Section order is now: turnout, **This week**, Podium, New personal bests, Milestones and trophies, First-timers, link.
 - `RecapOut` gains `insights: list[str]`: three to five plain sentences, each the named headline of a stored Sunday-page insight (`analytics/recap_insights.py`). Only a vetted allowlist of kinds and variants is eligible (anything saying "you", "usual for a day like this", rankings of people beyond the podium, or duplicating another recap section is excluded, with the reason beside each entry). A kind used in any of the previous 12 held regular Sundays' picks is skipped; with fewer than three fresh kinds the gap is filled from the least recently used. It is stateless: the picks are recomputed by replaying up to 36 held regular Sundays in date order from empty history, so a date always gives the same picks. A special Sunday has `insights: []`.
-- Tiered trophies read `"<Name> - <threshold>"` (`"Events Attended - 50"`, `"Clays Broken - 1,000"`), never the metal, one per family (the highest crossed that day). Families whose name does not say what is counted add a unit in parentheses (`"Iron Streak - 12 (Sundays in a row)"`). One-off trophies keep the name, with a short explanation in parentheses where needed. The summary card's `trophy_title` is unchanged.
+- Tiered trophies read `"<Name> - <threshold>"` (`"Events Attended - 50"`, `"Clays Broken - 1,000"`), never the metal, one per family (the highest crossed that day). Families whose name means nothing off the site (Iron Streak, Big Year, Station Cleaner, Personal Bests, Years Active, Round Score) are left out of the email (owner, 2026-10-04). Every name in the email reads "First Last" (podium, PBs, trophies, first-timers), like the "This week" sentences. One-off trophies keep the name, with a short explanation in parentheses where needed. The summary card's `trophy_title` is unchanged.
 
 #### 3.3.2 UI — `features/admin-recap/`
 

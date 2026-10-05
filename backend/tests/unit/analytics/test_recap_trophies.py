@@ -6,8 +6,8 @@ import pytest
 
 from sunday_clays.analytics.achievements.registry import all_achievements
 from sunday_clays.analytics.recap_trophies import (
+    HIDDEN_TIER_FAMILIES,
     ONE_OFF_EXPLANATIONS,
-    TIER_UNITS,
     recap_trophy_items,
 )
 from sunday_clays.analytics.summary import LEFT_OUT_TROPHY_CODES
@@ -22,7 +22,6 @@ METALS = re.compile(r"\b(bronze|silver|gold|platinum|diamond|tier|level)\b", re.
         (["clays_broken:3"], ["Clays Broken - 1,000"]),
         (["clays_broken:6"], ["Clays Broken - 10,000"]),
         (["events:1"], ["Events Attended - 1"]),
-        (["round_score:5"], ["Round Score - 48 (targets in one round)"]),
     ],
 )
 def test_a_tier_reads_as_the_number_reached(codes: list[str], items: list[str]) -> None:
@@ -84,24 +83,32 @@ def test_a_fractional_threshold_keeps_its_decimals() -> None:
 
 
 @pytest.mark.parametrize(
-    ("code", "item"),
+    "code",
     [
-        ("iron_streak:3", "Iron Streak - 12 (Sundays in a row)"),
-        ("big_year:2", "Big Year - 30 (Sundays in one year)"),
-        ("station_cleaner:1", "Station Cleaner - 1 (every target at a station broken)"),
-        ("personal_bests:1", "Personal Bests - 1 (personal-best rounds)"),
-        ("years_active:1", "Years Active - 2 (years of shooting with the club)"),
+        "iron_streak:3",
+        "big_year:2",
+        "station_cleaner:1",
+        "personal_bests:1",
+        "years_active:1",
+        "round_score:5",
     ],
 )
-def test_opaque_tier_families_say_what_the_number_counts(code: str, item: str) -> None:
-    assert recap_trophy_items([code]) == [item]
+def test_milestones_an_outsider_would_not_follow_are_left_out(code: str) -> None:
+    # Owner, 2026-10-04: "don't surface those" (names that need explaining to someone off the site).
+    assert recap_trophy_items([code]) == []
 
 
-def test_every_tiered_family_is_explained_or_reads_fine_alone() -> None:
+def test_a_left_out_family_does_not_hide_the_others() -> None:
+    assert recap_trophy_items(["iron_streak:3", "events:4", "big_year:1"]) == [
+        "Events Attended - 50"
+    ]
+
+
+def test_every_tiered_family_is_left_out_or_reads_fine_alone() -> None:
     tiered = {a.code for a in all_achievements() if a.tiers}
     self_explaining = {"events", "clays_broken", "clays_thrown"}
-    assert tiered == set(TIER_UNITS) | self_explaining
-    assert not set(TIER_UNITS) & self_explaining
+    assert tiered == set(HIDDEN_TIER_FAMILIES) | self_explaining
+    assert not set(HIDDEN_TIER_FAMILIES) & self_explaining
 
 
 def test_the_comeback_note_says_previous_outing_not_previous_sunday() -> None:

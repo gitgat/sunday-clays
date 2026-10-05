@@ -35,16 +35,12 @@ ONE_OFF_EXPLANATIONS: Final[dict[str, str]] = {
 }
 
 
-#: What the number counts, for the tiered families whose name alone does not say. Events Attended,
-#: Clays Broken and Clays Thrown read fine as "<Name> - <N>".
-TIER_UNITS: Final[dict[str, str]] = {
-    "iron_streak": "Sundays in a row",
-    "big_year": "Sundays in one year",
-    "station_cleaner": "every target at a station broken",
-    "personal_bests": "personal-best rounds",
-    "years_active": "years of shooting with the club",
-    "round_score": "targets in one round",
-}
+#: Tiered families whose name means nothing to someone off the site; the email leaves them out
+#: (owner, 2026-10-04: "don't surface those"). Events Attended, Clays Broken and Clays Thrown read
+#: fine as "<Name> - <N>".
+HIDDEN_TIER_FAMILIES: Final[frozenset[str]] = frozenset(
+    {"iron_streak", "big_year", "station_cleaner", "personal_bests", "years_active", "round_score"}
+)
 
 
 def threshold_text(tier: Tier) -> str:
@@ -55,9 +51,7 @@ def threshold_text(tier: Tier) -> str:
 
 def _item(found: Trophy) -> str:
     if found.tier is not None:
-        unit = TIER_UNITS.get(found.achievement.code)
-        base = f"{found.achievement.name} - {threshold_text(found.tier)}"
-        return base if unit is None else f"{base} ({unit})"
+        return f"{found.achievement.name} - {threshold_text(found.tier)}"
     note = ONE_OFF_EXPLANATIONS.get(found.achievement.code)
     return found.achievement.name if note is None else f"{found.achievement.name} ({note})"
 
@@ -65,12 +59,16 @@ def _item(found: Trophy) -> str:
 def recap_trophy_items(codes: Iterable[str]) -> list[str]:
     """One line item per trophy family: only the highest tier crossed, in first-seen order.
 
-    Unknown codes and D14's four left-out trophies are dropped.
+    Unknown codes, D14's four left-out trophies and the hidden families are dropped.
     """
     best: dict[str, Trophy] = {}
     for code in codes:
         found = trophy(code)
-        if found is None or found.achievement.code in LEFT_OUT_TROPHY_CODES:
+        if (
+            found is None
+            or found.achievement.code in LEFT_OUT_TROPHY_CODES
+            or found.achievement.code in HIDDEN_TIER_FAMILIES
+        ):
             continue
         family = found.achievement.code
         held = best.get(family)

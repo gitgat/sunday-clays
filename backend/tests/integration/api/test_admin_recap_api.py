@@ -11,7 +11,7 @@ from sunday_clays.analytics import club_milestones as cm
 from sunday_clays.analytics.achievements.registry import trophy
 from sunday_clays.analytics.cache import clear_cache
 from sunday_clays.analytics.insights.store import load_rows
-from sunday_clays.analytics.insights.templates import plain
+from sunday_clays.analytics.insights.templates import natural_name, plain
 from sunday_clays.analytics.recap_insights import ELIGIBLE, recap_text_problems
 from sunday_clays.analytics.recap_trophies import recap_trophy_items
 from sunday_clays.analytics.summary import LEFT_OUT_TROPHY_CODES
@@ -28,12 +28,12 @@ def test_regular_recap_agrees_with_the_sunday_page(fx_admin_client: TestClient) 
     event = fx_admin_client.get(f"/api/events/{LATEST}").json()
     podium_names = sorted(n for place in recap["podium"] for n in place["names"])
     page_names = sorted(
-        r["display_name"]
+        natural_name(r["display_name"])
         for r in event["results"]
         if r["is_best_round"] and r["event_rank"] is not None and r["event_rank"] <= 3
     )
     assert podium_names == page_names
-    page_pbs = {n["display_name"] for n in event["notables"] if n["kind"] == "pb"}
+    page_pbs = {natural_name(n["display_name"]) for n in event["notables"] if n["kind"] == "pb"}
     assert {p["display_name"] for p in recap["pbs"]} == page_pbs
     for pb in recap["pbs"]:
         assert pb["score"] > pb["previous"]
@@ -115,7 +115,7 @@ def test_trophies_read_as_the_number_reached_per_shooter(
     mine = next(
         t
         for t in fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["trophies"]
-        if t["display_name"] == name
+        if t["display_name"] == natural_name(name)
     )
     expected = recap_trophy_items([c for c in codes if c != "three_bird_shoot"])
     assert mine["items"] == expected
@@ -224,7 +224,7 @@ def test_special_recap(fx_special_admin_client: TestClient, fx_special_session: 
     assert recap["pbs"] == []
     assert recap["insights"] == []
     assert recap["top_score"] == 55
-    assert "Kim, Pat" in recap["first_timers"]
+    assert "Pat Kim" in recap["first_timers"]
 
 
 def test_a_turkey_shoot_has_no_three_bird_counts(
@@ -260,3 +260,14 @@ def test_errors(
         "message": "This Sunday has no full results yet.",
     }
     assert fx_viewer_client.get(f"/api/admin/recap/{LATEST}").status_code == 403
+
+
+def test_every_name_in_the_recap_reads_first_last(fx_admin_client: TestClient) -> None:
+    """Owner, 2026-10-04: "First Last" everywhere in the email, like the "This week" sentences."""
+    recap = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()
+    names = [n for place in recap["podium"] for n in place["names"]]
+    names += [p["display_name"] for p in recap["pbs"]]
+    names += [t["display_name"] for t in recap["trophies"]]
+    names += recap["first_timers"]
+    assert names
+    assert not [n for n in names if "," in n]
