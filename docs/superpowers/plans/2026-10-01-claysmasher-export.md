@@ -1,5 +1,14 @@
 # ClaySmasher Export and Shooter-Page Link Implementation Plan
 
+> **Superseded (2026-10-05).** The ClaySmasher app link was dropped before launch. The JSON
+> `GET /api/shooters/{id}/export`, the hidden "Import into ClaySmasher" button and its
+> `CLAYSMASHER_BUTTON_ENABLED` / `CLAYSMASHER_LINK_MODE` flags are removed. In their place, a live
+> "Export my scores" button on the shooter page downloads `GET /api/shooters/{id}/claysmasher-export`:
+> a zip with one ClaySmasher Scores CSV import file per discipline (`claysmasher-sporting.csv`,
+> `claysmasher-super-sporting.csv`), which the app imports with Settings > Import & export scores >
+> Import from CSV. A shooter with no regular-Sunday rounds gets a 404 `no_exportable_rounds`. This
+> plan is kept as history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the ClaySmasher app what it needs from Sunday Clays: a one-call shooter export endpoint, and an "Import into ClaySmasher" button on the shooter page that links to `https://claysmasher.com/link/sunday-clays?shooter=<id>` and stays hidden behind a flag.

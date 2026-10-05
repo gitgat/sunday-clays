@@ -1,6 +1,13 @@
-"""GET /api/shooters/{id}/export over directly seeded live rows (spec 2026-10-01 §4.1)."""
+"""GET /api/shooters/{id}/claysmasher-export over directly seeded live rows.
 
+The body is a zip of ClaySmasher Scores CSV import files, one per discipline the shooter has
+rounds in (the CSV layout itself is pinned in tests/unit/api/test_claysmasher_helpers.py).
+"""
+
+import csv
+import io
 import time
+import zipfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date, timedelta
@@ -14,11 +21,16 @@ from sqlalchemy.orm import Session
 from sunday_clays.station_label import label_number
 
 D1, D2 = date(2026, 9, 6), date(2026, 9, 13)
-# Gross-regression ceiling only (an accidental N+1 or full-table scan per round), not the 300 ms
-# target: CI runners with coverage vary too much for that. 300 ms is checked in production (Task 5).
+# Gross-regression ceiling only (an accidental N+1 or full-table scan per round).
 CI_CEILING_SECONDS = 1.0
 SPORTING = (("4", 8), ("5", 8), ("6", 6), ("7", 8), ("8", 6), ("9", 8), ("10", 6))
 SPORTING_HITS = (6, 7, 5, 6, 5, 7, 5)  # 41
+SPORTING_CSV = "claysmasher-sporting.csv"
+SUPER_CSV = "claysmasher-super-sporting.csv"
+
+
+def _url(shooter_id: int) -> str:
+    return f"/api/shooters/{shooter_id}/claysmasher-export"
 
 
 def _station_entry(
@@ -60,11 +72,19 @@ def _station_entry(
         )
 
 
-def _export(client: TestClient, shooter_id: int) -> dict[str, Any]:
-    response = client.get(f"/api/shooters/{shooter_id}/export")
+def _export(client: TestClient, shooter_id: int) -> dict[str, str]:
+    """File name -> CSV text from the zip the route returns."""
+    response = client.get(_url(shooter_id))
     assert response.status_code == 200, response.text
-    body: dict[str, Any] = response.json()
-    return body
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        return {name: archive.read(name).decode("utf-8") for name in archive.namelist()}
+
+
+def _records(csv_text: str) -> list[dict[str, str]]:
+    """Rows as ClaySmasher reads them: '#' lines dropped, then keyed by the header row."""
+    rows = [r for r in csv.reader(io.StringIO(csv_text, newline="")) if not r[0].startswith("#")]
+    head, *body = rows
+    return [dict(zip(head, row, strict=True)) for row in body]
 
 
 @contextmanager
@@ -82,83 +102,87 @@ def _statements(session: Session) -> Iterator[list[str]]:
         event.remove(connection, "before_cursor_execute", record)
 
 
-def test_export_shape(seed: Any, session: Session, viewer_client: TestClient) -> None:
+def test_the_download_is_a_zip_named_for_the_shooter(
+    seed: Any, session: Session, viewer_client: TestClient
+) -> None:
     jane = seed.shooter("Doe, Jane")
-    rid = seed.round(D1, jane, 41, gauge_class="12 Gauge", status="member")
+    rid = seed.round(D1, jane, 41, gauge_class="12 Gauge")
     _station_entry(session, D1, rid, jane, "doe jane", SPORTING, SPORTING_HITS)
     seed.finish()
 
-    body = _export(viewer_client, jane)
+    response = viewer_client.get(_url(jane))
 
-    assert body["schema_version"] == 1
-    assert body["club"] == {
-        "name": "Tri-County Gun Club",
-        "event_name": "Sunday Clays",
-        "city": "Sherwood",
-        "region": "OR",
-    }
-    assert body["shooter"] == {"id": jane, "display_name": "Doe, Jane"}
-    assert body["generated_at"].endswith("Z")
-    # no import or rule exists in a seeded database, so updated_at falls back to generated_at
-    assert body["rounds"] == [
-        {
-            "round_key": "2026-09-06:doe jane:1",
-            "event_date": "2026-09-06",
-            "ordinal": 1,
-            "round_type": "sporting",
-            "score": 41,
-            "target_count": 50,
-            "gauge_class": "12 Gauge",
-            "status": "member",
-            "updated_at": body["generated_at"],
-            "stations": [
-                {"order": n, "station_label": label, "target_count": targets, "hits": hits}
-                for n, ((label, targets), hits) in enumerate(
-                    zip(SPORTING, SPORTING_HITS, strict=True), start=1
-                )
-            ],
-        }
-    ]
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="claysmasher-doe-jane-scores.zip"'
+    )
+    files = _export(viewer_client, jane)
+    assert list(files) == [SPORTING_CSV]
+    assert "# Shooter: Doe, Jane" in files[SPORTING_CSV]
+    (record,) = _records(files[SPORTING_CSV])
+    assert record["Date"] == "09/06/2026"
+    assert (record["Name"], record["Location"]) == ("Sunday Clays", "Tri-County Gun Club")
+    assert (record["Total Hits"], record["Total Targets"]) == ("41", "50")
+    assert record["Notes"] == "Imported from Sunday Clays; class: 12 Gauge"
+    assert [record[f"Station {n} Hits"] for n in range(1, 8)] == [str(h) for h in SPORTING_HITS]
+    assert [record[f"Station {n} Targets"] for n in range(1, 8)] == [str(t) for _, t in SPORTING]
 
 
-def test_round_without_station_data_has_no_stations_and_fifty_targets(
+def test_round_without_station_data_has_blank_stations_and_fifty_targets(
     seed: Any, viewer_client: TestClient
 ) -> None:
     jane = seed.shooter("Doe, Jane")
     seed.round(D1, jane, 38, gauge_class=None, status=None)
     seed.finish()
 
-    (only,) = _export(viewer_client, jane)["rounds"]
+    (record,) = _records(_export(viewer_client, jane)[SPORTING_CSV])
 
-    assert (only["stations"], only["target_count"], only["score"]) == ([], 50, 38)
-    assert (only["gauge_class"], only["status"]) == (None, None)
+    assert (record["Total Hits"], record["Total Targets"]) == ("38", "50")
+    assert record["Notes"] == "Imported from Sunday Clays"
+    assert all(record[f"Station {n} Hits"] == "" for n in range(1, 16))
 
 
-def test_two_round_day_lists_ordinals_1_and_2_in_date_order(
-    seed: Any, viewer_client: TestClient
-) -> None:
+def test_rounds_come_in_date_then_day_order(seed: Any, viewer_client: TestClient) -> None:
     jane = seed.shooter("Doe, Jane")
     seed.round(D2, jane, 41)
     seed.round(D2, jane, 35)
     seed.round(D1, jane, 30)
     seed.finish()
 
-    rounds = _export(viewer_client, jane)["rounds"]
+    records = _records(_export(viewer_client, jane)[SPORTING_CSV])
 
-    assert [(r["round_key"], r["ordinal"], r["score"]) for r in rounds] == [
-        ("2026-09-06:doe jane:1", 1, 30),
-        ("2026-09-13:doe jane:1", 1, 41),
-        ("2026-09-13:doe jane:2", 2, 35),
+    assert [(r["Date"], r["Name"], r["Total Hits"]) for r in records] == [
+        ("09/06/2026", "Sunday Clays", "30"),
+        ("09/13/2026", "Sunday Clays", "41"),
+        ("09/13/2026", "Sunday Clays (round 2)", "35"),
     ]
 
 
-def test_super_sporting_event(seed: Any, viewer_client: TestClient) -> None:
+def test_each_discipline_gets_its_own_file(seed: Any, viewer_client: TestClient) -> None:
+    jane = seed.shooter("Doe, Jane")
+    seed.event(D2, round_type="super_sporting")
+    seed.round(D1, jane, 41)
+    seed.round(D2, jane, 44)
+    seed.finish()
+
+    files = _export(viewer_client, jane)
+
+    assert sorted(files) == [SPORTING_CSV, SUPER_CSV]
+    assert [r["Total Hits"] for r in _records(files[SPORTING_CSV])] == ["41"]
+    assert [r["Date"] for r in _records(files[SUPER_CSV])] == ["09/13/2026"]
+    assert "Super Sport" in files[SUPER_CSV].splitlines()[0]
+
+
+def test_a_super_sporting_only_shooter_gets_only_that_file(
+    seed: Any, viewer_client: TestClient
+) -> None:
     jane = seed.shooter("Doe, Jane")
     seed.event(D1, round_type="super_sporting")
     seed.round(D1, jane, 44)
     seed.finish()
 
-    assert _export(viewer_client, jane)["rounds"][0]["round_type"] == "super_sporting"
+    assert list(_export(viewer_client, jane)) == [SUPER_CSV]
 
 
 def test_lettered_stations_come_out_in_station_order(
@@ -170,16 +194,18 @@ def test_lettered_stations_come_out_in_station_order(
     _station_entry(session, D1, rid, jane, "doe jane", shuffled, (6, 4, 5, 6, 7, 5, 6))
     seed.finish()
 
-    stations = _export(viewer_client, jane)["rounds"][0]["stations"]
+    (record,) = _records(_export(viewer_client, jane)[SPORTING_CSV])
 
-    assert [(s["order"], s["station_label"], s["target_count"], s["hits"]) for s in stations] == [
-        (1, "4", 7, 5),
-        (2, "5", 7, 5),
-        (3, "6", 7, 6),
-        (4, "7", 8, 7),
-        (5, "7A", 6, 4),
-        (6, "8", 8, 6),
-        (7, "10", 7, 6),
+    pairs = [(record[f"Station {n} Hits"], record[f"Station {n} Targets"]) for n in range(1, 8)]
+    # station order 4, 5, 6, 7, 7A, 8, 10
+    assert pairs == [
+        ("5", "7"),
+        ("5", "7"),
+        ("6", "7"),
+        ("7", "8"),
+        ("4", "6"),
+        ("6", "8"),
+        ("6", "7"),
     ]
 
 
@@ -192,9 +218,9 @@ def test_unlinked_station_entries_are_not_a_rounds_stations(
     _station_entry(session, D1, None, jane, "doe jayne", SPORTING, SPORTING_HITS)
     seed.finish()
 
-    (only,) = _export(viewer_client, jane)["rounds"]
+    (record,) = _records(_export(viewer_client, jane)[SPORTING_CSV])
 
-    assert (only["stations"], only["target_count"]) == ([], 50)
+    assert (record["Total Targets"], record["Station 1 Hits"]) == ("50", "")
 
 
 def test_station_data_is_exported_as_recorded(
@@ -203,33 +229,15 @@ def test_station_data_is_exported_as_recorded(
     jane = seed.shooter("Doe, Jane")
     rid = seed.round(D1, jane, 40)
     short_layout = (("4", 8), ("5", 8), ("6", 6), ("7", 8), ("8", 6), ("9", 8), ("10", 4))  # 48
-    _station_entry(session, D1, rid, jane, "doe jane", short_layout, (8, 8, 6, 8, 6, 8, 4))  # 48
+    _station_entry(session, D1, rid, jane, "doe jane", short_layout, (8, 8, 6, 8, 6, 8, 4))
     seed.finish()
 
-    (only,) = _export(viewer_client, jane)["rounds"]
+    (record,) = _records(_export(viewer_client, jane)[SPORTING_CSV])
 
-    assert only["score"] == 40
-    assert only["target_count"] == 48 == sum(s["target_count"] for s in only["stations"])
-    assert sum(s["hits"] for s in only["stations"]) == 48
+    assert (record["Total Hits"], record["Total Targets"]) == ("40", "48")
 
 
-def test_merged_same_day_rounds_get_distinct_keys_and_day_ordinals(
-    seed: Any, viewer_client: TestClient
-) -> None:
-    jane = seed.shooter("Doe, Jane")
-    seed.round(D1, jane, 41)  # "doe jane", ordinal 1
-    seed.round(D1, jane, 38, name_key="doe j", ordinal=1)  # a merged spelling, also ordinal 1
-    seed.finish()
-
-    rounds = _export(viewer_client, jane)["rounds"]
-
-    assert [(r["round_key"], r["ordinal"], r["score"]) for r in rounds] == [
-        ("2026-09-06:doe j:1", 1, 38),
-        ("2026-09-06:doe jane:1", 2, 41),
-    ]
-
-
-def test_same_day_order_follows_day_ordinals_not_the_db_collation(
+def test_merged_same_day_rounds_are_numbered_by_day_ordinal(
     seed: Any, viewer_client: TestClient
 ) -> None:
     # en_US.utf8 ignores spaces, so it sorts "dela ann" before "de la roe ann"; codepoint order
@@ -239,11 +247,11 @@ def test_same_day_order_follows_day_ordinals_not_the_db_collation(
     seed.round(D1, ann, 37, name_key="de la roe ann", ordinal=1)
     seed.finish()
 
-    rounds = _export(viewer_client, ann)["rounds"]
+    records = _records(_export(viewer_client, ann)[SPORTING_CSV])
 
-    assert [(r["round_key"], r["ordinal"]) for r in rounds] == [
-        ("2026-09-06:de la roe ann:1", 1),
-        ("2026-09-06:dela ann:1", 2),
+    assert [(r["Name"], r["Total Hits"]) for r in records] == [
+        ("Sunday Clays", "37"),
+        ("Sunday Clays (round 2)", "40"),
     ]
 
 
@@ -252,7 +260,7 @@ def test_export_requires_a_session(seed: Any, anon_client: TestClient) -> None:
     seed.round(D1, jane, 41)
     seed.finish()
 
-    response = anon_client.get(f"/api/shooters/{jane}/export")
+    response = anon_client.get(_url(jane))
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthenticated"
@@ -263,15 +271,34 @@ def test_admin_sessions_can_export_too(seed: Any, admin_client: TestClient) -> N
     seed.round(D1, jane, 41)
     seed.finish()
 
-    assert len(_export(admin_client, jane)["rounds"]) == 1
+    assert list(_export(admin_client, jane)) == [SPORTING_CSV]
 
 
 def test_unknown_shooter_is_404(viewer_client: TestClient) -> None:
-    response = viewer_client.get("/api/shooters/999999/export")
+    response = viewer_client.get(_url(999999))
 
     assert response.status_code == 404
     assert response.json() == {
         "error": {"code": "shooter_not_found", "message": "No shooter with id 999999"}
+    }
+
+
+def test_a_shooter_without_exportable_rounds_is_404_no_exportable_rounds(
+    seed: Any, session: Session, viewer_client: TestClient
+) -> None:
+    jane = seed.shooter("Doe, Jane")
+    seed.round(D1, jane, 41)
+    seed.finish()
+    session.execute(text("DELETE FROM rounds WHERE shooter_id = :s"), {"s": jane})
+
+    response = viewer_client.get(_url(jane))
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "no_exportable_rounds",
+            "message": "There are no Sunday rounds to export yet.",
+        }
     }
 
 
@@ -308,8 +335,8 @@ def test_the_largest_fx_history_exports_under_the_ceiling(
     _export(fx_viewer_client, top)  # warm-up: imports, first-request setup
 
     started = time.perf_counter()
-    body = _export(fx_viewer_client, top)
+    files = _export(fx_viewer_client, top)
     elapsed = time.perf_counter() - started
 
-    assert body["rounds"]
+    assert files
     assert elapsed < CI_CEILING_SECONDS, f"export took {elapsed:.3f}s"

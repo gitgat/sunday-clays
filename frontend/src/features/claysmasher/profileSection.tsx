@@ -1,12 +1,12 @@
 import type { ProfileSection } from '../shooters/sections';
-import { ImportIntoClaySmasher } from './components/ImportIntoClaySmasher';
+import { ExportScores } from './components/ExportScores';
 
-/** C10 profile section: the "Import into ClaySmasher" button under the hero (bare: no card). */
+/** C10 profile section: the "Export my scores" button under the hero (bare: no card). */
 export const profileSection: ProfileSection = {
-  id: 'claysmasher',
-  title: 'ClaySmasher',
+  id: 'claysmasher-export',
+  title: 'Export my scores',
   order: 5,
   placement: 'top',
   bare: true,
-  Component: ImportIntoClaySmasher,
+  Component: ExportScores,
 };

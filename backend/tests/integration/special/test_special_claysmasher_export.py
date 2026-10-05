@@ -1,9 +1,11 @@
-"""The ClaySmasher export with a special Sunday (Plan 17 x spec 2026-10-01 §4.1).
+"""The ClaySmasher scores export with a special Sunday (Plan 17).
 
 A special Sunday (the 3-Bird Shoot) counts only as an appearance, so its rounds never reach the
 export: ClaySmasher would file a 60-target 3-bird score as a Sporting round.
 """
 
+import io
+import zipfile
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -11,7 +13,7 @@ from fastapi.testclient import TestClient
 from sunday_clays.analytics.cache import clear_cache
 
 SPECIAL = "2026-09-20"
-STAMPS = ("generated_at", "updated_at")
+SPECIAL_US = "09/20/2026"
 
 
 def _get(client: TestClient, url: str) -> Any:
@@ -30,13 +32,12 @@ def _id(client: TestClient, name: str) -> int:
     return int(match["shooter_id"])
 
 
-def _without_stamps(body: Any) -> Any:
-    """generated_at/updated_at are wall-clock times that differ between the two worlds."""
-    if isinstance(body, dict):
-        return {k: _without_stamps(v) for k, v in body.items() if k not in STAMPS}
-    if isinstance(body, list):
-        return [_without_stamps(v) for v in body]
-    return body
+def _files(client: TestClient, shooter_id: int) -> dict[str, str]:
+    clear_cache()
+    response = client.get(f"/api/shooters/{shooter_id}/claysmasher-export")
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        return {name: archive.read(name).decode("utf-8") for name in archive.namelist()}
 
 
 def test_the_export_leaves_the_special_sunday_out(
@@ -48,17 +49,20 @@ def test_the_export_leaves_the_special_sunday_out(
         s["event_date"] for s in _get(fx_special_viewer_client, f"/api/shooters/{hadley}/special")
     ] == [SPECIAL]
 
-    base = _get(fx_viewer_client, f"/api/shooters/{hadley}/export")
-    special = _get(fx_special_viewer_client, f"/api/shooters/{hadley}/export")
+    base = _files(fx_viewer_client, hadley)
+    special = _files(fx_special_viewer_client, hadley)
 
-    assert SPECIAL not in {r["event_date"] for r in special["rounds"]}
-    assert _without_stamps(special) == _without_stamps(base)
+    assert all(SPECIAL_US not in text for text in special.values())
+    assert special == base
 
 
-def test_a_special_only_shooter_exports_no_rounds(fx_special_viewer_client: TestClient) -> None:
+def test_a_special_only_shooter_has_nothing_to_export(
+    fx_special_viewer_client: TestClient,
+) -> None:
     kim = _id(fx_special_viewer_client, "Kim, Pat")
+    clear_cache()
 
-    body = _get(fx_special_viewer_client, f"/api/shooters/{kim}/export")
+    response = fx_special_viewer_client.get(f"/api/shooters/{kim}/claysmasher-export")
 
-    assert body["shooter"] == {"id": kim, "display_name": "Kim, Pat"}
-    assert body["rounds"] == []
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "no_exportable_rounds"
