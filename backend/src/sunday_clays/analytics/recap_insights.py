@@ -12,11 +12,15 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from typing import Final
 
+from sunday_clays.analytics.insights import registry
 from sunday_clays.analytics.insights import select as sel
+from sunday_clays.analytics.insights.context import InsightFrames
 from sunday_clays.analytics.insights.rank import RECENCY_TOP
 from sunday_clays.analytics.insights.store import InsightRow
-from sunday_clays.analytics.insights.templates import Segment, plain
+from sunday_clays.analytics.insights.templates import Segment, plain, render
+from sunday_clays.analytics.insights.types import Scope
 
+TARGETS_KIND: Final = "pf.targets-milestone"
 MAX_PICKS: Final = 5
 MIN_PICKS: Final = 3
 NO_REPEAT_WEEKS: Final = 12
@@ -35,30 +39,24 @@ ELIGIBLE: Final[dict[str, frozenset[str]]] = {
     "ev.rain-day": frozenset({"field"}),
     # Club record, with the old record or the gap in the sentence. Not "tie": it says "level with".
     "ev.record-watch": frozenset({"new", "near"}),
-    # Not the first-timers list: a second visit is a returning-guest story.
-    "ev.second-visit": frozenset({"", "many"}),
     # Club level, names nobody; states the month it was last this way.
     "ev.toughest-since": frozenset({"tough", "easy"}),
     # Roll-ups name people with no number or length, so only single-shooter variants stay for
-    # above-own-avg-streak, beat-field-streak, best-stretch, podium-run and tied-best (the same rule
-    # as average-milestone and career-first). The roll-ups that remain below carry the fact itself.
+    # above-own-avg-streak, beat-field-streak, best-stretch and three-rising (the same rule as
+    # average-milestone). The roll-up that remains below carries the fact itself.
     "pf.above-own-avg-streak": frozenset({""}),
     # The average and the mark are both in the sentence; the roll-up is too vague.
     "pf.average-milestone": frozenset({""}),
-    "pf.back-strong": frozenset({"", "score", "rollup"}),
     "pf.beat-field-streak": frozenset({""}),
     "pf.best-stretch": frozenset({""}),
-    # Podium only: "top_third" would publish a named shooter's place below the podium, a ranking
-    # beyond the one the email already has. The roll-up ("Career firsts today") says nothing.
-    "pf.career-first": frozenset({"podium"}),
-    "pf.first-since": frozenset({"win", "podium", "score"}),
+    # Only the score variant: the win and podium variants are the club newsletter's story.
+    "pf.first-since": frozenset({"score"}),
     "pf.more-high-rounds": frozenset({""}),
-    "pf.podium-run": frozenset({""}),
     "pf.shooter-anniversary": frozenset({"", "rollup"}),
     # Only the look-ahead: the reached Sunday counts are the Events Attended milestone already.
     "pf.sunday-milestone": frozenset({"to_go"}),
-    "pf.three-rising": frozenset({"", "rollup"}),
-    "pf.tied-best": frozenset({""}),
+    # The roll-up ("Up 3 Sundays straight: A and B.") never says what went up.
+    "pf.three-rising": frozenset({""}),
     "pf.tier-run": frozenset({""}),
     # Club level, names nobody; says the Sundays and the score.
     "rec.drought-clock": frozenset({""}),
@@ -66,16 +64,28 @@ ELIGIBLE: Final[dict[str, frozenset[str]]] = {
 
 #: Sunday-page kinds left out of the email, with the reason.
 EXCLUDED: Final[dict[str, str]] = {
-    "ev.close-finish": "the podium section already shows the top finishers",
-    "ev.new-faces": "the first-timers section already welcomes them",
-    "ev.top-score": "the podium section already shows the top score",
+    "ev.close-finish": "the club newsletter already shows the podium",
+    "ev.new-faces": "the club newsletter already welcomes new shooters",
+    "ev.top-score": "the club newsletter already shows the podium and top score",
     "ev.spotlight": "says 'their usual for a day like this', which only makes sense on the site",
     "ev.week-jump": "'Biggest jump: <Name>' ranks one shooter and never says how big the jump was",
     "pf.high-round-count": "opens with 'That was', which needs the score shown before it",
     "pf.beat-own-usual": "says 'their usual for a day like that': meaningless without the site",
-    "pf.pb": "the new personal bests section already lists them",
-    "pf.targets-milestone": "the Clays Broken milestone already says it",
-    "pf.wins": "wins are the podium section's story, and a ranking beyond it",
+    "pf.back-strong": "welcome-backs are the club newsletter's story (owner, 2026-10-05)",
+    "ev.second-visit": "a second visit is a welcome-back, the club newsletter's new-shooter story",
+    "pf.podium-run": "the club newsletter already shows the podium",
+    "pf.career-first": "its only variant is a first podium, which the newsletter already shows",
+    "pf.tied-best": "the club newsletter already lists personal bests, a tied one included",
+    "pf.pb": "the club newsletter already lists personal bests",
+    "pf.wins": "wins are the podium's story (the club newsletter's), and a ranking beyond it",
+}
+
+#: Kinds the email's Milestones section carries instead of "This week" (owner, 2026-10-05). The
+#: sentences come from the engine's facts before roll-up (`milestone_sentences`), so every
+#: crossing keeps its own single-shooter sentence with the number; this map classifies the kind
+#: for the partition tests.
+MILESTONE_KINDS: Final[dict[str, frozenset[str]]] = {
+    TARGETS_KIND: frozenset({""}),
 }
 
 _BANNED: Final = re.compile(
@@ -167,3 +177,27 @@ def week_insights(
 ) -> list[str]:
     """Plain sentences, each the row's named headline."""
     return [plain(r.headline) for r in week_picks(rows, held, day, supersedes)]
+
+
+def milestone_sentences(fr: InsightFrames, day: date) -> list[tuple[int, str]]:
+    """(shooter id, sentence) for each shooter who crossed a thousand-target mark on `day`.
+
+    Built from the engine's own `pf.targets-milestone` facts (before roll-up), so two or more
+    crossings on one Sunday each keep their own named sentence with the total; the stored roll-up
+    ("New thousand-target marks: A, B and C.") has no numbers and is never used. Best first.
+    """
+    if fr.as_of is None:
+        return []
+    kind = registry.get(TARGETS_KIND)
+    scope = Scope(sundays=frozenset({day}), as_of=fr.as_of)
+    facts = sorted(
+        (f for f in kind.evaluate(fr, scope) if f.anchor_date == day and f.variant == ""),
+        key=lambda f: (-f.strength, f.subject_id),
+    )
+    template = kind.templates[""][0]
+    out: list[tuple[int, str]] = []
+    for fact in facts:
+        segments = render(template, fact.params, fr.names)
+        if not recap_text_problems(_prose(segments)):
+            out.append((int(fact.subject_id), plain(segments)))
+    return out

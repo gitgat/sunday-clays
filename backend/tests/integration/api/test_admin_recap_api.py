@@ -8,13 +8,10 @@ from sqlalchemy import text, update
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics import club_milestones as cm
-from sunday_clays.analytics.achievements.registry import trophy
 from sunday_clays.analytics.cache import clear_cache
 from sunday_clays.analytics.insights.store import load_rows
 from sunday_clays.analytics.insights.templates import natural_name, plain
 from sunday_clays.analytics.recap_insights import ELIGIBLE, recap_text_problems
-from sunday_clays.analytics.recap_trophies import recap_trophy_items
-from sunday_clays.analytics.summary import LEFT_OUT_TROPHY_CODES
 from sunday_clays.config import get_settings
 from sunday_clays.domain.features import set_switch
 from sunday_clays.models import Event
@@ -23,20 +20,40 @@ LATEST = "2026-09-27"
 SPECIAL = "2026-09-20"
 
 
-def test_regular_recap_agrees_with_the_sunday_page(fx_admin_client: TestClient) -> None:
+def one_shooter(session: Session) -> tuple[int, str]:
+    shooter, name = session.execute(
+        text(
+            "SELECT a.shooter_id, p.display_name FROM achievements_awarded a "
+            "JOIN shooter_profiles p ON p.shooter_id = a.shooter_id "
+            "WHERE a.event_date = :d ORDER BY a.shooter_id LIMIT 1"
+        ),
+        {"d": LATEST},
+    ).one()
+    return int(shooter), str(name)
+
+
+def award(session: Session, shooter: int, *codes: str, day: str = LATEST) -> None:
+    for code in codes:
+        session.execute(
+            text(
+                "INSERT INTO achievements_awarded (shooter_id, code, event_date)"
+                " VALUES (:s, :c, :d) ON CONFLICT DO NOTHING"
+            ),
+            {"s": shooter, "c": code, "d": day},
+        )
+    clear_cache()
+
+
+def club_lines(recap: dict[str, list[str]]) -> list[str]:
+    return [line for line in recap["milestones"] if line.startswith("Club: ")]
+
+
+def test_regular_recap_shape(fx_admin_client: TestClient) -> None:
     recap = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()
-    event = fx_admin_client.get(f"/api/events/{LATEST}").json()
-    podium_names = sorted(n for place in recap["podium"] for n in place["names"])
-    page_names = sorted(
-        natural_name(r["display_name"])
-        for r in event["results"]
-        if r["is_best_round"] and r["event_rank"] is not None and r["event_rank"] <= 3
-    )
-    assert podium_names == page_names
-    page_pbs = {natural_name(n["display_name"]) for n in event["notables"] if n["kind"] == "pb"}
-    assert {p["display_name"] for p in recap["pbs"]} == page_pbs
-    for pb in recap["pbs"]:
-        assert pb["score"] > pb["previous"]
+    # The club newsletter covers these; the recap no longer carries them (owner, 2026-10-05).
+    for gone in ("podium", "pbs", "first_timers", "trophies"):
+        assert gone not in recap
+    assert isinstance(recap["milestones"], list)
     assert recap["kind"] == "regular"
     assert recap["target_total"] == 50
     assert recap["link"] == f"https://sundayclays.claysmasher.com/l/events/{LATEST}"
@@ -44,89 +61,161 @@ def test_regular_recap_agrees_with_the_sunday_page(fx_admin_client: TestClient) 
     assert recap["top_score"] is None
 
 
-def test_trophies_are_that_sundays_awards_minus_the_d14_four(
+def test_milestones_are_tiered_trophies_as_first_last_lines(
     fx_admin_client: TestClient, fx_session: Session
 ) -> None:
-    """Counted against achievements_awarded, not against names, so removing the filter fails.
-    Two D14 trophies are added on LATEST (one per registry category, competition and stations), so
-    the test does not depend on what the fixture happens to award that day."""
-    shooter = fx_session.execute(
-        text("SELECT shooter_id FROM achievements_awarded WHERE event_date = :d LIMIT 1"),
-        {"d": LATEST},
-    ).scalar_one()
-    for code in ("first_win", "station_top_gun"):
-        fx_session.execute(
-            text(
-                "INSERT INTO achievements_awarded (shooter_id, code, event_date)"
-                " VALUES (:s, :c, :d)"
-                " ON CONFLICT DO NOTHING"
-            ),
-            {"s": shooter, "c": code, "d": LATEST},
-        )
-    codes = (
-        fx_session.execute(
-            text("SELECT code FROM achievements_awarded WHERE event_date = :d"), {"d": LATEST}
-        )
-        .scalars()
-        .all()
+    """One line per tiered trophy, `First Last: <Name> - <N>` (highest tier per family). One-offs,
+    the D14 four, hidden families and a first Sunday (Events Attended - 1) are not listed."""
+    shooter, name = one_shooter(fx_session)
+    award(
+        fx_session,
+        shooter,
+        "events:1",
+        "clays_broken:2",
+        "clays_broken:3",
+        "doubleheader",
+        "rain",
+        "first_win",
+        "station_top_gun",
+        "iron_streak:1",
     )
-    left_out = [c for c in codes if c in LEFT_OUT_TROPHY_CODES]
-    assert {"first_win", "station_top_gun"} <= set(left_out)
-    recap = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()
-    items = [i for t in recap["trophies"] for i in t["items"]]
-    assert items
-    for code in left_out:
-        assert trophy(code) is not None
-        assert not any(i.startswith(trophy(code).achievement.name) for i in items)  # type: ignore[union-attr]
+    lines = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["milestones"]
+    who = natural_name(name)
+    assert f"{who}: Clays Broken - 1,000" in lines
+    assert f"{who}: Clays Broken - 500" not in lines
+    mine = [line for line in lines if line.startswith(f"{who}: ")]
+    assert not any(
+        w in line for line in mine for w in ("Events Attended - 1", "Doubleheader", "Rain", "Iron")
+    )
+    assert not any(w in line for line in lines for w in ("Bronze", "Silver", "Gold", "Platinum"))
+    assert not any(line.startswith(f"{who}: Events Attended - 1") for line in lines)
 
 
-def test_trophies_read_as_the_number_reached_per_shooter(
+def test_a_first_sunday_is_not_a_milestone(
     fx_admin_client: TestClient, fx_session: Session
 ) -> None:
-    """Each shooter's items are exactly the recap wording of that Sunday's awards (highest tier
-    per family, never a metal). Two tiers of one family are forced onto one shooter."""
-    shooter, name = fx_session.execute(
+    shooter, name = one_shooter(fx_session)
+    fx_session.execute(
+        text("DELETE FROM achievements_awarded WHERE shooter_id = :s AND event_date = :d"),
+        {"s": shooter, "d": LATEST},
+    )
+    award(fx_session, shooter, "events:1")
+    lines = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["milestones"]
+    assert not [line for line in lines if line.startswith(f"{natural_name(name)}: ")]
+
+
+def test_milestones_come_as_insight_sentences_then_trophies_then_the_club(
+    fx_admin_client: TestClient,
+    fx_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Order (R2): the Sunday's Clays Broken insight sentences, tiered trophy lines, club lines."""
+    stored = [
+        r
+        for r in load_rows(fx_session)
+        if r.kind == "pf.targets-milestone" and "sunday" in r.pages and r.variant == ""
+    ]
+    assert stored, "the fixture world has a single-shooter Clays Broken milestone Sunday"
+    row = stored[0]
+    day = row.anchor_date.isoformat()
+    shooter, name = one_shooter(fx_session)
+    assert shooter not in row.named_shooter_ids
+    award(fx_session, shooter, "clays_broken:3", day=day)
+    series = cm.club_milestones(fx_session, row.anchor_date).series
+    crossed = next(p.rounds for p in series if p.event_date == row.anchor_date)
+    thresholds = dict.fromkeys(cm.METRICS, ())
+    thresholds["rounds"] = (series[0].rounds, crossed)
+    monkeypatch.setattr(cm, "THRESHOLDS", thresholds)
+    set_switch(fx_session, get_settings(), "club_milestones", True)
+    clear_cache()
+    recap = fx_admin_client.get(f"/api/admin/recap/{day}").json()
+    sentence = plain(row.headline)
+    lines = recap["milestones"]
+    assert lines[0] == sentence
+    assert sentence not in recap["insights"]  # never in "This week"
+    assert recap_text_problems(sentence) == []
+    assert len(lines) > 2
+    assert lines[-1] == f"Club: {cm.milestone_label('rounds', crossed)} all time!"
+    assert f"{natural_name(name)}: Clays Broken - 1,000" in lines[1:-1]
+
+
+def test_a_shooter_with_a_clays_broken_sentence_has_no_clays_broken_trophy_line(
+    fx_admin_client: TestClient, fx_session: Session
+) -> None:
+    """The same crossing is never said twice: the sentence (it has the total) wins, and the
+    shooter's own `Clays Broken - N` line is left out; another shooter's line stays."""
+    row = next(
+        r
+        for r in load_rows(fx_session)
+        if r.kind == "pf.targets-milestone" and "sunday" in r.pages and r.variant == ""
+    )
+    day = row.anchor_date.isoformat()
+    (sid,) = row.named_shooter_ids
+    name = str(
+        fx_session.execute(
+            text("SELECT display_name FROM shooter_profiles WHERE shooter_id = :s"), {"s": sid}
+        ).scalar_one()
+    )
+    other, other_name = fx_session.execute(
         text(
-            "SELECT a.shooter_id, p.display_name FROM achievements_awarded a "
-            "JOIN shooter_profiles p ON p.shooter_id = a.shooter_id "
-            "WHERE a.event_date = :d LIMIT 1"
+            "SELECT shooter_id, display_name FROM shooter_profiles WHERE shooter_id <> :s LIMIT 1"
         ),
-        {"d": LATEST},
+        {"s": sid},
     ).one()
-    for code in ("events:3", "events:4"):
-        fx_session.execute(
-            text(
-                "INSERT INTO achievements_awarded (shooter_id, code, event_date)"
-                " VALUES (:s, :c, :d) ON CONFLICT DO NOTHING"
-            ),
-            {"s": shooter, "c": code, "d": LATEST},
+    award(fx_session, sid, "clays_broken:3", "events:25", day=day)
+    award(fx_session, int(other), "clays_broken:3", day=day)
+    lines = fx_admin_client.get(f"/api/admin/recap/{day}").json()["milestones"]
+    who = natural_name(name)
+    assert plain(row.headline) in lines
+    assert [line for line in lines if who in line and "broken" in line.lower()] == [
+        plain(row.headline)
+    ]
+    assert not [line for line in lines if line.startswith(f"{who}: Clays Broken")]
+    assert f"{who}: Events Attended - 25" in lines  # other trophies stay
+    assert f"{natural_name(str(other_name))}: Clays Broken - 1,000" in lines
+
+
+def test_a_rolled_up_sunday_still_names_every_crossing_with_its_number(
+    fx_admin_client: TestClient, fx_session: Session
+) -> None:
+    """On a Sunday the site rolls up ("New thousand-target marks: A, B and C."), the email still
+    gives each person their own sentence with the number, never the roll-up, and no Clays Broken
+    line for the same person."""
+    roll = next(
+        r
+        for r in load_rows(fx_session)
+        if r.kind == "pf.targets-milestone" and "sunday" in r.pages and r.variant == "rollup"
+    )
+    day = roll.anchor_date.isoformat()
+    lines = fx_admin_client.get(f"/api/admin/recap/{day}").json()["milestones"]
+    assert plain(roll.headline) not in lines
+    for sid in roll.named_shooter_ids:
+        who = natural_name(
+            str(
+                fx_session.execute(
+                    text("SELECT display_name FROM shooter_profiles WHERE shooter_id = :s"),
+                    {"s": sid},
+                ).scalar_one()
+            )
         )
-    codes = (
-        fx_session.execute(
-            text(
-                "SELECT a.code FROM achievements_awarded a WHERE a.event_date = :d"
-                " AND a.shooter_id = :s ORDER BY a.code"
-            ),
-            {"d": LATEST, "s": shooter},
-        )
-        .scalars()
-        .all()
-    )
-    mine = next(
-        t
-        for t in fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["trophies"]
-        if t["display_name"] == natural_name(name)
-    )
-    expected = recap_trophy_items([c for c in codes if c != "three_bird_shoot"])
-    assert mine["items"] == expected
-    assert "Events Attended - 50" in expected
-    assert "Events Attended - 25" not in expected
-    every = " ".join(
-        i
-        for t in fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["trophies"]
-        for i in t["items"]
-    )
-    assert not any(w in every for w in ("Bronze", "Silver", "Gold", "Platinum", "Diamond", "—"))
+        assert [line for line in lines if line.startswith(f"{who} has now broken")], who
+        assert not [line for line in lines if line.startswith(f"{who}: Clays Broken")], who
+
+
+def test_no_milestone_is_a_this_week_insight_and_back_strong_is_never_one(
+    fx_admin_client: TestClient, fx_session: Session
+) -> None:
+    held = fx_admin_client.get("/api/events").json()
+    days = sorted(e["event_date"] for e in held if e["kind"] == "regular")[-20:]
+    rows = load_rows(fx_session)
+    for d in days:
+        recap = fx_admin_client.get(f"/api/admin/recap/{d}").json()
+        kinds = {
+            r.kind
+            for r in rows
+            if r.anchor_date == date.fromisoformat(d) and plain(r.headline) in recap["insights"]
+        }
+        assert not kinds & {"pf.targets-milestone", "pf.back-strong"}, d
 
 
 def test_this_week_insights_are_stored_sunday_rows_in_plain_words(
@@ -194,11 +283,11 @@ def test_milestones_only_when_their_switch_is_on(
     thresholds["rounds"] = (series[0].rounds, crossed)  # the first: crossed on the first Sunday
     monkeypatch.setattr(cm, "THRESHOLDS", thresholds)
     clear_cache()
-    assert fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["club_milestones"] == []
+    assert club_lines(fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()) == []
     set_switch(fx_session, get_settings(), "club_milestones", True)
     clear_cache()
-    on = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["club_milestones"]
-    assert on == [cm.milestone_label("rounds", crossed)]
+    on = club_lines(fx_admin_client.get(f"/api/admin/recap/{LATEST}").json())
+    assert on == [f"Club: {cm.milestone_label('rounds', crossed)} all time!"]
 
 
 def test_special_recap(fx_special_admin_client: TestClient, fx_special_session: Session) -> None:
@@ -220,11 +309,10 @@ def test_special_recap(fx_special_admin_client: TestClient, fx_special_session: 
     assert (recap["kind"], recap["label"], recap["target_total"]) == ("special", "3-Bird Shoot", 60)
     assert recap["three_bird_new"] == awarded
     assert recap["three_bird_holders"] == held
-    assert recap["podium"] == []
-    assert recap["pbs"] == []
     assert recap["insights"] == []
     assert recap["top_score"] == 55
-    assert "Pat Kim" in recap["first_timers"]
+    assert isinstance(recap["milestones"], list)
+    assert "podium" not in recap
 
 
 def test_a_turkey_shoot_has_no_three_bird_counts(
@@ -262,12 +350,46 @@ def test_errors(
     assert fx_viewer_client.get(f"/api/admin/recap/{LATEST}").status_code == 403
 
 
-def test_every_name_in_the_recap_reads_first_last(fx_admin_client: TestClient) -> None:
+def test_every_milestone_name_reads_first_last(
+    fx_admin_client: TestClient, fx_session: Session
+) -> None:
     """Owner, 2026-10-04: "First Last" everywhere in the email, like the "This week" sentences."""
-    recap = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()
-    names = [n for place in recap["podium"] for n in place["names"]]
-    names += [p["display_name"] for p in recap["pbs"]]
-    names += [t["display_name"] for t in recap["trophies"]]
-    names += recap["first_timers"]
-    assert names
-    assert not [n for n in names if "," in n]
+    shooter, _ = one_shooter(fx_session)
+    award(fx_session, shooter, "clays_broken:3")
+    lines = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["milestones"]
+    named = [line for line in lines if "Clays Broken" in line]
+    assert named
+    assert not [line for line in named if "," in line.split(":")[0]]
+
+
+def test_a_busy_sunday_keeps_every_crossing_and_drops_their_own_trophy_lines(
+    fx_admin_client: TestClient, fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two shooters cross on one Sunday (4,000 and 1,000): each keeps a sentence with their own
+    number, neither has a separate `Clays Broken - N` line, and no roll-up text appears."""
+    from sunday_clays.api.routes import admin_recap
+
+    (a, a_name), (b, b_name) = [
+        (int(s), str(n))
+        for s, n in fx_session.execute(
+            text(
+                "SELECT shooter_id, display_name FROM shooter_profiles ORDER BY shooter_id LIMIT 2"
+            )
+        )
+    ]
+    a_line = f"{natural_name(a_name)} has now broken 4,000 targets on Sundays: 4,018 in all."
+    b_line = f"{natural_name(b_name)} has now broken 1,000 targets on Sundays: 1,012 in all."
+    monkeypatch.setattr(
+        admin_recap, "targets_sentences", lambda _fr, _day: [(a, a_line), (b, b_line)]
+    )
+    award(fx_session, a, "clays_broken:6")
+    award(fx_session, b, "clays_broken:3", "events:3")
+    lines = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["milestones"]
+    assert lines[:2] == [a_line, b_line]
+    assert not [
+        x
+        for x in lines
+        if "Clays Broken -" in x and x.split(":")[0] in {natural_name(a_name), natural_name(b_name)}
+    ]
+    assert f"{natural_name(b_name)}: Events Attended - 25" in lines
+    assert not [x for x in lines if "thousand-target marks" in x]

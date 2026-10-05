@@ -14,7 +14,9 @@ test('the recap defaults to the latest Sunday and copies and downloads', async (
   await expect(page.getByRole('heading', { level: 1, name: /^Weekly recap/ })).toBeVisible();
   const text = page.getByRole('textbox', { name: 'Recap (plain text)' });
   await expect(text).toHaveValue(/^Sunday Clays · Sunday, September 27, 2026/);
-  await expect(text).toHaveValue(/Podium/);
+  await expect(text).toHaveValue(/Turnout: /);
+  // The club newsletter covers the podium; the recap has no podium section and no link.
+  await expect(text).not.toHaveValue(/See every score|Podium/);
   await page.getByRole('button', { name: 'Copy text' }).click();
   await expect(page.getByText('Copied.')).toBeVisible();
   const copied = await page.evaluate(() => navigator.clipboard.readText());

@@ -74,7 +74,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     id: 'personal-best',
     term: 'Personal best (PB)',
     definition:
-      "Your best single round so far. On a Sunday's page, in the recap and on the summary card, a new PB counts once you have at least 5 earlier rounds.",
+      "Your best single round so far. On a Sunday's page and on the summary card, a new PB counts once you have at least 5 earlier rounds.",
   },
   {
     id: 'rarity',

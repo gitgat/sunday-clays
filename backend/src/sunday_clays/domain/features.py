@@ -63,7 +63,8 @@ FEATURES: Final[tuple[Feature, ...]] = (
     Feature(
         "weekly_recap",
         "Weekly recap",
-        "Admin tool: paste-ready text and an image of a Sunday for the club email.",
+        "Admin tool: paste-ready text and an image of a Sunday's stories and milestones "
+        "for the club email.",
     ),
     Feature(
         "pwa",

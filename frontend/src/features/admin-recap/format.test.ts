@@ -11,21 +11,11 @@ This week
 - Scores up 3 Sundays straight for Alvin McGinnis: 33, 36, then 46.
 - A friendly Sunday: scores ran about 3 targets over a typical Sunday for this crowd. The middle score was 40.
 
-Podium (best round of the day)
-Tied 1st: Stanton Finnegan and Ethan Stockton — 49
-3rd: Sid Devlin — 47
-
-New personal bests
-- Noel Kaplan: 45 (was 43)
-
-Milestones and trophies
-- Preston Abernathy: Events Attended - 50
-- Club: 350,000 clays thrown
-
-Welcome to our first-timers
-- Pat Kim
-
-See every score: https://sundayclays.claysmasher.com/l/events/2026-09-27`;
+Milestones
+- Wylie Marsden has now broken 4,000 targets on Sundays: 4,018 in all.
+- Preston Abernathy: Clays Broken - 1,000
+- Pat Kim: Clays Broken - 1,000
+- Club: 7,500 rounds shot all time!`;
 
 const REGULAR_MARKDOWN = `**Sunday Clays · Sunday, September 27, 2026**
 
@@ -35,21 +25,11 @@ Turnout: 24 came out and 27 rounds were shot.
 - Scores up 3 Sundays straight for Alvin McGinnis: 33, 36, then 46.
 - A friendly Sunday: scores ran about 3 targets over a typical Sunday for this crowd. The middle score was 40.
 
-**Podium (best round of the day)**
-- Tied 1st: Stanton Finnegan and Ethan Stockton — 49
-- 3rd: Sid Devlin — 47
-
-**New personal bests**
-- Noel Kaplan: 45 (was 43)
-
-**Milestones and trophies**
-- Preston Abernathy: Events Attended - 50
-- Club: 350,000 clays thrown
-
-**Welcome to our first-timers**
-- Pat Kim
-
-[See every score](https://sundayclays.claysmasher.com/l/events/2026-09-27)`;
+**Milestones**
+- Wylie Marsden has now broken 4,000 targets on Sundays: 4,018 in all.
+- Preston Abernathy: Clays Broken - 1,000
+- Pat Kim: Clays Broken - 1,000
+- Club: 7,500 rounds shot all time!`;
 
 const SPECIAL_TEXT = `Sunday Clays · Sunday, September 20, 2026
 3-Bird Shoot (special shoot, 60 targets)
@@ -58,10 +38,8 @@ const SPECIAL_TEXT = `Sunday Clays · Sunday, September 20, 2026
 3-Bird Shoot trophy: 12 earned it for the first time today. 58 shooters hold it now.
 Top score: 55 of 60.
 
-Welcome to our first-timers
-- Pat Kim
-
-See every score: https://sundayclays.claysmasher.com/l/events/2026-09-20`;
+Milestones
+- Ike Hadley: Clays Broken - 500`;
 
 const SPECIAL_MARKDOWN = `**Sunday Clays · Sunday, September 20, 2026**
 
@@ -73,10 +51,8 @@ const SPECIAL_MARKDOWN = `**Sunday Clays · Sunday, September 20, 2026**
 
 Top score: 55 of 60.
 
-**Welcome to our first-timers**
-- Pat Kim
-
-[See every score](https://sundayclays.claysmasher.com/l/events/2026-09-20)`;
+**Milestones**
+- Ike Hadley: Clays Broken - 500`;
 
 describe('recap formatting', () => {
   it('regular, plain text', () => expect(formatRecap(regularRecap).text).toBe(REGULAR_TEXT));
@@ -111,40 +87,22 @@ describe('recap formatting', () => {
   });
 
   it('omits empty sections with their headings, and uses the shooter count without a head count', () => {
-    const bare = {
-      ...regularRecap,
-      head_count: null,
-      pbs: [],
-      trophies: [],
-      club_milestones: [],
-      first_timers: [],
-    };
+    const bare = { ...regularRecap, head_count: null, insights: [], milestones: [] };
     const text = formatRecap(bare).text;
     expect(text).toContain('Turnout: 23 shooters and 27 rounds were shot.');
-    for (const heading of [
-      'New personal bests',
-      'Milestones and trophies',
-      'Welcome to our first-timers',
-    ]) {
-      expect(text).not.toContain(heading);
-    }
+    expect(text).not.toContain('This week');
+    expect(text).not.toContain('Milestones');
+    expect(formatRecap(bare).markdown).not.toContain('Milestones');
   });
 
-  it('one shooter, and five tied for third', () => {
-    const one = {
-      ...regularRecap,
-      podium: [{ place: 1 as const, tied: false, score: 44, names: ['Ike Hadley'] }],
-    };
-    expect(formatRecap(one).text).toContain(
-      'Podium (best round of the day)\n1st: Ike Hadley — 44\n',
-    );
-    const five = ['A, One', 'B, Two', 'C, Three', 'D, Four', 'E, Five'];
-    const tied = {
-      ...regularRecap,
-      podium: [{ place: 3 as const, tied: true, score: 44, names: five }],
-    };
-    expect(formatRecap(tied).text).toContain(
-      'Tied 3rd: A, One, B, Two, C, Three, D, Four and E, Five — 44',
+  it('carries nothing the club newsletter covers, and no link', () => {
+    for (const r of [regularRecap, specialRecap]) {
+      for (const out of Object.values(formatRecap(r))) {
+        expect(out).not.toMatch(/podium|personal best|first-timer|See every score|https?:/i);
+      }
+    }
+    expect(Object.keys(regularRecap)).not.toEqual(
+      expect.arrayContaining(['podium', 'pbs', 'first_timers', 'trophies']),
     );
   });
 
@@ -170,12 +128,10 @@ describe('recap formatting', () => {
     expect(recapFilename('2026-09-27')).toBe('sunday-clays-recap-2026-09-27.png');
   });
 
-  it('puts "This week" after the turnout and before the podium, and hides it when empty', () => {
+  it('orders turnout, This week, Milestones, and hides This week when empty', () => {
     const text = formatRecap(regularRecap).text;
     expect(text.indexOf('Turnout:')).toBeLessThan(text.indexOf('This week'));
-    expect(text.indexOf('This week')).toBeLessThan(text.indexOf('Podium'));
-    expect(text.indexOf('See every score')).toBe(text.lastIndexOf('See every score'));
-    expect(text.trimEnd().split('\n').at(-1)).toMatch(/^See every score: /);
+    expect(text.indexOf('This week')).toBeLessThan(text.indexOf('Milestones'));
     const none = formatRecap({ ...regularRecap, insights: [] });
     expect(none.text).not.toContain('This week');
     expect(none.markdown).not.toContain('This week');
@@ -183,7 +139,14 @@ describe('recap formatting', () => {
 
   it('a special shoot lists its insights right after the intro too', () => {
     const text = formatRecap({ ...specialRecap, insights: ['A friendly Sunday.'] }).text;
-    expect(text).toContain('Top score: 55 of 60.\n\nThis week\n- A friendly Sunday.\n\nWelcome');
+    expect(text).toContain(
+      'Top score: 55 of 60.\n\nThis week\n- A friendly Sunday.\n\nMilestones\n- Ike Hadley',
+    );
+  });
+
+  it('escapes Markdown characters in a milestone line', () => {
+    const md = formatRecap({ ...regularRecap, milestones: ['A_B: *Big* [one]'] }).markdown;
+    expect(md).toContain('- A\\_B: \\*Big\\* \\[one\\]');
   });
 
   it('escapes Markdown characters in an insight sentence', () => {
@@ -192,14 +155,7 @@ describe('recap formatting', () => {
   });
 
   it('every line stands alone: nothing only a site visitor would understand (R3)', () => {
-    const outputs = [
-      regularRecap,
-      specialRecap,
-      {
-        ...regularRecap,
-        trophies: [{ display_name: 'Ike Hadley', items: ['Clays Broken - 1,000'] }],
-      },
-    ].flatMap((r) => Object.values(formatRecap(r)));
+    const outputs = [regularRecap, specialRecap].flatMap((r) => Object.values(formatRecap(r)));
     for (const text of allStrings(outputs)) expect(text).not.toMatch(OUTSIDER_BANNED);
     expect(OUTSIDER_BANNED.test('Well above their usual for a day like this')).toBe(true);
     for (const bad of ['Your best', 'a Silver trophy', 'Tap here', 'See the chart', 'Level 3'])
@@ -213,9 +169,8 @@ describe('recap formatting', () => {
   });
 
   it('says "1 round was" and leaves out a special shoot top score nobody has', () => {
-    const one = { ...regularRecap, rounds: 1, podium: [] };
+    const one = { ...regularRecap, rounds: 1 };
     expect(formatRecap(one).text).toContain('and 1 round was shot.');
-    expect(formatRecap(one).text).not.toContain('Podium');
     const noTop = { ...specialRecap, top_score: null };
     expect(formatRecap(noTop).text).not.toContain('Top score');
   });

@@ -56,8 +56,8 @@ def _item(found: Trophy) -> str:
     return found.achievement.name if note is None else f"{found.achievement.name} ({note})"
 
 
-def recap_trophy_items(codes: Iterable[str]) -> list[str]:
-    """One line item per trophy family: only the highest tier crossed, in first-seen order.
+def _best_per_family(codes: Iterable[str]) -> list[Trophy]:
+    """The highest tier crossed per family, in first-seen order.
 
     Unknown codes, D14's four left-out trophies and the hidden families are dropped.
     """
@@ -74,7 +74,26 @@ def recap_trophy_items(codes: Iterable[str]) -> list[str]:
         held = best.get(family)
         if held is None or _level(found) > _level(held):
             best[family] = found
-    return [_item(found) for found in best.values()]
+    return list(best.values())
+
+
+def recap_trophy_items(codes: Iterable[str]) -> list[str]:
+    """One line item per trophy family: only the highest tier crossed, in first-seen order."""
+    return [_item(found) for found in _best_per_family(codes)]
+
+
+def recap_milestone_items(codes: Iterable[str]) -> list[str]:
+    """The email's Milestones lines (owner, 2026-10-05): tiered trophies only.
+
+    One-off trophies are left out, and so is a first Sunday ("Events Attended - 1"): the club
+    newsletter already welcomes new shooters.
+    """
+    return [
+        _item(found)
+        for found in _best_per_family(codes)
+        if found.tier is not None
+        and not (found.achievement.code == "events" and found.tier.level == 1)
+    ]
 
 
 def _level(found: Trophy) -> int:
