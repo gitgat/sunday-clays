@@ -27,7 +27,8 @@ export const featureSwitches: FeatureSwitch[] = [
     key: 'weekly_recap',
     kind: 'feature',
     label: 'Weekly recap',
-    description: 'Admin tool: paste-ready text and an image of a Sunday for the club email.',
+    description:
+      "Admin tool: paste-ready text and an image of a Sunday's stories and milestones for the club email.",
     enabled: false,
     updated_at: null,
     updated_on: null,

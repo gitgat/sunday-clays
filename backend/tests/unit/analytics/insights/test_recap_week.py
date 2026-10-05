@@ -20,6 +20,7 @@ from sunday_clays.analytics.recap_insights import (
     ELIGIBLE,
     EXCLUDED,
     HORIZON,
+    MILESTONE_KINDS,
     NO_REPEAT_WEEKS,
     recap_text_problems,
     week_picks,
@@ -114,8 +115,9 @@ def picks(rows: list[InsightRow], held: list[date], day: date) -> list[str]:
 
 def test_every_sunday_page_kind_is_decided() -> None:
     sunday_kinds = {k.id for k in registry.all_kinds() if any(p.value == "sunday" for p in k.pages)}
-    assert sunday_kinds == set(ELIGIBLE) | set(EXCLUDED)
+    assert sunday_kinds == set(ELIGIBLE) | set(EXCLUDED) | set(MILESTONE_KINDS)
     assert not set(ELIGIBLE) & set(EXCLUDED)
+    assert not set(MILESTONE_KINDS) & (set(ELIGIBLE) | set(EXCLUDED))
     assert all(EXCLUDED.values()), "every exclusion carries its reason"
     for kind_id, variants in ELIGIBLE.items():
         assert variants <= set(registry.get(kind_id).templates), kind_id
@@ -126,9 +128,28 @@ def test_the_sections_already_in_the_email_are_excluded() -> None:
         assert kind_id in EXCLUDED
     assert "rollup" not in ELIGIBLE["pf.sunday-milestone"]
     assert ELIGIBLE["ev.rain-day"] == {"field"}
-    assert "pf.targets-milestone" in EXCLUDED  # the Clays Broken milestone says it
-    # a finishing place below the podium is a ranking of people beyond it
-    assert ELIGIBLE["pf.career-first"] == {"podium"}
+    # the newsletter covers welcome-backs (owner, 2026-10-05): "This week" never carries them
+    assert "pf.back-strong" in EXCLUDED
+    assert "pf.back-strong" not in ELIGIBLE
+    # a second visit is the newsletter's new-shooter story, a welcome-back under another name
+    assert "ev.second-visit" in EXCLUDED
+    assert "ev.second-visit" not in ELIGIBLE
+    # personal bests (a tied one included) are the newsletter's story
+    assert "pf.tied-best" in EXCLUDED
+    assert "pf.tied-best" not in ELIGIBLE
+
+
+def test_no_podium_or_win_kind_can_be_picked() -> None:
+    """The club newsletter shows the podium and the winner (owner, 2026-10-05)."""
+    for kind_id in ("pf.podium-run", "pf.career-first"):
+        assert kind_id in EXCLUDED
+        assert kind_id not in ELIGIBLE
+    assert ELIGIBLE["pf.first-since"] == {"score"}  # no "win" or "podium" variant
+    rows = [row("pf.podium-run", DAY, score=9, variant=""), row("pf.career-first", DAY, sid=2)]
+    rows += [row("pf.career-first", DAY, sid=3, variant="podium")]
+    rows += [row("pf.first-since", DAY, sid=n, variant=v) for n, v in ((4, "win"), (5, "podium"))]
+    rows += [row("pf.first-since", DAY, sid=6, variant="score")]
+    assert picks(rows, [DAY], DAY) == ["pf.first-since"]
 
 
 def test_ranking_superlatives_and_context_free_openers_are_excluded() -> None:
@@ -140,8 +161,7 @@ def test_vague_roll_ups_are_dropped_consistently() -> None:
     # Each roll-up lists names with no number or length, or reads as a club-wide record.
     for kind_id in (
         "pf.best-stretch",
-        "pf.podium-run",
-        "pf.tied-best",
+        "pf.three-rising",
         "pf.above-own-avg-streak",
         "pf.beat-field-streak",
     ):
@@ -347,3 +367,27 @@ def test_the_same_date_always_gives_the_same_picks_and_only_the_horizon_matters(
     assert first == picks(recent_rows, days[9:], days[44])
     older_rows = [r for r in rows if r.anchor_date not in days[:9]]
     assert first == picks(older_rows, days, days[44])
+
+
+# --- the Milestones section's insight source -----------------------------------------------------
+
+MS = "pf.targets-milestone"
+
+
+def test_the_targets_milestone_is_a_milestone_source_and_never_a_this_week_pick() -> None:
+    assert MS in MILESTONE_KINDS
+    assert "" in MILESTONE_KINDS[MS]
+    # the roll-up names people with no number, and trophy lines carry the numbers
+    assert MILESTONE_KINDS[MS] == {""}
+    assert MS not in ELIGIBLE
+    rows = [row(MS, DAY, score=9, variant=""), row(KINDS[0], DAY, score=1, sid=2)]
+    assert picks(rows, [DAY], DAY) == [KINDS[0]]
+
+
+def test_the_real_milestone_sentence_passes_the_lint_and_avoids_pronouns() -> None:
+    renderings = every_rendering(MS, "")
+    assert len(renderings) >= 1
+    for text in renderings:
+        assert recap_text_problems(text) == [], text
+        assert banned_in(text) == [], text
+        assert not PRONOUNS.search(text), text

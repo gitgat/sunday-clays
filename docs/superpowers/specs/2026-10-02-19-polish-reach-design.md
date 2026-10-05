@@ -165,7 +165,7 @@ Plan 19 makes the app easier to find, share and understand, without changing any
 |---|---|---|
 | `link_previews` | Link previews | Links shared in chat apps show the Sunday's date, how many shot and the round type. While off, every link shows the plain club preview. |
 | `tour_glossary` | Welcome tour and glossary | A 5-step tour on a first visit to Home, the Glossary page, and "Words used here" links in chart explainers. |
-| `weekly_recap` | Weekly recap | Admin tool: paste-ready text and an image of a Sunday for the club email. |
+| `weekly_recap` | Weekly recap | Admin tool: paste-ready text and an image of a Sunday's stories and milestones for the club email. |
 | `pwa` | Add to Home Screen | Lets phones install the app, and shows a small install tip on Home. |
 | `club_milestones` | Club milestones | Club totals such as clays thrown and Sundays held, dated at the Sunday each round number was passed. Home card and Club page. |
 | `summary_card` | Summary card | A shareable card on every profile for the chosen time window. |
@@ -396,7 +396,7 @@ A hash link scrolls to the term and gives it a 2 s `bg-elevated` highlight, with
 | `fist-bump` | Fist bump | A thumbs-up on an insight. It is anonymous: it uses a random ID made by your browser, never your name. |
 | `held-sunday` | Sunday with full results | A Sunday that has scores, where either no head count was written down or at least half the people counted have a score. Streaks, Sundays held and milestones count these. |
 | `percentile` | Percentile | Where your best round of the day landed in the field, from 0% (lowest) to 100% (highest). Ties share a spot. It is (shooters − your average place) ÷ (shooters − 1). |
-| `personal-best` | Personal best (PB) | Your best single round so far. On a Sunday's page, in the recap and on the summary card, a new PB counts once you have at least 5 earlier rounds. |
+| `personal-best` | Personal best (PB) | Your best single round so far. On a Sunday's page and on the summary card, a new PB counts once you have at least 5 earlier rounds. |
 | `rarity` | Rarity | The share of everyone who has shot a round who holds that trophy. 5% means about 1 in 20 shooters. |
 | `round-types` | Sporting and Super Sporting | Every regular round is 50 targets. If any station that day threw an odd number of targets, the round is Super Sporting (some single targets mixed with pairs). Otherwise it is Sporting (all pairs). An admin can correct a Sunday's type. |
 | `special-shoot` | Special shoot | A Sunday with its own format, such as the 3-Bird Shoot (60 targets). It counts as a Sunday you came to, for streaks, Sundays shot and attendance trophies, but its scores stay out of averages, personal bests, records and leaderboards. |
@@ -424,6 +424,8 @@ target_total: int                 # 50 or the special total
 shooters: int                     # n_shooters (people with a score)
 head_count: int | None
 rounds: int                       # n_rounds
+# SUPERSEDED by the 2026-10-05 amendment below (§3.3.1): podium, pbs, trophies, club_milestones and
+# first_timers are gone from RecapOut, replaced by `milestones: list[str]` and `insights: list[str]`.
 podium: list[PodiumPlaceOut]      # regular only; [] for special
   place: 1 | 2 | 3
   tied: bool
@@ -451,9 +453,15 @@ Rules:
 - Unknown date → 404 `event_not_found`. A date without full results (`results_complete` false) → 409 `recap_not_ready`, "This Sunday has no full results yet."
 
 **Amendment (2026-10-04, owner-approved: recap for readers who never visit the site).**
-- Section order is now: turnout, **This week**, Podium, New personal bests, Milestones and trophies, First-timers, link.
-- `RecapOut` gains `insights: list[str]`: three to five plain sentences, each the named headline of a stored Sunday-page insight (`analytics/recap_insights.py`). Only a vetted allowlist of kinds and variants is eligible (anything saying "you", "usual for a day like this", rankings of people beyond the podium, or duplicating another recap section is excluded, with the reason beside each entry). A kind used in any of the previous 12 held regular Sundays' picks is skipped; with fewer than three fresh kinds the gap is filled from the least recently used. It is stateless: the picks are recomputed by replaying up to 36 held regular Sundays in date order from empty history, so a date always gives the same picks. A special Sunday has `insights: []`.
-- Tiered trophies read `"<Name> - <threshold>"` (`"Events Attended - 50"`, `"Clays Broken - 1,000"`), never the metal, one per family (the highest crossed that day). Families whose name means nothing off the site (Iron Streak, Big Year, Station Cleaner, Personal Bests, Years Active, Round Score) are left out of the email (owner, 2026-10-04). Every name in the email reads "First Last" (podium, PBs, trophies, first-timers), like the "This week" sentences. One-off trophies keep the name, with a short explanation in parentheses where needed. The summary card's `trophy_title` is unchanged.
+- Section order (superseded by the 2026-10-05 amendment below: now turnout, This week, Milestones): turnout, **This week**, Podium, New personal bests, Milestones and trophies, First-timers, link.
+- `RecapOut` gains `insights: list[str]`: three to five plain sentences, each the named headline of a stored Sunday-page insight (`analytics/recap_insights.py`). Only a vetted allowlist of kinds and variants is eligible (anything saying "you", "usual for a day like this", rankings of people, or anything the club newsletter already covers is excluded, with the reason beside each entry). A kind used in any of the previous 12 held regular Sundays' picks is skipped; with fewer than three fresh kinds the gap is filled from the least recently used. It is stateless: the picks are recomputed by replaying up to 36 held regular Sundays in date order from empty history, so a date always gives the same picks. A special Sunday has `insights: []`.
+- Tiered trophies read `"<Name> - <threshold>"` (`"Events Attended - 50"`, `"Clays Broken - 1,000"`), never the metal, one per family (the highest crossed that day). Families whose name means nothing off the site (Iron Streak, Big Year, Station Cleaner, Personal Bests, Years Active, Round Score) are left out of the email (owner, 2026-10-04). Every name in the email reads "First Last" (This week sentences and Milestones lines; the podium, PBs and first-timer sections this rule first named were removed by the 2026-10-05 amendment). One-off trophies keep the name, with a short explanation in parentheses where needed. The summary card's `trophy_title` is unchanged.
+
+**Amendment (2026-10-05, owner: "Podium is covered in the email I get, so are personal bests. We want to celebrate stuff that isn't tracked in the regular newsletter").** The recap complements the club newsletter. It no longer carries the podium, new personal bests, first-timers, one-off trophies or the link.
+- `RecapOut` drops `podium`, `pbs`, `first_timers`, `trophies` and `club_milestones`, and gains `milestones: list[str]`, built by the server in this order: (a) one `pf.targets-milestone` sentence per shooter who crossed a thousand-target mark that Sunday (computed from the engine's facts before roll-up, rendered with the single-shooter named template, best ranked first, so a busy Sunday never loses anyone; regular Sundays only; the kind is a recap milestone source in `MILESTONE_KINDS`, never a "This week" pick); (b) tiered trophy lines `First Last: <Name> - <N>` (highest tier per family crossed that day; hidden families stay hidden; `Events Attended - 1` is left out because a first Sunday is the newsletter's "new shooters"; one-off trophies are not listed); (c) club lines `Club: <label> all time!` (only while `club_milestones` is on). One crossing is never said twice: a shooter named in a Clays Broken sentence that day has no `Clays Broken - N` trophy line, and the site's roll-up ("New thousand-target marks: A, B and C.") is never carried, since each of those people has their own sentence.
+- "This week" no longer uses the welcome-back kind (`pf.back-strong`, every variant), and still leaves out the top score, podium (including podium runs, first podiums and first-win or first-podium-since stories), personal best (tied bests included) and new-faces kinds, and the second-visit welcome-back. The vague three-rising roll-up is dropped too. The 12-held-Sunday rotation and the 36-Sunday replay are unchanged.
+- Section order is now: turnout, **This week**, **Milestones**. Empty sections are omitted. Special Sundays keep their intro lines (head count, 3-Bird trophy counts, top score), have no insights, and gain Milestones.
+- `link` stays on the response (typed) but the text no longer prints it.
 
 #### 3.3.2 UI — `features/admin-recap/`
 
@@ -465,34 +473,27 @@ Rules:
 
 #### 3.3.3 Copy (golden strings; `format.ts`)
 
-Regular, plain text:
+Regular, plain text (names below are invented):
 
 ```text
 Sunday Clays · Sunday, September 27, 2026
 
 Turnout: 24 came out and 27 rounds were shot.
 
-Podium (best round of the day)
-Tied 1st: Finnegan, Stanton and Stockton, Ethan — 49
-3rd: Devlin, Sid — 47
+This week
+- Scores up 3 Sundays straight for Alvin McGinnis: 33, 36, then 46.
+- A friendly Sunday: scores ran about 3 targets over a typical Sunday for this crowd. The middle score was 40.
 
-New personal bests
-- Kaplan, Noel: 45 (was 43)
-
-Milestones and trophies
-- Abernathy, Preston: Events Attended — Silver
-- Club: 350,000 clays thrown
-
-Welcome to our first-timers
-- Kim, Pat
-
-See every score: https://sundayclays.claysmasher.com/l/events/2026-09-27
+Milestones
+- Wylie Marsden has now broken 4,000 targets on Sundays: 4,018 in all.
+- Preston Abernathy: Clays Broken - 1,000
+- Pat Kim: Clays Broken - 1,000
+- Club: 7,500 rounds shot all time!
 ```
 
 - Turnout uses `head_count` when present ("24 came out"), else `shooters` ("23 shooters").
 - An empty section is omitted entirely, with its heading.
-- Names in a tie are joined with ", " and a final " and ".
-- Markdown is the same text with `**Podium**`-style bold headings, `-` lists, and `[See every score](url)` as the last line.
+- Markdown is the same text with `**This week**`-style bold headings and `-` lists. There is no link line.
 
 Special, plain text:
 
@@ -504,10 +505,8 @@ Sunday Clays · Sunday, September 20, 2026
 3-Bird Shoot trophy: 12 earned it for the first time today. 58 shooters hold it now.
 Top score: 55 of 60.
 
-Welcome to our first-timers
-- Kim, Pat
-
-See every score: https://sundayclays.claysmasher.com/l/events/2026-09-20
+Milestones
+- Ike Hadley: Clays Broken - 500
 ```
 
 - The trophy line is omitted when `three_bird_holders` is `None` or 0. When `three_bird_new` is 0 (everyone had it already), the line is "3-Bird Shoot trophy: 58 shooters hold it now." When `three_bird_new == three_bird_holders` (the first one on record), it is "3-Bird Shoot trophy: 40 shooters earned it today." "1 shooter" in the singular.
@@ -515,9 +514,8 @@ See every score: https://sundayclays.claysmasher.com/l/events/2026-09-20
 - The top score never carries a name (a special shoot is never ranked, Plan 17 D18).
 
 **Edge cases.**
-- A Sunday with one shooter: the podium is "1st: Name — 44" only.
-- 5 shooters tied for 3rd: all 5 are listed on the "Tied 3rd" line.
-- A Sunday before any PB is possible (fewer than 5 earlier rounds for everyone): the section is omitted.
+- A Sunday with no insights, tiered trophies or club milestones shows the turnout line alone.
+- A shooter's first Sunday (`Events Attended - 1`) is never a Milestones line (the newsletter's "new shooters").
 - Trophies for a deceased shooter are listed as for anyone (positive).
 - A label containing Markdown characters is escaped in the Markdown variant (`\*`, `\_`, `\[`, `\]`).
 

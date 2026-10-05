@@ -1,6 +1,8 @@
 """Weekly recap facts for the club email (Plan 19 §3.3.1, D14, D15). Admin only (module prefix).
 
-The server owns the rules (podium ties, the PB rule, first-timers); the SPA owns the wording.
+The email complements the club newsletter (owner, 2026-10-05): podium, personal bests and new
+shooters are the newsletter's, so the recap carries the turnout, "This week" insights and the
+Milestones lines. The server owns the rules and builds the Milestones lines; the SPA lays them out.
 """
 
 from collections import defaultdict
@@ -8,7 +10,6 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Annotated, Literal
 
-import pandas as pd
 from fastapi import APIRouter, Depends, Path
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -20,9 +21,10 @@ from sunday_clays.analytics.club_milestones import club_milestones
 from sunday_clays.analytics.insights.store import insights_table, load_rows
 from sunday_clays.analytics.insights.templates import natural_name
 from sunday_clays.analytics.recap_insights import HORIZON, week_insights
-from sunday_clays.analytics.recap_trophies import recap_trophy_items
+from sunday_clays.analytics.recap_insights import milestone_sentences as targets_sentences
+from sunday_clays.analytics.recap_trophies import recap_milestone_items
+from sunday_clays.analytics.steps.s60_insights import build_frames
 from sunday_clays.api.routes._convert import opt_int, opt_str, rows
-from sunday_clays.api.routes.events import event_notables
 from sunday_clays.api.routes.insights import held_dates, supersedes_of
 from sunday_clays.config import Settings, get_settings
 from sunday_clays.db import SessionDep
@@ -32,25 +34,7 @@ from sunday_clays.domain.features import switch_on
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 THREE_BIRD_CODE = "three_bird_shoot"
-PODIUM_PLACES = 3
-
-
-class PodiumPlaceOut(BaseModel):
-    place: Literal[1, 2, 3]
-    tied: bool
-    score: int
-    names: list[str]  # "First Last", in alphabetical order of last name
-
-
-class RecapPbOut(BaseModel):
-    display_name: str
-    score: int
-    previous: int
-
-
-class RecapTrophiesOut(BaseModel):
-    display_name: str
-    items: list[str]
+CLAYS_BROKEN = "clays_broken"
 
 
 class RecapOut(BaseModel):
@@ -61,35 +45,14 @@ class RecapOut(BaseModel):
     shooters: int
     head_count: int | None
     rounds: int
-    podium: list[PodiumPlaceOut]
-    pbs: list[RecapPbOut]
-    insights: list[str]  # "This week": plain sentences, named headlines of the Sunday's insights
-    trophies: list[RecapTrophiesOut]
-    club_milestones: list[str]
-    first_timers: list[str]
+    #: "This week": plain sentences, named headlines of the Sunday's insights.
+    insights: list[str]
+    #: Clays Broken sentences, "First Last: <Trophy> - <N>", "Club: ... all time!".
+    milestones: list[str]
     three_bird_new: int | None
     three_bird_holders: int | None
     top_score: int | None
     link: str
-
-
-def podium_of(day_rounds: pd.DataFrame) -> list[PodiumPlaceOut]:
-    """Best rounds with event_rank <= 3 (ties share a rank, so "Tied 1st" is followed by 3rd)."""
-    best = day_rounds.loc[day_rounds["is_best_round"].eq(True) & day_rounds["event_rank"].notna()]
-    by_place: dict[int, list[tuple[str, int]]] = defaultdict(list)
-    for r in rows(best):
-        place = int(r["event_rank"])
-        if place <= PODIUM_PLACES:
-            by_place[place].append((str(r["display_name"]), int(r["score"])))
-    return [
-        PodiumPlaceOut(
-            place=place,
-            tied=len(entries) > 1,
-            score=entries[0][1],
-            names=[natural_name(name) for name in sorted(name for name, _ in entries)],
-        )
-        for place, entries in sorted(by_place.items())
-    ]
 
 
 def is_three_bird(label: str | None) -> bool:
@@ -109,6 +72,14 @@ def this_week(session: Session, day: date) -> list[str]:
     return week_insights(rows, held, day, supersedes_of)
 
 
+def milestone_sentences(session: Session, day: date) -> tuple[list[str], set[int]]:
+    """The Sunday's Clays Broken sentences, one per shooter (named headlines, as the site renders
+    a single crossing) and the shooters they name (their own `Clays Broken - N` line would say
+    it twice). Recomputed from the engine's facts, so a stored roll-up can never hide anyone."""
+    found = targets_sentences(build_frames(session), day)
+    return [line for _, line in found], {i for i, _ in found}
+
+
 @router.get("/recap/{date}")
 def get_recap(
     event_date: Annotated[date, Path(alias="date")],
@@ -124,35 +95,28 @@ def get_recap(
         raise ConflictError("recap_not_ready", "This Sunday has no full results yet.")
     special = event["kind"] == frames.EVENT_KIND_SPECIAL
     label = opt_str(event["label"])
-    rounds = frames.load_rounds(session)
-    shooters = frames.load_shooters(session)
-    notables = event_notables(rounds, shooters, event_date)
-    earlier = rounds.loc[rounds["event_date"] < event_date]
-    pbs = [
-        RecapPbOut(
-            display_name=natural_name(n.display_name),
-            score=int(n.value or 0),
-            previous=int(earlier.loc[earlier["shooter_id"] == n.shooter_id, "score"].max()),
-        )
-        for n in notables
-        if n.kind == "pb"
-    ]
     awards = session.execute(
         text(
-            "SELECT p.display_name, a.code FROM achievements_awarded a "
+            "SELECT a.shooter_id, p.display_name, a.code FROM achievements_awarded a "
             "JOIN shooter_profiles p ON p.shooter_id = a.shooter_id "
             "WHERE a.event_date = :d ORDER BY p.display_name, a.code"
         ),
         {"d": event_date},
     ).all()
+    sentences, told = ([], set()) if special else milestone_sentences(session, event_date)
     codes: dict[str, list[str]] = defaultdict(list)
-    for name, code in awards:
-        if code != THREE_BIRD_CODE:
-            codes[str(name)].append(str(code))
-    items = {name: recap_trophy_items(c) for name, c in codes.items()}
-    milestones = (
+    for shooter, name, code in awards:
+        if code == THREE_BIRD_CODE or (int(shooter) in told and str(code).startswith(CLAYS_BROKEN)):
+            continue
+        codes[str(name)].append(str(code))
+    trophy_lines = [
+        f"{natural_name(name)}: {item}"
+        for name, held in codes.items()
+        for item in recap_milestone_items(held)
+    ]
+    club_lines = (
         [
-            c.label
+            f"Club: {c.label} all time!"
             for c in club_milestones(session, event_date).milestones
             if c.event_date == event_date
         ]
@@ -181,14 +145,12 @@ def get_recap(
         shooters=int(event["n_shooters"]),
         head_count=opt_int(event["head_count"]),
         rounds=int(event["n_rounds"]),
-        podium=[] if special else podium_of(rounds.loc[rounds["event_date"] == event_date]),
-        pbs=[] if special else pbs,
         insights=[] if special else this_week(session, event_date),
-        trophies=[
-            RecapTrophiesOut(display_name=natural_name(n), items=i) for n, i in items.items() if i
+        milestones=[
+            *sentences,
+            *trophy_lines,
+            *club_lines,
         ],
-        club_milestones=milestones,
-        first_timers=[natural_name(n.display_name) for n in notables if n.kind == "first_timer"],
         three_bird_new=new,
         three_bird_holders=holders,
         top_score=top_score,
