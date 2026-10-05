@@ -39,25 +39,26 @@ ELIGIBLE: Final[dict[str, frozenset[str]]] = {
     "ev.second-visit": frozenset({"", "many"}),
     # Club level, names nobody; states the month it was last this way.
     "ev.toughest-since": frozenset({"tough", "easy"}),
-    # The score is in the sentence.
-    "ev.week-jump": frozenset({"one", "two"}),
-    "pf.above-own-avg-streak": frozenset({"", "rollup"}),
+    # Roll-ups name people with no number or length, so only single-shooter variants stay for
+    # above-own-avg-streak, best-stretch, podium-run and tied-best (the same rule as
+    # average-milestone and career-first). The roll-ups that remain below carry the fact itself.
+    "pf.above-own-avg-streak": frozenset({""}),
     # The average and the mark are both in the sentence; the roll-up is too vague.
     "pf.average-milestone": frozenset({""}),
     "pf.back-strong": frozenset({"", "score", "rollup"}),
     "pf.beat-field-streak": frozenset({"", "rollup"}),
-    "pf.best-stretch": frozenset({"", "rollup"}),
-    # The roll-up ("Career firsts today") says nothing on its own.
-    "pf.career-first": frozenset({"podium", "top_third"}),
+    "pf.best-stretch": frozenset({""}),
+    # Podium only: "top_third" would publish a named shooter's place below the podium, a ranking
+    # beyond the one the email already has. The roll-up ("Career firsts today") says nothing.
+    "pf.career-first": frozenset({"podium"}),
     "pf.first-since": frozenset({"win", "podium", "score"}),
-    "pf.high-round-count": frozenset({""}),
     "pf.more-high-rounds": frozenset({""}),
-    "pf.podium-run": frozenset({"", "rollup"}),
+    "pf.podium-run": frozenset({""}),
     "pf.shooter-anniversary": frozenset({"", "rollup"}),
     # Only the look-ahead: the reached Sunday counts are the Events Attended milestone already.
     "pf.sunday-milestone": frozenset({"to_go"}),
     "pf.three-rising": frozenset({"", "rollup"}),
-    "pf.tied-best": frozenset({"", "rollup"}),
+    "pf.tied-best": frozenset({""}),
     "pf.tier-run": frozenset({""}),
     # Club level, names nobody; says the Sundays and the score.
     "rec.drought-clock": frozenset({""}),
@@ -69,6 +70,8 @@ EXCLUDED: Final[dict[str, str]] = {
     "ev.new-faces": "the first-timers section already welcomes them",
     "ev.top-score": "the podium section already shows the top score",
     "ev.spotlight": "says 'their usual for a day like this', which only makes sense on the site",
+    "ev.week-jump": "'Biggest jump: <Name>' ranks one shooter and never says how big the jump was",
+    "pf.high-round-count": "opens with 'That was', which needs the score shown before it",
     "pf.beat-own-usual": "says 'their usual for a day like that': meaningless without the site",
     "pf.pb": "the new personal bests section already lists them",
     "pf.targets-milestone": "the Clays Broken milestone already says it",

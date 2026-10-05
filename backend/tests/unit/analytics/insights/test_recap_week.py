@@ -127,6 +127,19 @@ def test_the_sections_already_in_the_email_are_excluded() -> None:
     assert "rollup" not in ELIGIBLE["pf.sunday-milestone"]
     assert ELIGIBLE["ev.rain-day"] == {"field"}
     assert "pf.targets-milestone" in EXCLUDED  # the Clays Broken milestone says it
+    # a finishing place below the podium is a ranking of people beyond it
+    assert ELIGIBLE["pf.career-first"] == {"podium"}
+
+
+def test_ranking_superlatives_and_context_free_openers_are_excluded() -> None:
+    assert "ev.week-jump" in EXCLUDED  # "Biggest jump: <Name>" ranks one shooter, no size given
+    assert "pf.high-round-count" in EXCLUDED  # opens with "That was", pointing at nothing
+
+
+def test_vague_roll_ups_are_dropped_consistently() -> None:
+    # Each roll-up lists names with no number or length, or reads as a club-wide record.
+    for kind_id in ("pf.best-stretch", "pf.podium-run", "pf.tied-best", "pf.above-own-avg-streak"):
+        assert "rollup" not in ELIGIBLE[kind_id], kind_id
 
 
 def sample_params(template_slots_: list[Slot], word_keys: Mapping[str, str]) -> dict[str, Any]:

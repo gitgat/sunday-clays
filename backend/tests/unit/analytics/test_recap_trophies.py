@@ -7,6 +7,7 @@ import pytest
 from sunday_clays.analytics.achievements.registry import all_achievements
 from sunday_clays.analytics.recap_trophies import (
     ONE_OFF_EXPLANATIONS,
+    TIER_UNITS,
     recap_trophy_items,
 )
 from sunday_clays.analytics.summary import LEFT_OUT_TROPHY_CODES
@@ -21,7 +22,7 @@ METALS = re.compile(r"\b(bronze|silver|gold|platinum|diamond|tier|level)\b", re.
         (["clays_broken:3"], ["Clays Broken - 1,000"]),
         (["clays_broken:6"], ["Clays Broken - 10,000"]),
         (["events:1"], ["Events Attended - 1"]),
-        (["round_score:5"], ["Round Score - 48"]),
+        (["round_score:5"], ["Round Score - 48 (targets in one round)"]),
     ],
 )
 def test_a_tier_reads_as_the_number_reached(codes: list[str], items: list[str]) -> None:
@@ -80,3 +81,29 @@ def test_a_fractional_threshold_keeps_its_decimals() -> None:
 
     assert threshold_text(Tier(1, 2.5, Metal.BRONZE, "x")) == "2.5"
     assert threshold_text(Tier(1, 10000.0, Metal.BRONZE, "x")) == "10,000"
+
+
+@pytest.mark.parametrize(
+    ("code", "item"),
+    [
+        ("iron_streak:3", "Iron Streak - 12 (Sundays in a row)"),
+        ("big_year:2", "Big Year - 30 (Sundays in one year)"),
+        ("station_cleaner:1", "Station Cleaner - 1 (every target at a station broken)"),
+        ("personal_bests:1", "Personal Bests - 1 (personal-best rounds)"),
+        ("years_active:1", "Years Active - 2 (years of shooting with the club)"),
+    ],
+)
+def test_opaque_tier_families_say_what_the_number_counts(code: str, item: str) -> None:
+    assert recap_trophy_items([code]) == [item]
+
+
+def test_every_tiered_family_is_explained_or_reads_fine_alone() -> None:
+    tiered = {a.code for a in all_achievements() if a.tiers}
+    self_explaining = {"events", "clays_broken", "clays_thrown"}
+    assert tiered == set(TIER_UNITS) | self_explaining
+    assert not set(TIER_UNITS) & self_explaining
+
+
+def test_the_comeback_note_says_previous_outing_not_previous_sunday() -> None:
+    note = ONE_OFF_EXPLANATIONS["comeback"]
+    assert note == "beat the previous outing's best round by 15 or more"

@@ -150,26 +150,34 @@ def test_this_week_insights_are_stored_sunday_rows_in_plain_words(
     assert kinds <= set(ELIGIBLE)
 
 
-def test_this_week_insights_never_repeat_a_kind_across_consecutive_weeks(
+def test_this_week_insights_rotate_kinds_across_the_last_twelve_weeks(
     fx_admin_client: TestClient, fx_session: Session
 ) -> None:
+    """A kind in the previous 12 weeks' picks comes back only as a fill (fewer than 3 fresh)."""
     held = fx_admin_client.get("/api/events").json()
-    days = sorted(e["event_date"] for e in held if e["kind"] == "regular")[-6:]
+    days = sorted(e["event_date"] for e in held if e["kind"] == "regular")[-20:]
     rows = load_rows(fx_session)
-    seen: list[set[str]] = []
+    by_day: dict[str, set[str]] = {}
     for d in days:
         sentences = fx_admin_client.get(f"/api/admin/recap/{d}").json()["insights"]
-        kinds = {
+        by_day[d] = {
             r.kind
             for r in rows
             if r.anchor_date == date.fromisoformat(d) and plain(r.headline) in sentences
         }
-        seen.append(kinds)
-    assert any(seen), "the fixture world has insights on at least one Sunday"
-    # Weeks that did not need the fill rule share no kind with the weeks before them.
-    for i, kinds in enumerate(seen):
-        if len(kinds) > 3:
-            assert not kinds & set().union(*seen[:i])
+    checked = skipped_something = 0
+    for i in range(len(days) - 8, len(days)):
+        recent = set().union(*(by_day[w] for w in days[max(0, i - 12) : i]))
+        offered = {r.kind for r in rows if r.anchor_date == date.fromisoformat(days[i])}
+        picked = by_day[days[i]]
+        checked += bool(picked)
+        skipped_something += bool(offered & set(ELIGIBLE) & recent)
+        if picked & recent:
+            assert len(picked - recent) < 3, (days[i], picked, recent)
+        # Repeats are fills only: a week never shows more than 3 unless every one is fresh.
+        assert len(picked) <= max(3, len(picked - recent)), (days[i], picked, recent)
+    assert checked >= 4, "the fixture world has insights on most recent Sundays"
+    assert skipped_something >= 1, "the 12-week skip had a kind to skip at least once"
 
 
 def test_milestones_only_when_their_switch_is_on(

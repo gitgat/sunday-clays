@@ -17,7 +17,7 @@ ONE_OFF_EXPLANATIONS: Final[dict[str, str]] = {
     "doubleheader": "two rounds in one day",
     "joined_club": "first shot as a guest, now a member",
     "both_disciplines": "shot both a sporting and a super sporting day",
-    "comeback": "15 or more targets better than the previous Sunday",
+    "comeback": "beat the previous outing's best round by 15 or more",
     "above_average_3": "three Sundays in a row above a personal average",
     "welcome_back": "returned after 180 or more days away",
     "new_year": "shot the first Sunday of the year",
@@ -35,6 +35,18 @@ ONE_OFF_EXPLANATIONS: Final[dict[str, str]] = {
 }
 
 
+#: What the number counts, for the tiered families whose name alone does not say. Events Attended,
+#: Clays Broken and Clays Thrown read fine as "<Name> - <N>".
+TIER_UNITS: Final[dict[str, str]] = {
+    "iron_streak": "Sundays in a row",
+    "big_year": "Sundays in one year",
+    "station_cleaner": "every target at a station broken",
+    "personal_bests": "personal-best rounds",
+    "years_active": "years of shooting with the club",
+    "round_score": "targets in one round",
+}
+
+
 def threshold_text(tier: Tier) -> str:
     """1,000 for 1000.0; a fractional threshold keeps its decimals."""
     value = tier.threshold
@@ -43,7 +55,9 @@ def threshold_text(tier: Tier) -> str:
 
 def _item(found: Trophy) -> str:
     if found.tier is not None:
-        return f"{found.achievement.name} - {threshold_text(found.tier)}"
+        unit = TIER_UNITS.get(found.achievement.code)
+        base = f"{found.achievement.name} - {threshold_text(found.tier)}"
+        return base if unit is None else f"{base} ({unit})"
     note = ONE_OFF_EXPLANATIONS.get(found.achievement.code)
     return found.achievement.name if note is None else f"{found.achievement.name} ({note})"
 
