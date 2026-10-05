@@ -12,13 +12,17 @@ import pandas as pd
 from fastapi import APIRouter, Depends, Path
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from sunday_clays.analytics import frames
 from sunday_clays.analytics.achievements.participation import THREE_BIRD_LABELS, normalize_label
 from sunday_clays.analytics.club_milestones import club_milestones
-from sunday_clays.analytics.summary import trophy_title
+from sunday_clays.analytics.insights.store import insights_table, load_rows
+from sunday_clays.analytics.recap_insights import HORIZON, week_insights
+from sunday_clays.analytics.recap_trophies import recap_trophy_items
 from sunday_clays.api.routes._convert import opt_int, opt_str, rows
 from sunday_clays.api.routes.events import event_notables
+from sunday_clays.api.routes.insights import held_dates, supersedes_of
 from sunday_clays.config import Settings, get_settings
 from sunday_clays.db import SessionDep
 from sunday_clays.domain.errors import ConflictError, NotFoundError
@@ -58,6 +62,7 @@ class RecapOut(BaseModel):
     rounds: int
     podium: list[PodiumPlaceOut]
     pbs: list[RecapPbOut]
+    insights: list[str]  # "This week": plain sentences, named headlines of the Sunday's insights
     trophies: list[RecapTrophiesOut]
     club_milestones: list[str]
     first_timers: list[str]
@@ -93,6 +98,14 @@ def is_three_bird(label: str | None) -> bool:
 def three_bird_counts(award_dates: Sequence[date], day: date) -> tuple[int, int]:
     """(first-time earners on `day`, everyone holding it on `day`)."""
     return sum(d == day for d in award_dates), sum(d <= day for d in award_dates)
+
+
+def this_week(session: Session, day: date) -> list[str]:
+    """3-5 plain-sentence insights for a held regular Sunday (replayed over the last 36)."""
+    held = [d for d in held_dates(session) if d <= day]
+    t = insights_table()
+    rows = load_rows(session, t.c.anchor_date.in_(held[-HORIZON:]), t.c.pages.contains(["sunday"]))
+    return week_insights(rows, held, day, supersedes_of)
 
 
 @router.get("/recap/{date}")
@@ -131,11 +144,11 @@ def get_recap(
         ),
         {"d": event_date},
     ).all()
-    items: dict[str, list[str]] = defaultdict(list)
+    codes: dict[str, list[str]] = defaultdict(list)
     for name, code in awards:
-        title = trophy_title(str(code)) if code != THREE_BIRD_CODE else None
-        if title is not None:
-            items[str(name)].append(title)
+        if code != THREE_BIRD_CODE:
+            codes[str(name)].append(str(code))
+    items = {name: recap_trophy_items(c) for name, c in codes.items()}
     milestones = (
         [
             c.label
@@ -169,7 +182,8 @@ def get_recap(
         rounds=int(event["n_rounds"]),
         podium=[] if special else podium_of(rounds.loc[rounds["event_date"] == event_date]),
         pbs=[] if special else pbs,
-        trophies=[RecapTrophiesOut(display_name=n, items=i) for n, i in items.items()],
+        insights=[] if special else this_week(session, event_date),
+        trophies=[RecapTrophiesOut(display_name=n, items=i) for n, i in items.items() if i],
         club_milestones=milestones,
         first_timers=[n.display_name for n in notables if n.kind == "first_timer"],
         three_bird_new=new,

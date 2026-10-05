@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { allStrings, BANNED_WORDS } from '../../test/language';
+import { allStrings, BANNED_WORDS, OUTSIDER_BANNED } from '../../test/language';
 import { escapeMarkdown, formatRecap, recapFilename } from './format';
 import { regularRecap, specialRecap } from './mocks';
 
 const REGULAR_TEXT = `Sunday Clays · Sunday, September 27, 2026
 
 Turnout: 24 came out and 27 rounds were shot.
+
+This week
+- Scores up 3 Sundays straight for Alvin McGinnis: 33, 36, then 46.
+- A friendly Sunday: scores ran about 3 targets over a typical Sunday for this crowd. The middle score was 40.
 
 Podium (best round of the day)
 Tied 1st: Finnegan, Stanton and Stockton, Ethan — 49
@@ -15,7 +19,7 @@ New personal bests
 - Kaplan, Noel: 45 (was 43)
 
 Milestones and trophies
-- Abernathy, Preston: Events Attended — Silver
+- Abernathy, Preston: Events Attended - 50
 - Club: 350,000 clays thrown
 
 Welcome to our first-timers
@@ -27,6 +31,10 @@ const REGULAR_MARKDOWN = `**Sunday Clays · Sunday, September 27, 2026**
 
 Turnout: 24 came out and 27 rounds were shot.
 
+**This week**
+- Scores up 3 Sundays straight for Alvin McGinnis: 33, 36, then 46.
+- A friendly Sunday: scores ran about 3 targets over a typical Sunday for this crowd. The middle score was 40.
+
 **Podium (best round of the day)**
 - Tied 1st: Finnegan, Stanton and Stockton, Ethan — 49
 - 3rd: Devlin, Sid — 47
@@ -35,7 +43,7 @@ Turnout: 24 came out and 27 rounds were shot.
 - Kaplan, Noel: 45 (was 43)
 
 **Milestones and trophies**
-- Abernathy, Preston: Events Attended — Silver
+- Abernathy, Preston: Events Attended - 50
 - Club: 350,000 clays thrown
 
 **Welcome to our first-timers**
@@ -160,6 +168,43 @@ describe('recap formatting', () => {
 
   it('names the image file by date', () => {
     expect(recapFilename('2026-09-27')).toBe('sunday-clays-recap-2026-09-27.png');
+  });
+
+  it('puts "This week" after the turnout and before the podium, and hides it when empty', () => {
+    const text = formatRecap(regularRecap).text;
+    expect(text.indexOf('Turnout:')).toBeLessThan(text.indexOf('This week'));
+    expect(text.indexOf('This week')).toBeLessThan(text.indexOf('Podium'));
+    expect(text.indexOf('See every score')).toBe(text.lastIndexOf('See every score'));
+    expect(text.trimEnd().split('\n').at(-1)).toMatch(/^See every score: /);
+    const none = formatRecap({ ...regularRecap, insights: [] });
+    expect(none.text).not.toContain('This week');
+    expect(none.markdown).not.toContain('This week');
+  });
+
+  it('a special shoot lists its insights right after the intro too', () => {
+    const text = formatRecap({ ...specialRecap, insights: ['A friendly Sunday.'] }).text;
+    expect(text).toContain('Top score: 55 of 60.\n\nThis week\n- A friendly Sunday.\n\nWelcome');
+  });
+
+  it('escapes Markdown characters in an insight sentence', () => {
+    const md = formatRecap({ ...regularRecap, insights: ['Shot *48* [club] record'] }).markdown;
+    expect(md).toContain('- Shot \\*48\\* \\[club\\] record');
+  });
+
+  it('every line stands alone: nothing only a site visitor would understand (R3)', () => {
+    const outputs = [
+      regularRecap,
+      specialRecap,
+      {
+        ...regularRecap,
+        trophies: [{ display_name: 'Hadley, Ike', items: ['Clays Broken - 1,000'] }],
+      },
+    ].flatMap((r) => Object.values(formatRecap(r)));
+    for (const text of allStrings(outputs)) expect(text).not.toMatch(OUTSIDER_BANNED);
+    expect(OUTSIDER_BANNED.test('Well above their usual for a day like this')).toBe(true);
+    for (const bad of ['Your best', 'a Silver trophy', 'Tap here', 'See the chart', 'Level 3'])
+      expect(OUTSIDER_BANNED.test(bad)).toBe(true);
+    expect(OUTSIDER_BANNED.test('Welcome back after a long break')).toBe(false);
   });
 
   it('uses no banned word in any golden', () => {
