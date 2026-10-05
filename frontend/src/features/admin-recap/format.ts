@@ -53,7 +53,8 @@ function rounds(n: number): string {
 }
 
 /** Plain text and Markdown of one Sunday's recap (Plan 19 §3.3.3). Names are only podium, PBs,
- * trophies and first-timers: positive or neutral facts (R2). */
+ * trophies, first-timers and the server's "This week" sentences: positive or neutral facts (R2).
+ * Every line stands alone for a reader who never visits the site. */
 export function formatRecap(r: Recap): { text: string; markdown: string } {
   const special = r.kind === 'special';
   const intro: string[] = [];
@@ -88,6 +89,10 @@ export function formatRecap(r: Recap): { text: string; markdown: string } {
         ),
       });
     }
+  }
+  if (r.insights.length > 0) {
+    // Right after the intro, before the podium: the week's stories for readers who never visit.
+    sections.unshift({ heading: 'This week', plainBullets: true, lines: [...r.insights] });
   }
   const trophyLines = [
     ...r.trophies.map((t) => `${t.display_name}: ${t.items.join(', ')}`),
