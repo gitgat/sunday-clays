@@ -35,29 +35,24 @@ ELIGIBLE: Final[dict[str, frozenset[str]]] = {
     "ev.rain-day": frozenset({"field"}),
     # Club record, with the old record or the gap in the sentence. Not "tie": it says "level with".
     "ev.record-watch": frozenset({"new", "near"}),
-    # Not the first-timers list: a second visit is a returning-guest story.
-    "ev.second-visit": frozenset({"", "many"}),
     # Club level, names nobody; states the month it was last this way.
     "ev.toughest-since": frozenset({"tough", "easy"}),
     # Roll-ups name people with no number or length, so only single-shooter variants stay for
-    # above-own-avg-streak, beat-field-streak, best-stretch, podium-run and tied-best (the same rule
-    # as average-milestone and career-first). The roll-ups that remain below carry the fact itself.
+    # above-own-avg-streak, beat-field-streak, best-stretch and three-rising (the same rule as
+    # average-milestone). The roll-up that remains below carries the fact itself.
     "pf.above-own-avg-streak": frozenset({""}),
     # The average and the mark are both in the sentence; the roll-up is too vague.
     "pf.average-milestone": frozenset({""}),
     "pf.beat-field-streak": frozenset({""}),
     "pf.best-stretch": frozenset({""}),
-    # Podium only: "top_third" would publish a named shooter's place below the podium, a ranking
-    # beyond the one the email already has. The roll-up ("Career firsts today") says nothing.
-    "pf.career-first": frozenset({"podium"}),
-    "pf.first-since": frozenset({"win", "podium", "score"}),
+    # Only the score variant: the win and podium variants are the club newsletter's story.
+    "pf.first-since": frozenset({"score"}),
     "pf.more-high-rounds": frozenset({""}),
-    "pf.podium-run": frozenset({""}),
     "pf.shooter-anniversary": frozenset({"", "rollup"}),
     # Only the look-ahead: the reached Sunday counts are the Events Attended milestone already.
     "pf.sunday-milestone": frozenset({"to_go"}),
-    "pf.three-rising": frozenset({"", "rollup"}),
-    "pf.tied-best": frozenset({""}),
+    # The roll-up ("Up 3 Sundays straight: A and B.") never says what went up.
+    "pf.three-rising": frozenset({""}),
     "pf.tier-run": frozenset({""}),
     # Club level, names nobody; says the Sundays and the score.
     "rec.drought-clock": frozenset({""}),
@@ -73,15 +68,20 @@ EXCLUDED: Final[dict[str, str]] = {
     "pf.high-round-count": "opens with 'That was', which needs the score shown before it",
     "pf.beat-own-usual": "says 'their usual for a day like that': meaningless without the site",
     "pf.back-strong": "welcome-backs are the club newsletter's story (owner, 2026-10-05)",
+    "ev.second-visit": "a second visit is a welcome-back, the club newsletter's new-shooter story",
+    "pf.podium-run": "the club newsletter already shows the podium",
+    "pf.career-first": "its only variant is a first podium, which the newsletter already shows",
+    "pf.tied-best": "the club newsletter already lists personal bests, a tied one included",
     "pf.pb": "the club newsletter already lists personal bests",
     "pf.wins": "wins are the podium's story (the club newsletter's), and a ranking beyond it",
 }
 
 #: Sunday-page kinds the email's Milestones section carries instead of "This week" (owner,
-#: 2026-10-05): the Sunday's named headline, as the site renders it. Two or more crossings on one
-#: Sunday are stored as one roll-up row (the single rows leave the Sunday page), so both variants.
+#: 2026-10-05): the Sunday's named headline, as the site renders it. Only the single-shooter
+#: sentence (it has the total). The roll-up names people with no number, and the trophy lines
+#: ("Clays Broken - N") already cover those people.
 MILESTONE_KINDS: Final[dict[str, frozenset[str]]] = {
-    "pf.targets-milestone": frozenset({"", "rollup"}),
+    "pf.targets-milestone": frozenset({""}),
 }
 
 _BANNED: Final = re.compile(
@@ -110,8 +110,8 @@ def _eligible(r: InsightRow) -> bool:
     return not recap_text_problems(_prose(r.headline))
 
 
-def milestone_insights(rows: Sequence[InsightRow], day: date) -> list[str]:
-    """The Sunday's milestone sentences (named headlines), best ranked first."""
+def milestone_rows(rows: Sequence[InsightRow], day: date) -> list[InsightRow]:
+    """The Sunday's milestone rows, best ranked first."""
     pool = [
         r
         for r in rows
@@ -120,7 +120,12 @@ def milestone_insights(rows: Sequence[InsightRow], day: date) -> list[str]:
         and r.variant in MILESTONE_KINDS.get(r.kind, frozenset())
         and not recap_text_problems(_prose(r.headline))
     ]
-    return [plain(r.headline) for r in sel.ranked(pool, lambda r: r.base_score)]
+    return list(sel.ranked(pool, lambda r: r.base_score))
+
+
+def milestone_insights(rows: Sequence[InsightRow], day: date) -> list[str]:
+    """The Sunday's milestone sentences (named headlines), best ranked first."""
+    return [plain(r.headline) for r in milestone_rows(rows, day)]
 
 
 def candidates(

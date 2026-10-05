@@ -119,6 +119,7 @@ def test_milestones_come_as_insight_sentences_then_trophies_then_the_club(
     row = stored[0]
     day = row.anchor_date.isoformat()
     shooter, name = one_shooter(fx_session)
+    assert shooter not in row.named_shooter_ids
     award(fx_session, shooter, "clays_broken:3", day=day)
     series = cm.club_milestones(fx_session, row.anchor_date).series
     crossed = next(p.rounds for p in series if p.event_date == row.anchor_date)
@@ -138,18 +139,55 @@ def test_milestones_come_as_insight_sentences_then_trophies_then_the_club(
     assert f"{natural_name(name)}: Clays Broken - 1,000" in lines[1:-1]
 
 
-def test_the_rollup_milestone_sentence_is_carried_too(
+def test_a_shooter_with_a_clays_broken_sentence_has_no_clays_broken_trophy_line(
     fx_admin_client: TestClient, fx_session: Session
 ) -> None:
+    """The same crossing is never said twice: the sentence (it has the total) wins, and the
+    shooter's own `Clays Broken - N` line is left out; another shooter's line stays."""
+    row = next(
+        r
+        for r in load_rows(fx_session)
+        if r.kind == "pf.targets-milestone" and "sunday" in r.pages and r.variant == ""
+    )
+    day = row.anchor_date.isoformat()
+    (sid,) = row.named_shooter_ids
+    name = str(
+        fx_session.execute(
+            text("SELECT display_name FROM shooter_profiles WHERE shooter_id = :s"), {"s": sid}
+        ).scalar_one()
+    )
+    other, other_name = fx_session.execute(
+        text(
+            "SELECT shooter_id, display_name FROM shooter_profiles WHERE shooter_id <> :s LIMIT 1"
+        ),
+        {"s": sid},
+    ).one()
+    award(fx_session, sid, "clays_broken:3", "events:25", day=day)
+    award(fx_session, int(other), "clays_broken:3", day=day)
+    lines = fx_admin_client.get(f"/api/admin/recap/{day}").json()["milestones"]
+    who = natural_name(name)
+    assert plain(row.headline) in lines
+    assert [line for line in lines if who in line and "broken" in line.lower()] == [
+        plain(row.headline)
+    ]
+    assert not [line for line in lines if line.startswith(f"{who}: Clays Broken")]
+    assert f"{who}: Events Attended - 25" in lines  # other trophies stay
+    assert f"{natural_name(str(other_name))}: Clays Broken - 1,000" in lines
+
+
+def test_the_vague_rollup_milestone_sentence_is_not_carried(
+    fx_admin_client: TestClient, fx_session: Session
+) -> None:
+    """ "New thousand-target marks: A, B and C." names people with no number, and the trophy
+    lines for the same people follow it, so it is not in the email."""
     roll = next(
         r
         for r in load_rows(fx_session)
         if r.kind == "pf.targets-milestone" and "sunday" in r.pages and r.variant == "rollup"
     )
     day = roll.anchor_date.isoformat()
-    assert (
-        plain(roll.headline) in fx_admin_client.get(f"/api/admin/recap/{day}").json()["milestones"]
-    )
+    lines = fx_admin_client.get(f"/api/admin/recap/{day}").json()["milestones"]
+    assert plain(roll.headline) not in lines
 
 
 def test_no_milestone_is_a_this_week_insight_and_back_strong_is_never_one(

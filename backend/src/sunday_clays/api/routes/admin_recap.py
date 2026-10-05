@@ -19,8 +19,8 @@ from sunday_clays.analytics import frames
 from sunday_clays.analytics.achievements.participation import THREE_BIRD_LABELS, normalize_label
 from sunday_clays.analytics.club_milestones import club_milestones
 from sunday_clays.analytics.insights.store import insights_table, load_rows
-from sunday_clays.analytics.insights.templates import natural_name
-from sunday_clays.analytics.recap_insights import HORIZON, milestone_insights, week_insights
+from sunday_clays.analytics.insights.templates import natural_name, plain
+from sunday_clays.analytics.recap_insights import HORIZON, milestone_rows, week_insights
 from sunday_clays.analytics.recap_trophies import recap_milestone_items
 from sunday_clays.api.routes._convert import opt_int, opt_str, rows
 from sunday_clays.api.routes.insights import held_dates, supersedes_of
@@ -32,6 +32,7 @@ from sunday_clays.domain.features import switch_on
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 THREE_BIRD_CODE = "three_bird_shoot"
+CLAYS_BROKEN = "clays_broken"
 
 
 class RecapOut(BaseModel):
@@ -42,10 +43,10 @@ class RecapOut(BaseModel):
     shooters: int
     head_count: int | None
     rounds: int
-    insights: list[str]  # "This week": plain sentences, named headlines of the Sunday's insights
-    milestones: list[
-        str
-    ]  # Clays Broken sentences, "First Last: <Trophy> - <N>", "Club: ... all time!"
+    #: "This week": plain sentences, named headlines of the Sunday's insights.
+    insights: list[str]
+    #: Clays Broken sentences, "First Last: <Trophy> - <N>", "Club: ... all time!".
+    milestones: list[str]
     three_bird_new: int | None
     three_bird_holders: int | None
     top_score: int | None
@@ -69,12 +70,14 @@ def this_week(session: Session, day: date) -> list[str]:
     return week_insights(rows, held, day, supersedes_of)
 
 
-def milestone_sentences(session: Session, day: date) -> list[str]:
-    """The Sunday's Clays Broken insight sentences (named headlines, as the site renders them)."""
+def milestone_sentences(session: Session, day: date) -> tuple[list[str], set[int]]:
+    """The Sunday's Clays Broken insight sentences (named headlines, as the site renders them)
+    and the shooters they name (their own `Clays Broken - N` trophy line would say it twice)."""
     t = insights_table()
-    return milestone_insights(
+    found = milestone_rows(
         load_rows(session, t.c.anchor_date == day, t.c.pages.contains(["sunday"])), day
     )
+    return [plain(r.headline) for r in found], {i for r in found for i in r.named_shooter_ids}
 
 
 @router.get("/recap/{date}")
@@ -94,16 +97,18 @@ def get_recap(
     label = opt_str(event["label"])
     awards = session.execute(
         text(
-            "SELECT p.display_name, a.code FROM achievements_awarded a "
+            "SELECT a.shooter_id, p.display_name, a.code FROM achievements_awarded a "
             "JOIN shooter_profiles p ON p.shooter_id = a.shooter_id "
             "WHERE a.event_date = :d ORDER BY p.display_name, a.code"
         ),
         {"d": event_date},
     ).all()
+    sentences, told = ([], set()) if special else milestone_sentences(session, event_date)
     codes: dict[str, list[str]] = defaultdict(list)
-    for name, code in awards:
-        if code != THREE_BIRD_CODE:
-            codes[str(name)].append(str(code))
+    for shooter, name, code in awards:
+        if code == THREE_BIRD_CODE or (int(shooter) in told and str(code).startswith(CLAYS_BROKEN)):
+            continue
+        codes[str(name)].append(str(code))
     trophy_lines = [
         f"{natural_name(name)}: {item}"
         for name, held in codes.items()
@@ -142,7 +147,7 @@ def get_recap(
         rounds=int(event["n_rounds"]),
         insights=[] if special else this_week(session, event_date),
         milestones=[
-            *([] if special else milestone_sentences(session, event_date)),
+            *sentences,
             *trophy_lines,
             *club_lines,
         ],

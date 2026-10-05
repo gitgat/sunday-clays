@@ -23,6 +23,7 @@ from sunday_clays.analytics.recap_insights import (
     MILESTONE_KINDS,
     NO_REPEAT_WEEKS,
     milestone_insights,
+    milestone_rows,
     recap_text_problems,
     week_picks,
 )
@@ -132,8 +133,25 @@ def test_the_sections_already_in_the_email_are_excluded() -> None:
     # the newsletter covers welcome-backs (owner, 2026-10-05): "This week" never carries them
     assert "pf.back-strong" in EXCLUDED
     assert "pf.back-strong" not in ELIGIBLE
-    # a finishing place below the podium is a ranking of people beyond it
-    assert ELIGIBLE["pf.career-first"] == {"podium"}
+    # a second visit is the newsletter's new-shooter story, a welcome-back under another name
+    assert "ev.second-visit" in EXCLUDED
+    assert "ev.second-visit" not in ELIGIBLE
+    # personal bests (a tied one included) are the newsletter's story
+    assert "pf.tied-best" in EXCLUDED
+    assert "pf.tied-best" not in ELIGIBLE
+
+
+def test_no_podium_or_win_kind_can_be_picked() -> None:
+    """The club newsletter shows the podium and the winner (owner, 2026-10-05)."""
+    for kind_id in ("pf.podium-run", "pf.career-first"):
+        assert kind_id in EXCLUDED
+        assert kind_id not in ELIGIBLE
+    assert ELIGIBLE["pf.first-since"] == {"score"}  # no "win" or "podium" variant
+    rows = [row("pf.podium-run", DAY, score=9, variant=""), row("pf.career-first", DAY, sid=2)]
+    rows += [row("pf.career-first", DAY, sid=3, variant="podium")]
+    rows += [row("pf.first-since", DAY, sid=n, variant=v) for n, v in ((4, "win"), (5, "podium"))]
+    rows += [row("pf.first-since", DAY, sid=6, variant="score")]
+    assert picks(rows, [DAY], DAY) == ["pf.first-since"]
 
 
 def test_ranking_superlatives_and_context_free_openers_are_excluded() -> None:
@@ -145,8 +163,7 @@ def test_vague_roll_ups_are_dropped_consistently() -> None:
     # Each roll-up lists names with no number or length, or reads as a club-wide record.
     for kind_id in (
         "pf.best-stretch",
-        "pf.podium-run",
-        "pf.tied-best",
+        "pf.three-rising",
         "pf.above-own-avg-streak",
         "pf.beat-field-streak",
     ):
@@ -362,7 +379,8 @@ MS = "pf.targets-milestone"
 def test_the_targets_milestone_is_a_milestone_source_and_never_a_this_week_pick() -> None:
     assert MS in MILESTONE_KINDS
     assert "" in MILESTONE_KINDS[MS]
-    assert "rollup" in MILESTONE_KINDS[MS]  # several crossings on a Sunday are one roll-up row
+    # the roll-up names people with no number, and trophy lines carry the numbers
+    assert MILESTONE_KINDS[MS] == {""}
     assert MS not in ELIGIBLE
     rows = [row(MS, DAY, score=9, variant=""), row(KINDS[0], DAY, score=1, sid=2)]
     assert picks(rows, [DAY], DAY) == [KINDS[0]]
@@ -373,16 +391,20 @@ def test_milestone_insights_are_the_days_named_headlines_best_first() -> None:
         row(MS, DAY, score=1, sid=1, variant=""),
         row(MS, DAY, score=3, sid=2, variant=""),
         row(MS, DAY - timedelta(weeks=1), score=9, sid=3, variant=""),  # another day
-        row(MS, DAY, score=2, sid=4, variant="rollup"),
+        row(MS, DAY, score=2, sid=4, variant="rollup"),  # vague: no numbers
         row(MS, DAY, score=9, sid=7, variant="other"),  # not a milestone variant
         row(MS, DAY, score=9, sid=5, variant="", pages=("profile",)),  # not on the Sunday page
         row(KINDS[0], DAY, score=9, sid=6),  # another kind
     ]
     assert milestone_insights(rows, DAY) == [
         f"Shooter, N2 did {MS}.",
-        f"Shooter, N4 did {MS}.",
         f"Shooter, N1 did {MS}.",
     ]
+
+
+def test_milestone_rows_carry_the_shooters_the_sentences_name() -> None:
+    rows = [row(MS, DAY, score=1, sid=1, variant=""), row(MS, DAY, score=3, sid=2, variant="")]
+    assert [r.named_shooter_ids for r in milestone_rows(rows, DAY)] == [(2,), (1,)]
 
 
 def test_a_milestone_sentence_that_trips_the_lint_is_dropped() -> None:
@@ -392,8 +414,8 @@ def test_a_milestone_sentence_that_trips_the_lint_is_dropped() -> None:
 
 
 def test_the_real_milestone_sentence_passes_the_lint_and_avoids_pronouns() -> None:
-    renderings = every_rendering(MS, "") + every_rendering(MS, "rollup")
-    assert len(renderings) >= 2
+    renderings = every_rendering(MS, "")
+    assert len(renderings) >= 1
     for text in renderings:
         assert recap_text_problems(text) == [], text
         assert banned_in(text) == [], text
