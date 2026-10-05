@@ -31,16 +31,16 @@ def test_tied_first_then_third() -> None:
         ("Kim, Pat", 40, 4),
     )
     assert places(frame) == [
-        (1, True, 49, ["Finnegan, Stanton", "Stockton, Ethan"]),
-        (3, False, 47, ["Devlin, Sid"]),
+        (1, True, 49, ["Stanton Finnegan", "Ethan Stockton"]),  # sorted by last name
+        (3, False, 47, ["Sid Devlin"]),
     ]
 
 
 def test_first_then_tied_second() -> None:
     frame = day(("Hadley, Ike", 48, 1), ("Kaplan, Noel", 46, 2), ("Devlin, Sid", 46, 2))
     assert places(frame) == [
-        (1, False, 48, ["Hadley, Ike"]),
-        (2, True, 46, ["Devlin, Sid", "Kaplan, Noel"]),
+        (1, False, 48, ["Ike Hadley"]),
+        (2, True, 46, ["Sid Devlin", "Noel Kaplan"]),
     ]
 
 
@@ -51,11 +51,11 @@ def test_five_tied_for_third_are_all_listed_and_nobody_below() -> None:
     assert [p[0] for p in result] == [1, 2, 3]
     assert len(result[2][3]) == 5
     assert result[2][1] is True
-    assert "C, Low" not in str(result)
+    assert "Low C" not in str(result)
 
 
 def test_one_shooter() -> None:
-    assert places(day(("Hadley, Ike", 44, 1))) == [(1, False, 44, ["Hadley, Ike"])]
+    assert places(day(("Hadley, Ike", 44, 1))) == [(1, False, 44, ["Ike Hadley"])]
 
 
 @pytest.mark.parametrize(
