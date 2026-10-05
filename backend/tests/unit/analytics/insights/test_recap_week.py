@@ -22,8 +22,6 @@ from sunday_clays.analytics.recap_insights import (
     HORIZON,
     MILESTONE_KINDS,
     NO_REPEAT_WEEKS,
-    milestone_insights,
-    milestone_rows,
     recap_text_problems,
     week_picks,
 )
@@ -384,33 +382,6 @@ def test_the_targets_milestone_is_a_milestone_source_and_never_a_this_week_pick(
     assert MS not in ELIGIBLE
     rows = [row(MS, DAY, score=9, variant=""), row(KINDS[0], DAY, score=1, sid=2)]
     assert picks(rows, [DAY], DAY) == [KINDS[0]]
-
-
-def test_milestone_insights_are_the_days_named_headlines_best_first() -> None:
-    rows = [
-        row(MS, DAY, score=1, sid=1, variant=""),
-        row(MS, DAY, score=3, sid=2, variant=""),
-        row(MS, DAY - timedelta(weeks=1), score=9, sid=3, variant=""),  # another day
-        row(MS, DAY, score=2, sid=4, variant="rollup"),  # vague: no numbers
-        row(MS, DAY, score=9, sid=7, variant="other"),  # not a milestone variant
-        row(MS, DAY, score=9, sid=5, variant="", pages=("profile",)),  # not on the Sunday page
-        row(KINDS[0], DAY, score=9, sid=6),  # another kind
-    ]
-    assert milestone_insights(rows, DAY) == [
-        f"Shooter, N2 did {MS}.",
-        f"Shooter, N1 did {MS}.",
-    ]
-
-
-def test_milestone_rows_carry_the_shooters_the_sentences_name() -> None:
-    rows = [row(MS, DAY, score=1, sid=1, variant=""), row(MS, DAY, score=3, sid=2, variant="")]
-    assert [r.named_shooter_ids for r in milestone_rows(rows, DAY)] == [(2,), (1,)]
-
-
-def test_a_milestone_sentence_that_trips_the_lint_is_dropped() -> None:
-    bad = [{"t": "text", "v": "Your total passed 1,000."}]
-    rows = [row(MS, DAY, headline=bad, variant="")]
-    assert milestone_insights(rows, DAY) == []
 
 
 def test_the_real_milestone_sentence_passes_the_lint_and_avoids_pronouns() -> None:

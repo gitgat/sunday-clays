@@ -348,3 +348,36 @@ def test_every_milestone_name_reads_first_last(
     named = [line for line in lines if "Clays Broken" in line]
     assert named
     assert not [line for line in named if "," in line.split(":")[0]]
+
+
+def test_a_busy_sunday_keeps_every_crossing_and_drops_their_own_trophy_lines(
+    fx_admin_client: TestClient, fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two shooters cross on one Sunday (4,000 and 1,000): each keeps a sentence with their own
+    number, neither has a separate `Clays Broken - N` line, and no roll-up text appears."""
+    from sunday_clays.api.routes import admin_recap
+
+    (a, a_name), (b, b_name) = [
+        (int(s), str(n))
+        for s, n in fx_session.execute(
+            text(
+                "SELECT shooter_id, display_name FROM shooter_profiles ORDER BY shooter_id LIMIT 2"
+            )
+        )
+    ]
+    a_line = f"{natural_name(a_name)} has now broken 4,000 targets on Sundays: 4,018 in all."
+    b_line = f"{natural_name(b_name)} has now broken 1,000 targets on Sundays: 1,012 in all."
+    monkeypatch.setattr(
+        admin_recap, "targets_sentences", lambda _fr, _day: [(a, a_line), (b, b_line)]
+    )
+    award(fx_session, a, "clays_broken:6")
+    award(fx_session, b, "clays_broken:3", "events:3")
+    lines = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()["milestones"]
+    assert lines[:2] == [a_line, b_line]
+    assert not [
+        x
+        for x in lines
+        if "Clays Broken -" in x and x.split(":")[0] in {natural_name(a_name), natural_name(b_name)}
+    ]
+    assert f"{natural_name(b_name)}: Events Attended - 25" in lines
+    assert not [x for x in lines if "thousand-target marks" in x]

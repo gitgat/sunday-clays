@@ -12,11 +12,15 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from typing import Final
 
+from sunday_clays.analytics.insights import registry
 from sunday_clays.analytics.insights import select as sel
+from sunday_clays.analytics.insights.context import InsightFrames
 from sunday_clays.analytics.insights.rank import RECENCY_TOP
 from sunday_clays.analytics.insights.store import InsightRow
-from sunday_clays.analytics.insights.templates import Segment, plain
+from sunday_clays.analytics.insights.templates import Segment, plain, render
+from sunday_clays.analytics.insights.types import Scope
 
+TARGETS_KIND: Final = "pf.targets-milestone"
 MAX_PICKS: Final = 5
 MIN_PICKS: Final = 3
 NO_REPEAT_WEEKS: Final = 12
@@ -81,7 +85,7 @@ EXCLUDED: Final[dict[str, str]] = {
 #: sentence (it has the total). The roll-up names people with no number, and the trophy lines
 #: ("Clays Broken - N") already cover those people.
 MILESTONE_KINDS: Final[dict[str, frozenset[str]]] = {
-    "pf.targets-milestone": frozenset({""}),
+    TARGETS_KIND: frozenset({""}),
 }
 
 _BANNED: Final = re.compile(
@@ -108,24 +112,6 @@ def _eligible(r: InsightRow) -> bool:
     if r.polarity not in _ALLOWED_POLARITY and r.named_shooter_ids:
         return False
     return not recap_text_problems(_prose(r.headline))
-
-
-def milestone_rows(rows: Sequence[InsightRow], day: date) -> list[InsightRow]:
-    """The Sunday's milestone rows, best ranked first."""
-    pool = [
-        r
-        for r in rows
-        if r.anchor_date == day
-        and "sunday" in r.pages
-        and r.variant in MILESTONE_KINDS.get(r.kind, frozenset())
-        and not recap_text_problems(_prose(r.headline))
-    ]
-    return list(sel.ranked(pool, lambda r: r.base_score))
-
-
-def milestone_insights(rows: Sequence[InsightRow], day: date) -> list[str]:
-    """The Sunday's milestone sentences (named headlines), best ranked first."""
-    return [plain(r.headline) for r in milestone_rows(rows, day)]
 
 
 def candidates(
@@ -191,3 +177,27 @@ def week_insights(
 ) -> list[str]:
     """Plain sentences, each the row's named headline."""
     return [plain(r.headline) for r in week_picks(rows, held, day, supersedes)]
+
+
+def milestone_sentences(fr: InsightFrames, day: date) -> list[tuple[int, str]]:
+    """(shooter id, sentence) for each shooter who crossed a thousand-target mark on `day`.
+
+    Built from the engine's own `pf.targets-milestone` facts (before roll-up), so two or more
+    crossings on one Sunday each keep their own named sentence with the total; the stored roll-up
+    ("New thousand-target marks: A, B and C.") has no numbers and is never used. Best first.
+    """
+    if fr.as_of is None:
+        return []
+    kind = registry.get(TARGETS_KIND)
+    scope = Scope(sundays=frozenset({day}), as_of=fr.as_of)
+    facts = sorted(
+        (f for f in kind.evaluate(fr, scope) if f.anchor_date == day and f.variant == ""),
+        key=lambda f: (-f.strength, f.subject_id),
+    )
+    template = kind.templates[""][0]
+    out: list[tuple[int, str]] = []
+    for fact in facts:
+        segments = render(template, fact.params, fr.names)
+        if not recap_text_problems(_prose(segments)):
+            out.append((int(fact.subject_id), plain(segments)))
+    return out

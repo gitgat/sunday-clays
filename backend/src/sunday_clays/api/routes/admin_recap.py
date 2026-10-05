@@ -19,9 +19,11 @@ from sunday_clays.analytics import frames
 from sunday_clays.analytics.achievements.participation import THREE_BIRD_LABELS, normalize_label
 from sunday_clays.analytics.club_milestones import club_milestones
 from sunday_clays.analytics.insights.store import insights_table, load_rows
-from sunday_clays.analytics.insights.templates import natural_name, plain
-from sunday_clays.analytics.recap_insights import HORIZON, milestone_rows, week_insights
+from sunday_clays.analytics.insights.templates import natural_name
+from sunday_clays.analytics.recap_insights import HORIZON, week_insights
+from sunday_clays.analytics.recap_insights import milestone_sentences as targets_sentences
 from sunday_clays.analytics.recap_trophies import recap_milestone_items
+from sunday_clays.analytics.steps.s60_insights import build_frames
 from sunday_clays.api.routes._convert import opt_int, opt_str, rows
 from sunday_clays.api.routes.insights import held_dates, supersedes_of
 from sunday_clays.config import Settings, get_settings
@@ -71,13 +73,11 @@ def this_week(session: Session, day: date) -> list[str]:
 
 
 def milestone_sentences(session: Session, day: date) -> tuple[list[str], set[int]]:
-    """The Sunday's Clays Broken insight sentences (named headlines, as the site renders them)
-    and the shooters they name (their own `Clays Broken - N` trophy line would say it twice)."""
-    t = insights_table()
-    found = milestone_rows(
-        load_rows(session, t.c.anchor_date == day, t.c.pages.contains(["sunday"])), day
-    )
-    return [plain(r.headline) for r in found], {i for r in found for i in r.named_shooter_ids}
+    """The Sunday's Clays Broken sentences, one per shooter (named headlines, as the site renders
+    a single crossing) and the shooters they name (their own `Clays Broken - N` line would say
+    it twice). Recomputed from the engine's facts, so a stored roll-up can never hide anyone."""
+    found = targets_sentences(build_frames(session), day)
+    return [line for _, line in found], {i for i, _ in found}
 
 
 @router.get("/recap/{date}")
