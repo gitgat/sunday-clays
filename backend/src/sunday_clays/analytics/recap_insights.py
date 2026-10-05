@@ -45,7 +45,6 @@ ELIGIBLE: Final[dict[str, frozenset[str]]] = {
     "pf.above-own-avg-streak": frozenset({""}),
     # The average and the mark are both in the sentence; the roll-up is too vague.
     "pf.average-milestone": frozenset({""}),
-    "pf.back-strong": frozenset({"", "score", "rollup"}),
     "pf.beat-field-streak": frozenset({""}),
     "pf.best-stretch": frozenset({""}),
     # Podium only: "top_third" would publish a named shooter's place below the podium, a ranking
@@ -66,16 +65,23 @@ ELIGIBLE: Final[dict[str, frozenset[str]]] = {
 
 #: Sunday-page kinds left out of the email, with the reason.
 EXCLUDED: Final[dict[str, str]] = {
-    "ev.close-finish": "the podium section already shows the top finishers",
-    "ev.new-faces": "the first-timers section already welcomes them",
-    "ev.top-score": "the podium section already shows the top score",
+    "ev.close-finish": "the club newsletter already shows the podium",
+    "ev.new-faces": "the club newsletter already welcomes new shooters",
+    "ev.top-score": "the club newsletter already shows the podium and top score",
     "ev.spotlight": "says 'their usual for a day like this', which only makes sense on the site",
     "ev.week-jump": "'Biggest jump: <Name>' ranks one shooter and never says how big the jump was",
     "pf.high-round-count": "opens with 'That was', which needs the score shown before it",
     "pf.beat-own-usual": "says 'their usual for a day like that': meaningless without the site",
-    "pf.pb": "the new personal bests section already lists them",
-    "pf.targets-milestone": "the Clays Broken milestone already says it",
-    "pf.wins": "wins are the podium section's story, and a ranking beyond it",
+    "pf.back-strong": "welcome-backs are the club newsletter's story (owner, 2026-10-05)",
+    "pf.pb": "the club newsletter already lists personal bests",
+    "pf.wins": "wins are the podium's story (the club newsletter's), and a ranking beyond it",
+}
+
+#: Sunday-page kinds the email's Milestones section carries instead of "This week" (owner,
+#: 2026-10-05): the Sunday's named headline, as the site renders it. Two or more crossings on one
+#: Sunday are stored as one roll-up row (the single rows leave the Sunday page), so both variants.
+MILESTONE_KINDS: Final[dict[str, frozenset[str]]] = {
+    "pf.targets-milestone": frozenset({"", "rollup"}),
 }
 
 _BANNED: Final = re.compile(
@@ -102,6 +108,19 @@ def _eligible(r: InsightRow) -> bool:
     if r.polarity not in _ALLOWED_POLARITY and r.named_shooter_ids:
         return False
     return not recap_text_problems(_prose(r.headline))
+
+
+def milestone_insights(rows: Sequence[InsightRow], day: date) -> list[str]:
+    """The Sunday's milestone sentences (named headlines), best ranked first."""
+    pool = [
+        r
+        for r in rows
+        if r.anchor_date == day
+        and "sunday" in r.pages
+        and r.variant in MILESTONE_KINDS.get(r.kind, frozenset())
+        and not recap_text_problems(_prose(r.headline))
+    ]
+    return [plain(r.headline) for r in sel.ranked(pool, lambda r: r.base_score)]
 
 
 def candidates(

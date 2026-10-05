@@ -8,6 +8,7 @@ from sunday_clays.analytics.achievements.registry import all_achievements
 from sunday_clays.analytics.recap_trophies import (
     HIDDEN_TIER_FAMILIES,
     ONE_OFF_EXPLANATIONS,
+    recap_milestone_items,
     recap_trophy_items,
 )
 from sunday_clays.analytics.summary import LEFT_OUT_TROPHY_CODES
@@ -114,3 +115,22 @@ def test_every_tiered_family_is_left_out_or_reads_fine_alone() -> None:
 def test_the_comeback_note_says_previous_outing_not_previous_sunday() -> None:
     note = ONE_OFF_EXPLANATIONS["comeback"]
     assert note == "beat the previous outing's best round by 15 or more"
+
+
+def test_milestone_items_are_tiers_only() -> None:
+    assert recap_milestone_items(["clays_broken:3", "doubleheader", "events:4"]) == [
+        "Clays Broken - 1,000",
+        "Events Attended - 50",
+    ]
+    assert recap_milestone_items(["doubleheader", "three_bird_shoot", "rain"]) == []
+
+
+def test_a_first_sunday_is_the_newsletters_new_shooter_not_a_milestone() -> None:
+    assert recap_milestone_items(["events:1"]) == []
+    assert recap_milestone_items(["events:1", "events:2"]) == ["Events Attended - 10"]
+    assert recap_milestone_items(["events:1", "clays_broken:1"]) == ["Clays Broken - 100"]
+
+
+def test_milestone_items_keep_the_hidden_and_left_out_rules() -> None:
+    assert recap_milestone_items(["iron_streak:3", "years_active:1", "first_win", "nope"]) == []
+    assert recap_milestone_items(["events:3", "events:4"]) == ["Events Attended - 50"]

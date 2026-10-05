@@ -20,7 +20,9 @@ from sunday_clays.analytics.recap_insights import (
     ELIGIBLE,
     EXCLUDED,
     HORIZON,
+    MILESTONE_KINDS,
     NO_REPEAT_WEEKS,
+    milestone_insights,
     recap_text_problems,
     week_picks,
 )
@@ -114,8 +116,9 @@ def picks(rows: list[InsightRow], held: list[date], day: date) -> list[str]:
 
 def test_every_sunday_page_kind_is_decided() -> None:
     sunday_kinds = {k.id for k in registry.all_kinds() if any(p.value == "sunday" for p in k.pages)}
-    assert sunday_kinds == set(ELIGIBLE) | set(EXCLUDED)
+    assert sunday_kinds == set(ELIGIBLE) | set(EXCLUDED) | set(MILESTONE_KINDS)
     assert not set(ELIGIBLE) & set(EXCLUDED)
+    assert not set(MILESTONE_KINDS) & (set(ELIGIBLE) | set(EXCLUDED))
     assert all(EXCLUDED.values()), "every exclusion carries its reason"
     for kind_id, variants in ELIGIBLE.items():
         assert variants <= set(registry.get(kind_id).templates), kind_id
@@ -126,7 +129,9 @@ def test_the_sections_already_in_the_email_are_excluded() -> None:
         assert kind_id in EXCLUDED
     assert "rollup" not in ELIGIBLE["pf.sunday-milestone"]
     assert ELIGIBLE["ev.rain-day"] == {"field"}
-    assert "pf.targets-milestone" in EXCLUDED  # the Clays Broken milestone says it
+    # the newsletter covers welcome-backs (owner, 2026-10-05): "This week" never carries them
+    assert "pf.back-strong" in EXCLUDED
+    assert "pf.back-strong" not in ELIGIBLE
     # a finishing place below the podium is a ranking of people beyond it
     assert ELIGIBLE["pf.career-first"] == {"podium"}
 
@@ -347,3 +352,49 @@ def test_the_same_date_always_gives_the_same_picks_and_only_the_horizon_matters(
     assert first == picks(recent_rows, days[9:], days[44])
     older_rows = [r for r in rows if r.anchor_date not in days[:9]]
     assert first == picks(older_rows, days, days[44])
+
+
+# --- the Milestones section's insight source -----------------------------------------------------
+
+MS = "pf.targets-milestone"
+
+
+def test_the_targets_milestone_is_a_milestone_source_and_never_a_this_week_pick() -> None:
+    assert MS in MILESTONE_KINDS
+    assert "" in MILESTONE_KINDS[MS]
+    assert "rollup" in MILESTONE_KINDS[MS]  # several crossings on a Sunday are one roll-up row
+    assert MS not in ELIGIBLE
+    rows = [row(MS, DAY, score=9, variant=""), row(KINDS[0], DAY, score=1, sid=2)]
+    assert picks(rows, [DAY], DAY) == [KINDS[0]]
+
+
+def test_milestone_insights_are_the_days_named_headlines_best_first() -> None:
+    rows = [
+        row(MS, DAY, score=1, sid=1, variant=""),
+        row(MS, DAY, score=3, sid=2, variant=""),
+        row(MS, DAY - timedelta(weeks=1), score=9, sid=3, variant=""),  # another day
+        row(MS, DAY, score=2, sid=4, variant="rollup"),
+        row(MS, DAY, score=9, sid=7, variant="other"),  # not a milestone variant
+        row(MS, DAY, score=9, sid=5, variant="", pages=("profile",)),  # not on the Sunday page
+        row(KINDS[0], DAY, score=9, sid=6),  # another kind
+    ]
+    assert milestone_insights(rows, DAY) == [
+        f"Shooter, N2 did {MS}.",
+        f"Shooter, N4 did {MS}.",
+        f"Shooter, N1 did {MS}.",
+    ]
+
+
+def test_a_milestone_sentence_that_trips_the_lint_is_dropped() -> None:
+    bad = [{"t": "text", "v": "Your total passed 1,000."}]
+    rows = [row(MS, DAY, headline=bad, variant="")]
+    assert milestone_insights(rows, DAY) == []
+
+
+def test_the_real_milestone_sentence_passes_the_lint_and_avoids_pronouns() -> None:
+    renderings = every_rendering(MS, "") + every_rendering(MS, "rollup")
+    assert len(renderings) >= 2
+    for text in renderings:
+        assert recap_text_problems(text) == [], text
+        assert banned_in(text) == [], text
+        assert not PRONOUNS.search(text), text
