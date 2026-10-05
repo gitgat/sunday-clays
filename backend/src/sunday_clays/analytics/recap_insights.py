@@ -80,10 +80,10 @@ EXCLUDED: Final[dict[str, str]] = {
     "pf.wins": "wins are the podium's story (the club newsletter's), and a ranking beyond it",
 }
 
-#: Sunday-page kinds the email's Milestones section carries instead of "This week" (owner,
-#: 2026-10-05): the Sunday's named headline, as the site renders it. Only the single-shooter
-#: sentence (it has the total). The roll-up names people with no number, and the trophy lines
-#: ("Clays Broken - N") already cover those people.
+#: Kinds the email's Milestones section carries instead of "This week" (owner, 2026-10-05). The
+#: sentences come from the engine's facts before roll-up (`milestone_sentences`), so every
+#: crossing keeps its own single-shooter sentence with the number; this map classifies the kind
+#: for the partition tests.
 MILESTONE_KINDS: Final[dict[str, frozenset[str]]] = {
     TARGETS_KIND: frozenset({""}),
 }

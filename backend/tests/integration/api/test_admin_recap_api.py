@@ -175,11 +175,12 @@ def test_a_shooter_with_a_clays_broken_sentence_has_no_clays_broken_trophy_line(
     assert f"{natural_name(str(other_name))}: Clays Broken - 1,000" in lines
 
 
-def test_the_vague_rollup_milestone_sentence_is_not_carried(
+def test_a_rolled_up_sunday_still_names_every_crossing_with_its_number(
     fx_admin_client: TestClient, fx_session: Session
 ) -> None:
-    """ "New thousand-target marks: A, B and C." names people with no number, and the trophy
-    lines for the same people follow it, so it is not in the email."""
+    """On a Sunday the site rolls up ("New thousand-target marks: A, B and C."), the email still
+    gives each person their own sentence with the number, never the roll-up, and no Clays Broken
+    line for the same person."""
     roll = next(
         r
         for r in load_rows(fx_session)
@@ -188,6 +189,17 @@ def test_the_vague_rollup_milestone_sentence_is_not_carried(
     day = roll.anchor_date.isoformat()
     lines = fx_admin_client.get(f"/api/admin/recap/{day}").json()["milestones"]
     assert plain(roll.headline) not in lines
+    for sid in roll.named_shooter_ids:
+        who = natural_name(
+            str(
+                fx_session.execute(
+                    text("SELECT display_name FROM shooter_profiles WHERE shooter_id = :s"),
+                    {"s": sid},
+                ).scalar_one()
+            )
+        )
+        assert [line for line in lines if line.startswith(f"{who} has now broken")], who
+        assert not [line for line in lines if line.startswith(f"{who}: Clays Broken")], who
 
 
 def test_no_milestone_is_a_this_week_insight_and_back_strong_is_never_one(
