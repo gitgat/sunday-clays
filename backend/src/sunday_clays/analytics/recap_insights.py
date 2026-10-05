@@ -40,13 +40,13 @@ ELIGIBLE: Final[dict[str, frozenset[str]]] = {
     # Club level, names nobody; states the month it was last this way.
     "ev.toughest-since": frozenset({"tough", "easy"}),
     # Roll-ups name people with no number or length, so only single-shooter variants stay for
-    # above-own-avg-streak, best-stretch, podium-run and tied-best (the same rule as
-    # average-milestone and career-first). The roll-ups that remain below carry the fact itself.
+    # above-own-avg-streak, beat-field-streak, best-stretch, podium-run and tied-best (the same rule
+    # as average-milestone and career-first). The roll-ups that remain below carry the fact itself.
     "pf.above-own-avg-streak": frozenset({""}),
     # The average and the mark are both in the sentence; the roll-up is too vague.
     "pf.average-milestone": frozenset({""}),
     "pf.back-strong": frozenset({"", "score", "rollup"}),
-    "pf.beat-field-streak": frozenset({"", "rollup"}),
+    "pf.beat-field-streak": frozenset({""}),
     "pf.best-stretch": frozenset({""}),
     # Podium only: "top_third" would publish a named shooter's place below the podium, a ranking
     # beyond the one the email already has. The roll-up ("Career firsts today") says nothing.

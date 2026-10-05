@@ -138,7 +138,13 @@ def test_ranking_superlatives_and_context_free_openers_are_excluded() -> None:
 
 def test_vague_roll_ups_are_dropped_consistently() -> None:
     # Each roll-up lists names with no number or length, or reads as a club-wide record.
-    for kind_id in ("pf.best-stretch", "pf.podium-run", "pf.tied-best", "pf.above-own-avg-streak"):
+    for kind_id in (
+        "pf.best-stretch",
+        "pf.podium-run",
+        "pf.tied-best",
+        "pf.above-own-avg-streak",
+        "pf.beat-field-streak",
+    ):
         assert "rollup" not in ELIGIBLE[kind_id], kind_id
 
 
