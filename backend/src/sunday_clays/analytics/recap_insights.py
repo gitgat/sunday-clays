@@ -2,7 +2,7 @@
 
 The email goes to people who never open the site, so only a vetted subset of the Sunday page's
 stored insight rows is eligible (rendered with the named headline), and they share the pool with
-the recap-only facts of `recap_facts`. Up to six lines a Sunday (MAX_PICKS), strongest first, one
+the recap-only facts of `recap_facts`. Up to five lines a Sunday (MAX_PICKS), strongest first, one
 per type, nobody named twice. Repeats are judged by content, not by kind (owner, 2026-10-12):
 
 1. a type used in the previous held Sunday's recap is not used (a type may return after one week);
@@ -10,12 +10,13 @@ per type, nobody named twice. Repeats are judged by content, not by kind (owner,
 3. nobody named in the previous held Sunday's recap is named;
 4. a sentence sent in the previous 12 weeks is not sent again, where a stored insight's sentence
    is compared with its numbers blanked ("20 Sundays since" is "21 Sundays since") and a recap
-   fact's exactly, because its key already says what it is about. (Measured deviation from the
-   brief's literal digit-blind check on everything, awaiting the owner: see the spec amendment.)
+   fact's exactly, because its key already says what it is about. (Owner-approved, 2026-10-12:
+   recurring recap facts may repeat with new numbers; see the spec amendment.)
 
 Event facts are news once: coming_up and club_next rest for the whole replay (not the 12 weeks),
 improvement is a high-water mark (only a step above the highest already said for that person), and
-a streak line rests that person for 26 weeks.
+a streak line rests that person for 26 weeks. on_this_day, which has no subject to tell one
+week from the next, rests 4 held Sundays after each use (ON_THIS_DAY_REST_WEEKS).
 
 There is no fill: a week the rules leave short stays short. Stateless: earlier weeks' picks are
 recomputed by replaying the held regular Sundays in date order over a bounded horizon, so the same
@@ -40,8 +41,11 @@ from sunday_clays.analytics.insights.types import Scope
 from sunday_clays.analytics.recap_facts import FACT_TYPES, RecapFact
 
 TARGETS_KIND: Final = "pf.targets-milestone"
-MAX_PICKS: Final = 6
+MAX_PICKS: Final = 5
 NO_REPEAT_WEEKS: Final = 12
+#: on_this_day is a weekly club fact with nothing to tell it from last week's, so after each use
+#: it rests this many held regular Sundays (owner, 2026-10-12): used in week 0, back in week 5.
+ON_THIS_DAY_REST_WEEKS: Final = 4
 HORIZON: Final = 36  # held regular Sundays replayed, ending at the requested date
 #: Event facts are news once: they rest for the whole replay, not just the 12-week window (a
 #: milestone said 13 weeks ago is still said). Improvement is judged by its high-water mark
@@ -211,6 +215,9 @@ def _pick(pool: Sequence[RecapFact], history: Sequence[Sequence[RecapFact]]) -> 
     window = history[-NO_REPEAT_WEEKS:]
     last = history[-1] if history else []
     last_types = {x.type for x in last}
+    rested_types = {x.type for week in history[-ON_THIS_DAY_REST_WEEKS:] for x in week} & {
+        "on_this_day"
+    }
     last_names = {n for x in last for n in x.named_ids}
     recent_subjects = {_subject(x) for week in window for x in week} - {None}
     resting = {
@@ -233,6 +240,7 @@ def _pick(pool: Sequence[RecapFact], history: Sequence[Sequence[RecapFact]]) -> 
             len(chosen) >= MAX_PICKS
             or line.type in types
             or line.type in last_types
+            or line.type in rested_types
             or _wording(line) in recent_texts
             or _subject(line) in recent_subjects
             or _rested(line, resting)

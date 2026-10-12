@@ -48,7 +48,7 @@ FACT_TYPES: Final[tuple[str, ...]] = (
 
 # --- thresholds: tune here ---------------------------------------------------------------------
 #: "Biggest/coldest/... since" claims need the last time to be at least this many weeks back.
-SINCE_WEEKS: Final = 3
+SINCE_WEEKS: Final = 6
 #: "...on record" claims need at least this many earlier held Sundays behind them.
 RECORD_MIN_HISTORY: Final = 26
 #: A claim about the first Sundays of the data (nothing to compare with) is never made.
@@ -180,9 +180,12 @@ def _a(month: int) -> str:
 
 
 def _long_enough(last: date | None, today: date, history: int) -> bool:
-    """A 'since' claim needs the last time at least SINCE_WEEKS back; 'on record' needs history."""
+    """A 'since' claim needs the last time at least SINCE_WEEKS back, and never in D's own month;
+    'on record' needs history."""
     if last is None:
         return history >= RECORD_MIN_HISTORY
+    if (last.year, last.month) == (today.year, today.month):
+        return False  # "since <this month>" says nothing; the floor makes this unreachable today
     return _weeks(last, today) >= SINCE_WEEKS
 
 

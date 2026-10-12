@@ -24,6 +24,7 @@ from sunday_clays.analytics.recap_insights import (
     MAX_PICKS,
     MILESTONE_KINDS,
     NO_REPEAT_WEEKS,
+    ON_THIS_DAY_REST_WEEKS,
     recap_text_problems,
     week_insights,
     week_picks,
@@ -273,11 +274,11 @@ def test_text_that_trips_the_lint_is_dropped_but_a_shooter_called_gold_is_not() 
 # --- picking up to MAX_PICKS ---------------------------------------------------------------------
 
 
-def test_picks_the_six_highest_ranked_and_never_the_you_form() -> None:
-    assert MAX_PICKS == 6
+def test_picks_the_five_highest_ranked_and_never_the_you_form() -> None:
+    assert MAX_PICKS == 5  # owner, 2026-10-12
     rows = [row(k, DAY, score=10 - i, sid=i + 1) for i, k in enumerate(KINDS[:8])]
     out = week_picks(rows, [DAY], DAY, no_supersedes)
-    assert [x.type for x in out] == KINDS[:6]
+    assert [x.type for x in out] == KINDS[:5]
     assert all("You" not in x.text for x in out)
 
 
@@ -454,11 +455,41 @@ def test_a_recap_fact_with_only_other_numbers_is_new_content_unless_it_is_the_sa
     recap facts say what they are about in their key and are judged by that and exact words."""
     pool = {
         0: [fact("on_this_day", "A year ago this week: 28 shooters, top score 46.", 9.0)],
-        2: [fact("on_this_day", "A year ago this week: 24 shooters, top score 45.", 9.0)],
-        4: [fact("turnout", "A year ago this week: 28 shooters, top score 46.", 9.0)],
+        5: [fact("on_this_day", "A year ago this week: 24 shooters, top score 45.", 9.0)],
+        6: [fact("turnout", "A year ago this week: 28 shooters, top score 46.", 9.0)],
     }
-    assert lines_on(pool, 3, 2) == ["A year ago this week: 24 shooters, top score 45."]
-    assert lines_on(pool, 5, 4) == []  # exactly the sentence of week 0
+    assert lines_on(pool, 6, 5) == ["A year ago this week: 24 shooters, top score 45."]
+    assert lines_on(pool, 7, 6) == []  # exactly the sentence of week 0
+
+
+def test_on_this_day_rests_four_held_sundays_after_each_use() -> None:
+    """Owner, 2026-10-12: used on week 0, it is not eligible in weeks 1-4, back in week 5."""
+    assert ON_THIS_DAY_REST_WEEKS == 4
+    pool = {i: [fact("on_this_day", f"A year ago {i}.", 9.0)] for i in range(12)}
+    said = [bool(lines_on(pool, 12, at)) for at in range(12)]
+    # each date replays alone: 0 yes, 1-4 rest, 5 yes, 6-9 rest, 10 yes, 11 rests
+    assert said == [True, False, False, False, False, True, False, False, False, False, True, False]
+
+
+def test_the_on_this_day_rest_counts_held_sundays_and_leaves_other_types_to_rule_1() -> None:
+    pool = {
+        0: [fact("on_this_day", "A year ago 0.", 9.0)],
+        1: [fact("weather", "Wet 1.", 9.0)],
+        2: [fact("turnout", "Crowd 2.", 9.0)],
+    }
+    days = sundays(7)
+    gap = [days[0], days[1], days[2], days[4], days[5], days[6]]  # days[3] was not held
+    on = lambda at: [  # noqa: E731
+        x.type
+        for x in week_picks([], gap, at, no_supersedes, lambda d: [*pool.get(days.index(d), [])])
+    ]
+    assert on(days[2]) == ["turnout"]  # only on_this_day rests longer than a week
+    pool[4] = [fact("on_this_day", "A year ago 4.", 9.0)]
+    pool[5] = [fact("on_this_day", "A year ago 5.", 9.0)]
+    pool[6] = [fact("on_this_day", "A year ago 6.", 9.0)]
+    assert on(days[4]) == []  # 3 held Sundays after week 0 (4 on the calendar): resting
+    assert on(days[5]) == []  # 4 held Sundays after (5 on the calendar): still resting
+    assert on(days[6]) == ["on_this_day"]  # 5 held Sundays after: back
 
 
 def test_improvement_is_a_high_water_mark_a_lower_or_equal_step_is_never_said_again() -> None:

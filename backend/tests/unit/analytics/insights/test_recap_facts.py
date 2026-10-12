@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from sunday_clays.analytics import club_milestones as cm
+from sunday_clays.analytics import recap_facts
 from sunday_clays.analytics.insights.context import InsightFrames
 from sunday_clays.analytics.recap_facts import FACT_TYPES, RecapFact, week_facts
 from sunday_clays.analytics.recap_insights import recap_text_problems
@@ -59,6 +60,24 @@ def weekly(
     return world
 
 
+# --- the 'since' floor (owner, 2026-10-12) -------------------------------------------------------
+
+
+def test_since_floor_is_six_weeks() -> None:
+    assert recap_facts.SINCE_WEEKS == 6
+
+
+def test_a_since_claim_never_names_the_month_of_the_day_it_is_said(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Six weeks cannot reach into the same month, but the guard holds if the floor is lowered."""
+    monkeypatch.setattr(recap_facts, "SINCE_WEEKS", 1)
+    today = date(2026, 9, 27)
+    assert recap_facts._long_enough(date(2026, 9, 20), today, 99) is False  # same month
+    assert recap_facts._long_enough(date(2026, 8, 30), today, 99) is True
+    assert recap_facts._long_enough(date(2025, 9, 28), today, 99) is True  # same month, last year
+
+
 # --- turnout -------------------------------------------------------------------------------------
 
 
@@ -76,14 +95,14 @@ def test_turnout_biggest_crowd_in_at_least_eight_weeks_names_the_last_bigger_mon
     ]
 
 
-def test_turnout_is_silent_when_a_bigger_crowd_came_inside_three_weeks(make_world: Any) -> None:
-    fr = weekly(make_world, 13, event=heads(w10=40, w12=35)).frames()  # 2 weeks back
-    assert texts(fr, wk(FIRST, 12), "turnout") == []
+def test_turnout_is_silent_when_a_bigger_crowd_came_inside_six_weeks(make_world: Any) -> None:
+    fr = weekly(make_world, 16, event=heads(w10=40, w15=35)).frames()  # 5 weeks back
+    assert texts(fr, wk(FIRST, 15), "turnout") == []
 
 
-def test_turnout_boundary_is_exactly_three_weeks(make_world: Any) -> None:
-    fr = weekly(make_world, 13, event=heads(w9=40, w12=35)).frames()  # 3 weeks back
-    assert texts(fr, wk(FIRST, 12), "turnout") == [
+def test_turnout_boundary_is_exactly_six_weeks(make_world: Any) -> None:
+    fr = weekly(make_world, 16, event=heads(w9=40, w15=35)).frames()  # 6 weeks back
+    assert texts(fr, wk(FIRST, 15), "turnout") == [
         "35 came out, the biggest crowd since March 2024."
     ]
 
@@ -166,12 +185,12 @@ def test_course_type_first_of_its_kind_since_a_month(make_world: Any) -> None:
     ]
 
 
-def test_course_type_silent_when_the_type_changed_back_inside_three_weeks(make_world: Any) -> None:
-    # super sporting at week 8, sporting at 9, super sporting again at 10: two weeks apart
-    fr = weekly(make_world, 11, event=types(w8="super_sporting", w10="super_sporting")).frames()
+def test_course_type_silent_when_the_type_changed_back_inside_six_weeks(make_world: Any) -> None:
+    # super sporting at week 5, sporting in between, super sporting again at 10: five weeks apart
+    fr = weekly(make_world, 11, event=types(w5="super_sporting", w10="super_sporting")).frames()
     assert texts(fr, wk(FIRST, 10), "course_type") == []
-    fr = weekly(make_world, 11, event=types(w7="super_sporting", w10="super_sporting")).frames()
-    assert len(texts(fr, wk(FIRST, 10), "course_type")) == 1  # three weeks apart is enough
+    fr = weekly(make_world, 11, event=types(w4="super_sporting", w10="super_sporting")).frames()
+    assert len(texts(fr, wk(FIRST, 10), "course_type")) == 1  # six weeks apart is enough
 
 
 def test_course_type_first_ever_says_on_record(make_world: Any) -> None:
@@ -362,9 +381,11 @@ def test_weather_first_wet_sunday_since(make_world: Any) -> None:
     assert texts(fr, wk(FIRST, 14), "weather") == ["The first wet Sunday since January 2024."]
 
 
-def test_weather_silent_when_the_extreme_was_matched_inside_three_weeks(make_world: Any) -> None:
-    ev = weather(w12={"temp_f": 45.0}, w14={"temp_f": 49.0})
-    assert texts(weekly(make_world, 15, event=ev).frames(), wk(FIRST, 14), "weather") == []
+def test_weather_boundary_is_six_weeks_since_the_extreme_was_matched(make_world: Any) -> None:
+    near = weather(w9={"temp_f": 45.0}, w14={"temp_f": 49.0})  # 5 weeks back
+    assert texts(weekly(make_world, 15, event=near).frames(), wk(FIRST, 14), "weather") == []
+    far = weather(w8={"temp_f": 45.0}, w14={"temp_f": 49.0})  # 6 weeks back
+    assert len(texts(weekly(make_world, 15, event=far).frames(), wk(FIRST, 14), "weather")) == 1
 
 
 def test_weather_silent_for_an_ordinary_cool_day(make_world: Any) -> None:
