@@ -19,7 +19,7 @@ import statistics
 from bisect import bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import pairwise
 from typing import Any, Final, cast
@@ -48,7 +48,7 @@ FACT_TYPES: Final[tuple[str, ...]] = (
 
 # --- thresholds: tune here ---------------------------------------------------------------------
 #: "Biggest/coldest/... since" claims need the last time to be at least this many weeks back.
-SINCE_WEEKS: Final = 8
+SINCE_WEEKS: Final = 6
 #: "...on record" claims need at least this many earlier held Sundays behind them.
 RECORD_MIN_HISTORY: Final = 26
 #: A claim about the first Sundays of the data (nothing to compare with) is never made.
@@ -58,35 +58,38 @@ MONTH_MIN_PRIOR: Final = 3
 MONTH_MIN_YEARS: Final = 2
 #: Median score: best for its calendar month in this many days (two years), or overall in 12 weeks.
 SCORE_MONTH_DAYS: Final = 730
-SCORE_OVERALL_WEEKS: Final = 12
+SCORE_OVERALL_WEEKS: Final = 8
 #: A station must have this many entries that day, and the spread must be this many points.
 STATION_MIN_ENTRIES: Final = 5
 STATION_SPREAD_MIN: Final = 15.0
 #: Weather floors: coldest/hottest/windiest only say something at or past these.
-COLD_MAX_F: Final = 50.0
-HOT_MIN_F: Final = 80.0
-GUST_MIN_MPH: Final = 20.0
+COLD_MAX_F: Final = 55.0
+HOT_MIN_F: Final = 78.0
+GUST_MIN_MPH: Final = 18.0
 #: The year-so-far line fires on crossing a multiple of this many rounds, or on passing last year.
-YEAR_ROUND_STEP: Final = 250
+YEAR_ROUND_STEP: Final = 100
 YEAR_MIN_SUNDAYS: Final = 26  # a "full" earlier year
 #: club_next: within this many typical Sundays of the next club milestone.
-CLUB_REACH_SUNDAYS: Final = 3
+CLUB_REACH_SUNDAYS: Final = 5
 CLUB_TYPICAL_WINDOW: Final = 8
-#: attendance streak: only a multiple of STREAK_STEP (a longer-run rule made one person news
-#: every five weeks).
-STREAK_STEP: Final = 10
+#: attendance streak: a multiple of STREAK_STEP, or the Sunday after (a longer-run rule made one
+#: person news every five weeks).
+STREAK_STEP: Final = 5
+STREAK_MIN: Final = 10
+STREAK_WINDOW: Final = 2  # the multiple itself and the Sunday after it, until said
 #: station feats: every target broken at this many stations; this many shooters on one station.
 FEAT_STATIONS_MIN: Final = 4
 FEAT_CLUB_MIN: Final = 3
-#: improvement: average of the last 20 rounds up this many targets on 52 weeks earlier, said when
-#: the gain first reaches it and again at each whole target above it.
+#: improvement: average of the last 20 rounds up this many targets on 52 weeks earlier; eligible
+#: while it holds, keyed by the whole-target step so each step is said once per person.
 IMPROVE_WINDOW: Final = 20
-IMPROVE_MIN_GAIN: Final = 2.0
+IMPROVE_MIN_GAIN: Final = 1.5
 IMPROVE_MIN_LAST_YEAR: Final = 10
 YEAR_DAYS: Final = 364
-#: coming_up: said once, exactly this many Sundays before the next multiple of COMING_STEP.
+#: coming_up: eligible this many Sundays (or fewer) before the next multiple of COMING_STEP,
+#: until said for that (person, number).
 COMING_STEP: Final = 25
-COMING_AT: Final = 1
+COMING_WITHIN: Final = 2
 
 #: How much each type matters, on the scale of the site's ranked insights (care x strength).
 CARE: Final[dict[str, float]] = {
@@ -120,12 +123,17 @@ class RecapFact:
     text: str
     named_ids: tuple[int, ...]
     strength: float
-    #: What else the line is about besides who it names (a club milestone); '' when nothing.
+    #: What the line is about besides who it names (a milestone, a threshold, the 'since' anchor):
+    #: with the type and the names it is the line's content, which rests for 12 weeks once said.
+    #: '' when the line is about nothing in particular (only its type and words are held back).
     key: str = ""
 
 
-def _fact(kind: str, text: str, magnitude: float, named: tuple[int, ...] = ()) -> RecapFact:
-    return RecapFact(kind, text, named, CARE[kind] * min(max(magnitude, MAG_FLOOR), MAG_CAP))
+def _fact(
+    kind: str, text: str, magnitude: float, named: tuple[int, ...] = (), key: str = ""
+) -> RecapFact:
+    strength = CARE[kind] * min(max(magnitude, MAG_FLOOR), MAG_CAP)
+    return RecapFact(kind, text, named, strength, key)
 
 
 def month_year(day: date) -> str:
@@ -134,6 +142,11 @@ def month_year(day: date) -> str:
 
 def _since(day: date | None) -> str:
     return "on record" if day is None else f"since {month_year(day)}"
+
+
+def _anchor(day: date | None) -> str:
+    """The 'since' of a claim as a key: the same claim has the same anchor."""
+    return "record" if day is None else f"{day.year}-{day.month:02d}"
 
 
 def _plural(n: int, one: str, many: str) -> str:
@@ -262,6 +275,7 @@ class FactSource:
                     "turnout",
                     f"{n} came out, the biggest crowd {_since(last)}.",
                     _gap_magnitude(last, today.date),
+                    key=f"since:{_anchor(last)}",
                 )
             )
         same = [s for s in prior if s.date.month == today.date.month]
@@ -273,7 +287,12 @@ class FactSource:
         ):
             month = calendar.month_name[today.date.month]
             options.append(
-                _fact("turnout", f"{n} came out, the biggest {month} Sunday on record.", 1.0)
+                _fact(
+                    "turnout",
+                    f"{n} came out, the biggest {month} Sunday on record.",
+                    1.0,
+                    key=f"month:{month}",
+                )
             )
         return [max(options, key=lambda f: f.strength)] if options else []
 
@@ -298,6 +317,7 @@ class FactSource:
                 "course_type",
                 f"The first {label} course {_since(last)}.",
                 _gap_magnitude(last, today.date),
+                key=label,
             )
         ]
 
@@ -338,27 +358,35 @@ class FactSource:
         span: int | None
         if beaten:
             span = (today.date - beaten[-1].date).days
-            since = f"since {beaten[-1].date.year}"
+            since, year = f"since {beaten[-1].date.year}", str(beaten[-1].date.year)
         elif same:
             span = (today.date - same[0].date).days
-            since = "on record"
+            since, year = "on record", "record"
         else:
-            span = None
-            since = ""
+            span, since, year = None, "", ""
         if span is not None and span >= SCORE_MONTH_DAYS:
             name = calendar.month_name[month]
             text = (
                 f"The middle score of {_num(middle)} was the highest for "
                 f"{_a(month)} {name} Sunday {since}."
             )
-            return [_fact("scores_context", text, span / SCORE_MONTH_DAYS)]
+            return [
+                _fact("scores_context", text, span / SCORE_MONTH_DAYS, key=f"month:{name}:{year}")
+            ]
         better = [s for s in prior if s.median is not None and s.median >= middle]
         last = better[-1].date if better else None
         if _long_enough(last, today.date, len(prior)) and (
             last is None or _weeks(last, today.date) >= SCORE_OVERALL_WEEKS
         ):
             text = f"The middle score of {_num(middle)} was the highest {_since(last)}."
-            return [_fact("scores_context", text, _gap_magnitude(last, today.date))]
+            return [
+                _fact(
+                    "scores_context",
+                    text,
+                    _gap_magnitude(last, today.date),
+                    key=f"overall:{_anchor(last)}",
+                )
+            ]
         return []
 
     # --- 4. weather -------------------------------------------------------------------------
@@ -369,6 +397,7 @@ class FactSource:
         options: list[RecapFact] = []
 
         def consider(
+            key: str,
             wording: Callable[[date | None], str],
             value: float | None,
             qualifies: Callable[[float], bool],
@@ -380,11 +409,19 @@ class FactSource:
             last = next((s.date for s in reversed(prior) if matches(s)), None)
             history = sum(measured(s) is not None for s in prior)
             if _long_enough(last, today.date, history):
-                options.append(_fact("weather", wording(last), _gap_magnitude(last, today.date)))
+                options.append(
+                    _fact(
+                        "weather",
+                        wording(last),
+                        _gap_magnitude(last, today.date),
+                        key=f"{key}:{_anchor(last)}",
+                    )
+                )
 
         temp, gust, rain = today.temp_f, today.gust_mph, today.precip_in
         shown_t, shown_g = _round(temp or 0.0), _round(gust or 0.0)
         consider(
+            "cold",
             lambda last: f"The coldest Sunday {_since(last)}: {shown_t} °F.",
             temp,
             lambda v: v <= COLD_MAX_F,
@@ -392,6 +429,7 @@ class FactSource:
             lambda s: s.temp_f,
         )
         consider(
+            "hot",
             lambda last: f"The hottest Sunday {_since(last)}: {shown_t} °F.",
             temp,
             lambda v: v >= HOT_MIN_F,
@@ -399,6 +437,7 @@ class FactSource:
             lambda s: s.temp_f,
         )
         consider(
+            "wind",
             lambda last: f"The windiest Sunday {_since(last)}: gusts up to {shown_g} mph.",
             gust,
             lambda v: v >= GUST_MIN_MPH,
@@ -406,6 +445,7 @@ class FactSource:
             lambda s: s.gust_mph,
         )
         consider(
+            "wet",
             lambda last: f"The first wet Sunday {_since(last)}.",
             rain,
             lambda v: v >= frames.WET_PRECIP_IN,
@@ -446,11 +486,11 @@ class FactSource:
         last_held = sum(s.date.year == year - 1 for s in sundays[:i])
         if last_held >= YEAR_MIN_SUNDAYS and before <= last_total < so_far:
             text = f"{lead}, already more than all of {year - 1} ({last_total:,} rounds)."
-            return [_fact("year_so_far", text, 1.5)]
+            return [_fact("year_so_far", text, 1.5, key=f"passed:{year - 1}")]
         crossed = so_far // YEAR_ROUND_STEP
         if crossed > before // YEAR_ROUND_STEP:
             text = f"{lead}, past the {crossed * YEAR_ROUND_STEP:,}-round mark."
-            return [_fact("year_so_far", text, 1.0)]
+            return [_fact("year_so_far", text, 1.0, key=f"step:{crossed * YEAR_ROUND_STEP}")]
         return []
 
     # --- 7. club_next -----------------------------------------------------------------------
@@ -480,16 +520,13 @@ class FactSource:
             if reach is None:
                 continue
             upcoming, remaining, limit = reach
-            earlier = self._reach(index - 1, metric) if index > 0 else None
-            if earlier is not None and earlier[0] == upcoming:
-                continue  # said when it first came within reach
             one, many = _NOUNS[metric]
             text = (
                 f"{_plural(remaining, 'more ' + one, 'more ' + many)} and the club reaches "
                 f"{cm.milestone_label(metric, upcoming)} all time."
             )
-            fact = _fact("club_next", text, 2.0 - 1.5 * remaining / limit)
-            out.append(replace(fact, key=f"{metric}:{upcoming}"))
+            magnitude = 2.0 - 1.5 * remaining / limit
+            out.append(_fact("club_next", text, magnitude, key=f"{metric}:{upcoming}"))
         return out
 
     # --- 8. attendance_streak ---------------------------------------------------------------
@@ -513,9 +550,10 @@ class FactSource:
         for sid, s in sorted(current.items()):
             if sid not in came:
                 continue
-            if s >= STREAK_STEP and s % STREAK_STEP == 0:
+            if s >= STREAK_MIN and s % STREAK_STEP < STREAK_WINDOW:
                 text = f"{fr.profiles[sid].name} has come out {s} Sundays in a row."
-                out.append(_fact("attendance_streak", text, s / 30.0, (sid,)))
+                key = str(s - s % STREAK_STEP)
+                out.append(_fact("attendance_streak", text, s / 30.0, (sid,), key))
         return out
 
     # --- 9. station_feats -------------------------------------------------------------------
@@ -557,13 +595,13 @@ class FactSource:
             profile = fr.profiles.get(sid)
             if cleaned >= FEAT_STATIONS_MIN and profile is not None and not profile.deceased:
                 text = f"{profile.name} broke every target at {cleaned} of {shot} stations."
-                out.append(_fact("station_feats", text, cleaned / 4.0, (sid,)))
+                out.append(_fact("station_feats", text, cleaned / 4.0, (sid,), str(cleaned)))
         crowded = {label: len(who) for label, who in cleaners.items() if len(who) >= FEAT_CLUB_MIN}
         if crowded:
             label = min(crowded, key=lambda lab: (-crowded[lab], label_sort_key(lab)))
             n = crowded[label]
             text = f"{_plural(n, 'shooter', 'shooters')} broke every target at Station {label}."
-            out.append(_fact("station_feats", text, n / 4.0))
+            out.append(_fact("station_feats", text, n / 4.0, key=f"station:{label}"))
         return out
 
     # --- 10. improvement --------------------------------------------------------------------
@@ -590,14 +628,11 @@ class FactSource:
             gain = self._gain(days, today.date)
             if gain is None or gain < IMPROVE_MIN_GAIN:
                 continue
-            before = self._gain(days[:-1], days[-2].date) if len(days) > 1 else None
-            if before is not None and math.floor(before) >= math.floor(gain):
-                continue  # already said at this whole-target step
             text = (
                 f"{profile.name}'s average over the last {IMPROVE_WINDOW} rounds is up "
                 f"{gain:.1f} targets compared with a year ago."
             )
-            out.append(_fact("improvement", text, gain / 3.0, (sid,)))
+            out.append(_fact("improvement", text, gain / 3.0, (sid,), f"step:{math.floor(gain)}"))
         return out
 
     # --- 11. coming_up ----------------------------------------------------------------------
@@ -614,14 +649,14 @@ class FactSource:
             count = fr.appearances_through(sid, today.date)
             upcoming = (count // COMING_STEP + 1) * COMING_STEP
             to_go = upcoming - count  # 25 when today is itself the round number: Milestones'
-            if to_go != COMING_AT:
+            if to_go > COMING_WITHIN:
                 continue
             text = (
                 f"{profile.name} is {_plural(to_go, 'Sunday', 'Sundays')} away from "
                 f"{upcoming:,} Sundays at the club."
             )
             bonus = 0.5 if upcoming % 100 == 0 else 0.0
-            out.append(_fact("coming_up", text, 1.0 + bonus, (sid,)))
+            out.append(_fact("coming_up", text, 1.0 + bonus, (sid,), str(upcoming)))
         return out
 
 

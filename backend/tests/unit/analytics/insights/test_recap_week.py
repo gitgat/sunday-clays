@@ -1,4 +1,4 @@
-"""The email's "This week" insights: what is eligible, how 3-5 are picked, the 12-week rotation."""
+"""The email's "This week" insights: what is eligible, how up to six are picked, what rests."""
 
 import itertools
 import re
@@ -20,11 +20,9 @@ from sunday_clays.analytics.recap_facts import RecapFact
 from sunday_clays.analytics.recap_insights import (
     ELIGIBLE,
     EXCLUDED,
-    FILL_GAP,
     HORIZON,
     MAX_PICKS,
     MILESTONE_KINDS,
-    MIN_PICKS,
     NO_REPEAT_WEEKS,
     recap_text_problems,
     week_insights,
@@ -275,11 +273,11 @@ def test_text_that_trips_the_lint_is_dropped_but_a_shooter_called_gold_is_not() 
 # --- picking 4-6 ---------------------------------------------------------------------------------
 
 
-def test_picks_the_six_highest_ranked_and_never_the_you_form() -> None:
-    assert (MIN_PICKS, MAX_PICKS) == (4, 6)
+def test_picks_the_five_highest_ranked_and_never_the_you_form() -> None:
+    assert MAX_PICKS == 5
     rows = [row(k, DAY, score=10 - i, sid=i + 1) for i, k in enumerate(KINDS[:8])]
     out = week_picks(rows, [DAY], DAY, no_supersedes)
-    assert [x.type for x in out] == KINDS[:6]
+    assert [x.type for x in out] == KINDS[:5]
     assert all("You" not in x.text for x in out)
 
 
@@ -351,66 +349,137 @@ def test_nobody_named_in_the_previous_sundays_recap_is_named_again() -> None:
     assert lines(days[2]) == ["A is close again."]  # A skipped a week: free again
 
 
-def test_the_previous_sundays_shooters_are_off_limits_even_to_the_fill() -> None:
-    days = sundays(3)
-    pool = {
-        days[0]: [fact("t1", "one", 9.0, 1), fact("t2", "two", 8.0, 2)],
-        days[1]: [fact("t3", "three", 9.0, 3), fact("t1", "one again", 8.0, 1)],
-        days[2]: [fact("t1", "one yet again", 8.0, 1), fact("t4", "four", 7.0, 4)],
-    }
-    out = [x.text for x in week_picks([], days, days[2], no_supersedes, lambda d: pool[d])]
-    assert out == ["four"]  # shooter 3 (the week before) is not in the pool; t1 is inside the gap
-    out1 = [x.text for x in week_picks([], days, days[1], no_supersedes, lambda d: pool[d])]
-    assert out1 == ["three"]  # shooter 1 was named last week; the fill cannot bring them back
-
-
-# --- the 12-week rotation ------------------------------------------------------------------------
+# --- what rests: kind a week, (kind, subject) twelve weeks (owner, 2026-10-12) --------------------
 
 
 def weekly_pool(days: list[date], kinds: list[str]) -> list[InsightRow]:
-    """The same kinds on every Sunday, ranked in the given order, each about its own shooter."""
-    return [row(k, d, score=100 - i, sid=i + 1) for d in days for i, k in enumerate(kinds)]
+    """The same kinds on every Sunday, ranked in the given order, each about a new shooter and
+    worded differently each week (numbers do not count as different words)."""
+
+    def headline(n: int, i: int) -> list[Any]:
+        week = "".join(chr(97 + (n // 26**p) % 26) for p in range(2))
+        return [
+            {"t": "shooter", "id": 100 * n + i + 1, "v": "Hadley, Ike"},
+            {"t": "text", "v": f" was in the news in week {week}, item {chr(97 + i)}."},
+        ]
+
+    return [
+        row(k, d, score=100 - i, sid=100 * n + i + 1, headline=headline(n, i))
+        for n, d in enumerate(days)
+        for i, k in enumerate(kinds)
+    ]
 
 
-def test_a_type_used_in_the_last_12_weeks_is_skipped() -> None:
-    days = sundays(3)
-    pool = KINDS[:12]
-    rows = weekly_pool(days, pool)
-    assert picks(rows, days, days[0]) == pool[0:6]
-    assert picks(rows, days, days[1]) == pool[6:12]
+def lines_on(pool: dict[int, list[RecapFact]], n: int, at: int) -> list[str]:
+    days = sundays(n)
+    return [
+        x.text
+        for x in week_picks(
+            [], days, days[at], no_supersedes, lambda d: pool.get(days.index(d), [])
+        )
+    ]
 
 
-def test_fewer_than_four_fresh_types_fill_from_the_least_recently_used() -> None:
-    letters = "abcdef"
-    pool: dict[int, list[RecapFact]] = {
-        k: [fact(f"t{k}", f"First {letters[k]}.", 1.0)] for k in range(6)
+def test_a_kind_is_never_used_two_weeks_running_but_returns_after_one_week() -> None:
+    pool = {
+        0: [fact("a", "A one.", 9.0), fact("b", "B one.", 8.0)],
+        1: [fact("a", "A two.", 9.0), fact("b", "B two.", 8.0), fact("c", "C two.", 1.0)],
+        2: [fact("a", "A three.", 9.0), fact("b", "B three.", 8.0)],
     }
-    last = 9  # nothing between: types of weeks 0-4 are outside the 4-week gap, week 5's is not
-    pool[last] = [fact(f"t{k}", f"Again {letters[k]}.", float(k + 1)) for k in range(6)]
-    # the least recently used four, shown strongest first
-    assert lines_on(pool, last + 1, last) == ["Again d.", "Again c.", "Again b.", "Again a."]
+    assert lines_on(pool, 3, 0) == ["A one.", "B one."]
+    assert lines_on(pool, 3, 1) == ["C two."]  # a and b were last week's kinds
+    assert lines_on(pool, 3, 2) == ["A three.", "B three."]  # back, with different content
 
 
-def test_a_fill_never_repeats_a_sentence_sent_in_the_previous_12_weeks() -> None:
-    days = sundays(3)
-    same = [{"t": "text", "v": "The same sentence."}]
-    rows = [row(KINDS[0], d, headline=same, sid=1, score=9) for d in days[:2]]
-    rows += [row(k, d, score=8 - i, sid=2 + i) for d in days for i, k in enumerate(KINDS[1:5])]
-    rows += [row(KINDS[0], days[2], headline=same, sid=9, score=9)]
-    out = picks(rows, days, days[2])
-    assert KINDS[0] not in out  # identical to week 1's and week 2's, so even as a fill it is out
+def test_a_thin_week_stays_thin_there_is_no_fill() -> None:
+    pool = {
+        0: [fact(k, f"{k} one.", 9.0) for k in "abcd"],
+        1: [fact(k, f"{k} two.", 9.0) for k in "abcd"],
+    }
+    assert lines_on(pool, 2, 1) == []
 
 
-def test_the_window_is_exactly_twelve_held_sundays() -> None:
+def test_the_same_kind_and_person_rest_twelve_held_sundays() -> None:
+    pool = {
+        0: [fact("improvement", "Ana climbed a little.", 9.0, 1)],
+        2: [fact("improvement", "Ana climbed some.", 9.0, 1)],
+        12: [fact("improvement", "Ana climbed more.", 9.0, 1)],
+        13: [fact("improvement", "Ana climbed a lot.", 9.0, 1)],
+    }
+    assert lines_on(pool, 14, 2) == []  # two weeks later: same person, same kind
+    assert lines_on(pool, 14, 12) == []  # week 0 is the twelfth Sunday back: still resting
+    assert lines_on({0: pool[0], 13: pool[13]}, 14, 13) == ["Ana climbed a lot."]  # thirteen back
+
+
+def test_the_same_person_in_another_kind_is_free_after_a_week() -> None:
+    pool = {
+        0: [fact("improvement", "Ana climbed.", 9.0, 1)],
+        2: [fact("coming_up", "Ana is close.", 9.0, 1)],
+    }
+    assert lines_on(pool, 3, 2) == ["Ana is close."]
+
+
+def test_a_kind_naming_nobody_comes_back_after_one_week_with_new_content() -> None:
+    pool = {0: [fact("weather", "Hot: 83.", 9.0)], 2: [fact("weather", "Cold: 40.", 9.0)]}
+    assert lines_on(pool, 3, 2) == ["Cold: 40."]
+
+
+def test_a_milestone_key_rests_twelve_weeks_but_another_milestone_is_free() -> None:
+    pool: dict[int, list[RecapFact]] = {
+        0: [fact("club_next", "Eighty rounds to go.", 9.0, key="rounds:7500")],
+        2: [
+            fact("club_next", "Forty-three rounds to go.", 9.0, key="rounds:7500"),
+            fact("club_next", "Nine Sundays to go.", 5.0, key="sundays_held:700"),
+        ],
+    }
+    assert lines_on(pool, 3, 2) == ["Nine Sundays to go."]
+
+
+def test_a_sentence_is_the_same_when_only_its_numbers_differ() -> None:
+    pool = {
+        0: [fact("a", "19 Sundays since the last round of 49 or better.", 9.0)],
+        1: [fact("b", "No news.", 9.0)],
+        2: [fact("a", "20 Sundays since the last round of 49 or better.", 9.0)],
+        3: [fact("c", "21 Sundays since the last round of 49 or better.", 9.0)],
+    }
+    assert lines_on(pool, 3, 2) == []  # same kind, new number: the same sentence
+    assert lines_on(pool, 4, 3) == []  # another kind saying the same words
     assert NO_REPEAT_WEEKS == 12
-    days = sundays(14)
-    x, fresh = KINDS[0], KINDS[1:9]
-    rows = [row(x, days[0], score=50, sid=1)]
-    rows += [row(x, days[12], score=50, sid=1), row(x, days[13], score=50, sid=1)]
-    rows += [row(k, days[12], score=5, sid=10 + i) for i, k in enumerate(fresh[0:4])]
-    rows += [row(k, days[13], score=5, sid=20 + i) for i, k in enumerate(fresh[4:8])]
-    assert x not in picks(rows, days, days[12])  # day 0 is 12 Sundays back: still blocked
-    assert x in picks(rows, days, days[13])  # 13 back: free again
+
+
+def test_a_recap_fact_with_only_other_numbers_is_new_content_unless_it_is_the_same_sentence() -> (
+    None
+):
+    """The digit-blind check is for the stored insights, whose templates carry the numbers; the
+    recap facts say what they are about in their key and are judged by that and exact words."""
+    pool = {
+        0: [fact("on_this_day", "A year ago this week: 28 shooters, top score 46.", 9.0)],
+        2: [fact("on_this_day", "A year ago this week: 24 shooters, top score 45.", 9.0)],
+        4: [fact("turnout", "A year ago this week: 28 shooters, top score 46.", 9.0)],
+    }
+    assert lines_on(pool, 3, 2) == ["A year ago this week: 24 shooters, top score 45."]
+    assert lines_on(pool, 5, 4) == []  # exactly the sentence of week 0
+
+
+def test_an_event_fact_blocked_at_two_away_is_still_said_at_one_away() -> None:
+    blocked = {
+        0: [
+            fact("coming_up", "Bo is 2 Sundays away from 25 Sundays at the club.", 9.0, 2, key="25")
+        ],
+        1: [
+            fact(
+                "coming_up", "Ike is 2 Sundays away from 50 Sundays at the club.", 9.0, 1, key="50"
+            )
+        ],
+        2: [
+            fact("coming_up", "Ike is 1 Sunday away from 50 Sundays at the club.", 9.0, 1, key="50")
+        ],
+    }
+    assert lines_on(blocked, 3, 1) == []  # coming_up was last week's kind
+    assert lines_on(blocked, 3, 2) == ["Ike is 1 Sunday away from 50 Sundays at the club."]
+    said = {i: blocked[i] for i in (1, 2)}
+    assert lines_on(said, 3, 1) == [blocked[1][0].text]
+    assert lines_on(said, 3, 2) == []  # said already (and Ike was named last week)
 
 
 def test_only_held_regular_sundays_count_as_weeks() -> None:
@@ -418,20 +487,17 @@ def test_only_held_regular_sundays_count_as_weeks() -> None:
     days = sundays(14)
     x = KINDS[0]
     rows = [row(x, days[0], score=50, sid=1), row(x, days[13], score=50, sid=1)]
-    rows += [row(k, days[13], score=5, sid=10 + i) for i, k in enumerate(KINDS[2:6])]
-    # All 14 held: X was 13 Sundays back, so it is free.
-    assert x in picks(rows, days, days[13])
-    # Day 5 was a special Sunday (not held): X was 12 held Sundays back, so it is still blocked.
-    held = [d for d in days if d != days[5]]
+    assert x in picks(rows, days, days[13])  # all 14 held: 13 Sundays back, free
+    held = [d for d in days if d != days[5]]  # day 5 was special: 12 held Sundays back, resting
     assert x not in picks(rows, held, days[13])
 
 
 def test_the_same_date_always_gives_the_same_picks_and_only_the_horizon_matters() -> None:
     assert HORIZON == 36
     days = sundays(45)
-    pool = KINDS[:9]
-    rows = weekly_pool(days, pool)
+    rows = weekly_pool(days, KINDS[:9])
     first = picks(rows, days, days[44])
+    assert first, "the pool is not empty"
     assert first == picks(rows, days, days[44])
     recent_rows = [r for r in rows if r.anchor_date in days[9:]]  # 36 Sundays ending 44
     assert first == picks(recent_rows, days[9:], days[44])
@@ -461,103 +527,3 @@ def test_the_real_milestone_sentence_passes_the_lint_and_avoids_pronouns() -> No
         assert recap_text_problems(text) == [], text
         assert banned_in(text) == [], text
         assert not PRONOUNS.search(text), text
-
-
-# --- no kind two weeks running, a gap before the fill reuses one (review, 2026-10-11) -----------
-
-WORDS = "ABCDEFGHIJ"  # sentences differing only in a digit count as the same sentence
-GAP = 3  # the fill leaves a type alone for this many held Sundays
-
-
-def lines_on(pool: dict[int, list[RecapFact]], n: int, at: int) -> list[str]:
-    days = sundays(n)
-    return [
-        x.text
-        for x in week_picks(
-            [], days, days[at], no_supersedes, lambda d: pool.get(days.index(d), [])
-        )
-    ]
-
-
-def test_the_fill_gap_is_three_held_sundays() -> None:
-    assert FILL_GAP == GAP
-
-
-def rotation_pool(weeks: int) -> dict[int, list[RecapFact]]:
-    """Week w offers four types of its own (named nobody), so every early week is full."""
-    return {
-        w: [fact(f"w{w}t{j}", f"Week {WORDS[w]} line {'abcd'[j]}.", 9.0 - j) for j in range(4)]
-        for w in range(weeks)
-    }
-
-
-def test_the_fill_never_brings_back_a_type_from_the_last_three_held_sundays() -> None:
-    n = GAP + 2
-    pool = rotation_pool(n - 1)
-    last = n - 1
-    # the last week offers only old types: one of week 0's (outside the gap), week 1's (inside)
-    pool[last] = [fact("w0t0", "Again A a.", 1.0)] + [
-        fact(f"w1t{j}", f"Again B {'abcd'[j]}.", 20.0 - j) for j in range(4)
-    ]
-    assert lines_on(pool, n, last) == ["Again A a."]
-
-
-def test_a_week_with_too_few_allowed_types_has_fewer_than_four_lines_not_a_repeat() -> None:
-    n = GAP + 2
-    pool = rotation_pool(n - 1)
-    last = n - 1
-    pool[last] = [
-        fact("w0t0", "Again A a.", 9.0),
-        fact("w0t1", "Again A b.", 8.0),
-        fact(f"w{last - 1}t0", "Again last week.", 20.0),  # last week's type: never
-        fact("fresh", "Something fresh.", 1.0),
-    ]
-    assert lines_on(pool, n, last) == ["Again A a.", "Again A b.", "Something fresh."]
-
-
-def test_last_weeks_type_is_never_taken_even_when_the_week_would_be_empty() -> None:
-    pool = {0: [fact("a", "A happened.", 9.0)], 1: [fact("a", "A happened again.", 9.0)]}
-    assert lines_on(pool, 2, 0) == ["A happened."]
-    assert lines_on(pool, 2, 1) == []
-
-
-def test_a_sentence_is_the_same_when_only_its_numbers_differ() -> None:
-    pool = {
-        0: [fact("a", "19 Sundays since the last round of 49 or better.", 9.0)],
-        1: [fact("b", "20 Sundays since the last round of 49 or better.", 9.0)],
-    }
-    assert lines_on(pool, 2, 1) == []
-
-
-def test_the_same_person_and_type_rest_twelve_weeks_even_through_the_fill() -> None:
-    n = GAP + 4
-    pool: dict[int, list[RecapFact]] = {0: [fact("improvement", "Ana climbed a little.", 9.0, 1)]}
-    pool[n - 1] = [
-        fact("improvement", "Ana climbed a lot.", 9.0, 1),
-        fact("improvement", "Bo climbed some.", 5.0, 2),
-    ]
-    assert lines_on(pool, n, n - 1) == ["Bo climbed some."]
-
-
-def test_a_milestone_key_rests_twelve_weeks_but_another_milestone_is_free() -> None:
-    n = GAP + 4
-    pool: dict[int, list[RecapFact]] = {
-        0: [fact("club_next", "Eighty rounds to go.", 9.0, key="rounds:7500")]
-    }
-    pool[n - 1] = [
-        fact("club_next", "Forty-three rounds to go.", 9.0, key="rounds:7500"),
-        fact("club_next", "Nine Sundays to go.", 5.0, key="sundays_held:700"),
-    ]
-    assert lines_on(pool, n, n - 1) == ["Nine Sundays to go."]
-
-
-def test_the_fill_also_rests_anyone_named_in_the_last_two_weeks() -> None:
-    n = 7
-    pool: dict[int, list[RecapFact]] = {
-        0: [fact("old", "Eve first.", 9.0, 5)],
-        3: [fact("mid", "Cy second.", 9.0, 7)],  # shooter 7 is named in week 3
-        5: [fact("old", "Cy third.", 9.0, 7), fact("new", "Dee did a thing.", 8.0, 9)],
-    }
-    # week 5: type old is outside the gap (week 0) and week 4 named nobody, but shooter 7 was
-    # named in week 3 (inside the last two weeks), so only the fresh line stands
-    assert lines_on(pool, n, 5) == ["Dee did a thing."]

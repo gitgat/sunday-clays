@@ -1,18 +1,27 @@
-"""The weekly club email's "This week" lines (owner, 2026-10-04; amended 2026-10-11).
+"""The weekly club email's "This week" lines (owner, 2026-10-04; amended 2026-10-11 and 2026-10-12).
 
 The email goes to people who never open the site, so only a vetted subset of the Sunday page's
 stored insight rows is eligible (rendered with the named headline), and they share the pool with
-the recap-only facts of `recap_facts`. Up to six lines a Sunday (four when the pool allows), one
-per type, nobody named twice or named in the previous Sunday's recap. A type is not repeated
-within 12 held Sundays; only if fewer than four lines remain does a fill bring a type back, and
-then never one from the last three Sundays, so a thin week stays thin rather than repeat last
-week. Stateless: earlier weeks' picks are recomputed by replaying the held regular Sundays in date
-order over a bounded horizon, so the same date always gives the same picks.
+the recap-only facts of `recap_facts`. Up to five lines a Sunday (MAX_PICKS), strongest first, one
+per type, nobody named twice. Repeats are judged by content, not by kind (owner, 2026-10-12):
+
+1. a type used in the previous held Sunday's recap is not used (a type may return after one week);
+2. a (type, who or what it is about) used in any of the previous 12 held Sundays is skipped;
+3. nobody named in the previous held Sunday's recap is named;
+4. a sentence sent in the previous 12 weeks is not sent again, where a stored insight's sentence
+   is compared with its numbers blanked ("20 Sundays since" is "21 Sundays since") and a recap
+   fact's exactly, because its key already says what it is about.
+
+There is no fill: a week the rules leave short stays short. Stateless: earlier weeks' picks are
+recomputed by replaying the held regular Sundays in date order over a bounded horizon, so the same
+date always gives the same picks. Inside one date's replay the rules hold exactly; across dates
+(each replayed alone from empty history) they hold as measured on the fixture world, see the
+world test and the spec amendment.
 """
 
 import functools
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from datetime import date
 from typing import Final
 
@@ -23,16 +32,11 @@ from sunday_clays.analytics.insights.rank import RECENCY_TOP
 from sunday_clays.analytics.insights.store import InsightRow
 from sunday_clays.analytics.insights.templates import Segment, plain, render
 from sunday_clays.analytics.insights.types import Scope
-from sunday_clays.analytics.recap_facts import RecapFact
+from sunday_clays.analytics.recap_facts import FACT_TYPES, RecapFact
 
 TARGETS_KIND: Final = "pf.targets-milestone"
-MAX_PICKS: Final = 6
-MIN_PICKS: Final = 4
+MAX_PICKS: Final = 5
 NO_REPEAT_WEEKS: Final = 12
-#: The fill never reuses a type from the last FILL_GAP held Sundays, nor a shooter from the last
-#: FILL_NAME_WEEKS.
-FILL_GAP: Final = 3
-FILL_NAME_WEEKS: Final = 2
 HORIZON: Final = 36  # held regular Sundays replayed, ending at the requested date
 
 #: Kinds (and variants) a reader who never visits the site can follow from the sentence alone.
@@ -146,9 +150,11 @@ def _order(line: RecapFact) -> tuple[float, str, str]:
 _DIGITS: Final = re.compile(r"\d[\d,.]*")
 
 
-def _wording(text: str) -> str:
-    """A sentence with its numbers blanked: '19 Sundays since' and '20 Sundays since' match."""
-    return _DIGITS.sub("#", text)
+def _wording(line: RecapFact) -> str:
+    """The sentence a repeat is judged by. A stored insight's template carries its numbers, so
+    '19 Sundays since' and '20 Sundays since' are one sentence there. A recap fact says what it is
+    about in its key, so only its exact words count."""
+    return line.text if line.type in FACT_TYPES else _DIGITS.sub("#", line.text)
 
 
 def _subject(line: RecapFact) -> tuple[str, tuple[int, ...], str] | None:
@@ -157,57 +163,38 @@ def _subject(line: RecapFact) -> tuple[str, tuple[int, ...], str] | None:
     return (line.type, line.named_ids, line.key) if line.named_ids or line.key else None
 
 
-def _pick(
-    pool: Sequence[RecapFact],
-    history: Sequence[Sequence[RecapFact]],
-    last_used: Mapping[str, int],
-) -> list[RecapFact]:
-    """4-6 lines (R2): strongest first, one per type, nobody twice or named last week.
+def _pick(pool: Sequence[RecapFact], history: Sequence[Sequence[RecapFact]]) -> list[RecapFact]:
+    """Up to MAX_PICKS lines, strongest first, one per type, nobody twice (owner, 2026-10-12).
 
-    A type used in the previous 12 held Sundays is skipped, and so is a (type, person or
-    milestone) already used in them. Only if fewer than MIN_PICKS remain does the fill let back
-    in the least recently used types, but never a type used in the last FILL_GAP held Sundays
-    (so never last week's), nobody named in the last two, and never a sentence (numbers
-    aside) sent in the previous 12 weeks. A week the rules leave short stays short.
+    A line is skipped when its type was in the previous held Sunday's recap, when anyone it names
+    was named there, when its (type, who and what it is about) was used in the previous 12 held
+    Sundays, or when its words (numbers aside) were. There is no fill: a thin week stays thin.
     """
     window = history[-NO_REPEAT_WEEKS:]
-    recent = {x.type for week in window for x in week}
+    last = history[-1] if history else []
+    last_types = {x.type for x in last}
+    last_names = {n for x in last for n in x.named_ids}
     recent_subjects = {_subject(x) for week in window for x in week} - {None}
-    recent_texts = {_wording(x.text) for week in window for x in week}
-    previous_names = {n for x in history[-1] for n in x.named_ids} if history else set()
-    gap_types = {x.type for week in history[-FILL_GAP:] for x in week}
-    rest_names = {n for week in history[-FILL_NAME_WEEKS:] for x in week for n in x.named_ids}
+    recent_texts = {_wording(x) for week in window for x in week}
     chosen: list[RecapFact] = []
     types: set[str] = set()
     named: set[int] = set()
-
-    def take_if_fits(line: RecapFact, resting: set[int]) -> None:
-        # The sentence and subject checks apply to both passes: deliberately stricter than R2(c),
-        # which asks for them only in the fill (a fresh type seldom repeats either).
+    for line in sorted(pool, key=_order):
+        names = set(line.named_ids)
         if (
-            line.type in types
-            or _wording(line.text) in recent_texts
+            len(chosen) >= MAX_PICKS
+            or line.type in types
+            or line.type in last_types
+            or _wording(line) in recent_texts
             or _subject(line) in recent_subjects
-            or named & set(line.named_ids)
-            or resting & set(line.named_ids)
+            or names & named
+            or names & last_names
         ):
-            return
+            continue
         chosen.append(line)
         types.add(line.type)
-        named.update(line.named_ids)
-
-    ordered = sorted(pool, key=_order)
-    for line in ordered:
-        if len(chosen) < MAX_PICKS and line.type not in recent:
-            take_if_fits(line, previous_names)
-    skipped = sorted(
-        (x for x in ordered if x.type in recent and x.type not in gap_types),
-        key=lambda x: last_used[x.type],
-    )
-    for line in skipped:  # stable sort: ties keep the strongest first
-        if len(chosen) < MIN_PICKS:
-            take_if_fits(line, previous_names | rest_names)
-    return sorted(chosen, key=_order)
+        named |= names
+    return chosen
 
 
 def week_picks(
@@ -225,14 +212,11 @@ def week_picks(
     if not horizon or horizon[-1] != day:
         return []
     history: list[list[RecapFact]] = []
-    last_used: dict[str, int] = {}
     supersedes = functools.cache(supersedes)  # the registry lookup scans modules: ask once per kind
-    for i, d in enumerate(horizon):
+    for d in horizon:
         pool = [row_line(r) for r in candidates(rows, d, supersedes)]
         pool += facts_for(d) if facts_for is not None else []
-        picked = _pick(pool, history, last_used)
-        history.append(picked)
-        last_used.update({x.type: i for x in picked})
+        history.append(_pick(pool, history))
     return history[-1]
 
 

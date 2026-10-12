@@ -220,7 +220,7 @@ def test_no_milestone_is_a_this_week_insight_and_back_strong_is_never_one(
         assert not kinds & {"pf.targets-milestone", "pf.back-strong"}, d
 
 
-def test_this_week_is_up_to_six_plain_lines_from_stored_insights_and_recap_facts(
+def test_this_week_is_up_to_five_plain_lines_from_stored_insights_and_recap_facts(
     fx_admin_client: TestClient, fx_session: Session
 ) -> None:
     recap = fx_admin_client.get(f"/api/admin/recap/{LATEST}").json()
@@ -229,7 +229,7 @@ def test_this_week_is_up_to_six_plain_lines_from_stored_insights_and_recap_facts
         for r in load_rows(fx_session)
         if r.anchor_date == date.fromisoformat(LATEST) and "sunday" in r.pages
     }
-    assert 2 <= len(recap["insights"]) <= 6  # a thin week stays thin: no repeat to fill it
+    assert len(recap["insights"]) == 4  # measured (club switch off): the latest Sunday is full
     assert len(set(recap["insights"])) == len(recap["insights"])
     own = [line for line in recap["insights"] if line not in stored]
     assert own, "a recap-only fact fills the week beyond the Sunday page's stored rows"
