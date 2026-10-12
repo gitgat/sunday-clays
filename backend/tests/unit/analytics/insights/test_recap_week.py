@@ -1,4 +1,4 @@
-"""The email's "This week" insights: what is eligible, how up to six are picked, what rests."""
+"""The email's "This week" insights: what is eligible, how MAX_PICKS are picked, what rests."""
 
 import itertools
 import re
@@ -270,14 +270,14 @@ def test_text_that_trips_the_lint_is_dropped_but_a_shooter_called_gold_is_not() 
     assert [x.type for x in out] == [KINDS[1]]
 
 
-# --- picking 4-6 ---------------------------------------------------------------------------------
+# --- picking up to MAX_PICKS ---------------------------------------------------------------------
 
 
-def test_picks_the_five_highest_ranked_and_never_the_you_form() -> None:
-    assert MAX_PICKS == 5
+def test_picks_the_six_highest_ranked_and_never_the_you_form() -> None:
+    assert MAX_PICKS == 6
     rows = [row(k, DAY, score=10 - i, sid=i + 1) for i, k in enumerate(KINDS[:8])]
     out = week_picks(rows, [DAY], DAY, no_supersedes)
-    assert [x.type for x in out] == KINDS[:5]
+    assert [x.type for x in out] == KINDS[:6]
     assert all("You" not in x.text for x in out)
 
 
@@ -401,10 +401,10 @@ def test_a_thin_week_stays_thin_there_is_no_fill() -> None:
 
 def test_the_same_kind_and_person_rest_twelve_held_sundays() -> None:
     pool = {
-        0: [fact("improvement", "Ana climbed a little.", 9.0, 1)],
-        2: [fact("improvement", "Ana climbed some.", 9.0, 1)],
-        12: [fact("improvement", "Ana climbed more.", 9.0, 1)],
-        13: [fact("improvement", "Ana climbed a lot.", 9.0, 1)],
+        0: [fact("station_feats", "Ana climbed a little.", 9.0, 1)],
+        2: [fact("station_feats", "Ana climbed some.", 9.0, 1)],
+        12: [fact("station_feats", "Ana climbed more.", 9.0, 1)],
+        13: [fact("station_feats", "Ana climbed a lot.", 9.0, 1)],
     }
     assert lines_on(pool, 14, 2) == []  # two weeks later: same person, same kind
     assert lines_on(pool, 14, 12) == []  # week 0 is the twelfth Sunday back: still resting
@@ -459,6 +459,57 @@ def test_a_recap_fact_with_only_other_numbers_is_new_content_unless_it_is_the_sa
     }
     assert lines_on(pool, 3, 2) == ["A year ago this week: 24 shooters, top score 45."]
     assert lines_on(pool, 5, 4) == []  # exactly the sentence of week 0
+
+
+def test_improvement_is_a_high_water_mark_a_lower_or_equal_step_is_never_said_again() -> None:
+    """Steps 3, 2, 3 (and 3 again thirteen weeks on) say 3 once; only a higher step is news."""
+    pool = {
+        0: [fact("improvement", "Ana is up 3.4.", 9.0, 1, key="step:3")],
+        14: [fact("improvement", "Ana is up 2.2.", 9.0, 1, key="step:2")],
+        16: [fact("improvement", "Ana is up 3.1.", 9.0, 1, key="step:3")],
+        28: [fact("improvement", "Ana is up 3.9.", 9.0, 1, key="step:3")],
+        30: [fact("improvement", "Ana is up 4.1.", 9.0, 1, key="step:4")],
+    }
+    assert lines_on(pool, 31, 0) == ["Ana is up 3.4."]
+    for at in (14, 16, 28):
+        assert lines_on(pool, 31, at) == [], at
+    assert lines_on(pool, 31, 30) == ["Ana is up 4.1."]
+
+
+def test_improvement_high_water_is_per_person() -> None:
+    pool = {
+        0: [fact("improvement", "Ana is up 3.4.", 9.0, 1, key="step:3")],
+        14: [fact("improvement", "Bo is up 2.2.", 9.0, 2, key="step:2")],
+    }
+    assert lines_on(pool, 15, 14) == ["Bo is up 2.2."]
+
+
+def test_event_facts_are_judged_against_the_whole_replay_not_the_twelve_week_window() -> None:
+    """A (person, milestone) said 13 or more weeks ago is still said: coming_up and club_next."""
+    pool: dict[int, list[RecapFact]] = {
+        0: [
+            fact("coming_up", "Bo is 1 Sunday away from 50 Sundays at the club.", 9.0, 2, key="50"),
+            fact("club_next", "80 more rounds and the club reaches 7,500.", 8.0, key="rounds:7500"),
+        ],
+        14: [
+            fact("coming_up", "Bo is 2 Sundays from 50 Sundays at the club.", 9.0, 2, key="50"),
+            fact("club_next", "40 more rounds and the club reaches 7,500.", 8.0, key="rounds:7500"),
+        ],
+    }
+    assert len(lines_on(pool, 15, 0)) == 2
+    assert lines_on(pool, 15, 14) == []
+
+
+def test_a_streak_rests_the_person_for_twenty_six_weeks_whatever_the_count() -> None:
+    pool = {
+        0: [fact("attendance_streak", "Cy has come out 10 Sundays in a row.", 9.0, 3, key="")],
+        14: [fact("attendance_streak", "Cy has come out 20 Sundays in a row.", 9.0, 3, key="")],
+        26: [fact("attendance_streak", "Cy has come out 30 Sundays in a row.", 9.0, 3, key="")],
+        27: [fact("attendance_streak", "Cy has come out 35 Sundays in a row.", 9.0, 3, key="")],
+    }
+    assert lines_on(pool, 28, 14) == []
+    assert lines_on(pool, 28, 26) == []  # week 0 is 26 back: still resting
+    assert lines_on({0: pool[0], 27: pool[27]}, 28, 27) == [pool[27][0].text]
 
 
 def test_an_event_fact_blocked_at_two_away_is_still_said_at_one_away() -> None:

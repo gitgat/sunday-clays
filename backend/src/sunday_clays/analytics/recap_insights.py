@@ -2,7 +2,7 @@
 
 The email goes to people who never open the site, so only a vetted subset of the Sunday page's
 stored insight rows is eligible (rendered with the named headline), and they share the pool with
-the recap-only facts of `recap_facts`. Up to five lines a Sunday (MAX_PICKS), strongest first, one
+the recap-only facts of `recap_facts`. Up to six lines a Sunday (MAX_PICKS), strongest first, one
 per type, nobody named twice. Repeats are judged by content, not by kind (owner, 2026-10-12):
 
 1. a type used in the previous held Sunday's recap is not used (a type may return after one week);
@@ -10,7 +10,12 @@ per type, nobody named twice. Repeats are judged by content, not by kind (owner,
 3. nobody named in the previous held Sunday's recap is named;
 4. a sentence sent in the previous 12 weeks is not sent again, where a stored insight's sentence
    is compared with its numbers blanked ("20 Sundays since" is "21 Sundays since") and a recap
-   fact's exactly, because its key already says what it is about.
+   fact's exactly, because its key already says what it is about. (Measured deviation from the
+   brief's literal digit-blind check on everything, awaiting the owner: see the spec amendment.)
+
+Event facts are news once: coming_up and club_next rest for the whole replay (not the 12 weeks),
+improvement is a high-water mark (only a step above the highest already said for that person), and
+a streak line rests that person for 26 weeks.
 
 There is no fill: a week the rules leave short stays short. Stateless: earlier weeks' picks are
 recomputed by replaying the held regular Sundays in date order over a bounded horizon, so the same
@@ -23,7 +28,7 @@ import functools
 import re
 from collections.abc import Callable, Sequence
 from datetime import date
-from typing import Final
+from typing import Any, Final
 
 from sunday_clays.analytics.insights import registry
 from sunday_clays.analytics.insights import select as sel
@@ -35,9 +40,19 @@ from sunday_clays.analytics.insights.types import Scope
 from sunday_clays.analytics.recap_facts import FACT_TYPES, RecapFact
 
 TARGETS_KIND: Final = "pf.targets-milestone"
-MAX_PICKS: Final = 5
+MAX_PICKS: Final = 6
 NO_REPEAT_WEEKS: Final = 12
 HORIZON: Final = 36  # held regular Sundays replayed, ending at the requested date
+#: Event facts are news once: they rest for the whole replay, not just the 12-week window (a
+#: milestone said 13 weeks ago is still said). Improvement is judged by its high-water mark
+#: instead. A streak is news about a person, not a number, so it rests that person for half a year
+#: whatever the count.
+REST_WEEKS: Final[dict[str, int]] = {
+    "coming_up": HORIZON,
+    "club_next": HORIZON,
+    "attendance_streak": 26,
+}
+HIGH_WATER_TYPES: Final = frozenset({"improvement"})  # only a higher step than ever said is news
 
 #: Kinds (and variants) a reader who never visits the site can follow from the sentence alone.
 #: Where a kind has a vague roll-up ("a mark", "their own high mark") only the single-shooter
@@ -163,6 +178,29 @@ def _subject(line: RecapFact) -> tuple[str, tuple[int, ...], str] | None:
     return (line.type, line.named_ids, line.key) if line.named_ids or line.key else None
 
 
+def _step(line: RecapFact) -> int | None:
+    """The whole-target step of an improvement line (key 'step:N')."""
+    head, _, tail = line.key.partition(":")
+    return int(tail) if head == "step" and tail.isdigit() else None
+
+
+def _rested(line: RecapFact, resting: dict[str, set[Any]]) -> bool:
+    """Event facts rest longer than the 12-week subject window (REST_WEEKS). A streak rests the
+    person whatever the count: its key is ignored."""
+    if line.type == "attendance_streak":
+        return any(x[:2] == (line.type, line.named_ids) for x in resting[line.type])
+    return _subject(line) in resting.get(line.type, ())
+
+
+def _below_high_water(line: RecapFact, top: dict[tuple[str, tuple[int, ...]], int]) -> bool:
+    step = _step(line)
+    return (
+        line.type in HIGH_WATER_TYPES
+        and step is not None
+        and step <= top.get((line.type, line.named_ids), 0)
+    )
+
+
 def _pick(pool: Sequence[RecapFact], history: Sequence[Sequence[RecapFact]]) -> list[RecapFact]:
     """Up to MAX_PICKS lines, strongest first, one per type, nobody twice (owner, 2026-10-12).
 
@@ -175,6 +213,16 @@ def _pick(pool: Sequence[RecapFact], history: Sequence[Sequence[RecapFact]]) -> 
     last_types = {x.type for x in last}
     last_names = {n for x in last for n in x.named_ids}
     recent_subjects = {_subject(x) for week in window for x in week} - {None}
+    resting = {
+        t: {_subject(x) for week in history[-n:] for x in week if x.type == t} - {None}
+        for t, n in REST_WEEKS.items()
+    }
+    top_step: dict[tuple[str, tuple[int, ...]], int] = {}
+    for week in history:
+        for x in week:
+            step = _step(x)
+            if x.type in HIGH_WATER_TYPES and step is not None:
+                top_step[x.type, x.named_ids] = max(step, top_step.get((x.type, x.named_ids), 0))
     recent_texts = {_wording(x) for week in window for x in week}
     chosen: list[RecapFact] = []
     types: set[str] = set()
@@ -187,6 +235,8 @@ def _pick(pool: Sequence[RecapFact], history: Sequence[Sequence[RecapFact]]) -> 
             or line.type in last_types
             or _wording(line) in recent_texts
             or _subject(line) in recent_subjects
+            or _rested(line, resting)
+            or _below_high_water(line, top_step)
             or names & named
             or names & last_names
         ):

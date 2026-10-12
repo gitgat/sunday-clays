@@ -47,10 +47,11 @@ class RecapOut(BaseModel):
     shooters: int
     head_count: int | None
     rounds: int
-    #: "This week": up to 5 plain sentences, the stored Sunday insights' named headlines plus
+    #: "This week": up to 6 plain sentences, the stored Sunday insights' named headlines plus
     #: recap-only facts (`analytics/recap_facts`), one per type. Not a kind two Sundays running,
     #: not the same (kind, subject) within 12 Sundays, nobody named two Sundays running. Measured
-    #: on the fixture world: 3+ lines in 83% of weeks, 4+ in 65%, never empty.
+    #: on the fixture world's last 52 Sundays: 3+ lines in 81% of weeks and 4+ in 60% with the club
+    #: lines on (81% and 56% off); two weeks had none.
     insights: list[str]
     #: Clays Broken sentences, "First Last: <Trophy> - <N>", "Club: ... all time!".
     milestones: list[str]
@@ -75,12 +76,13 @@ def week_texts(
 ) -> tuple[list[str], list[tuple[int, str]]]:
     """("This week" sentences, (shooter id, Clays Broken sentence) pairs) for a regular Sunday.
 
-    "This week" is up to 5 plain sentences (3 or more in about 83% of the fixture world's weeks,
-    4 or more in 65%): the eligible stored insights and the recap-only facts, replayed over the
-    last 36 held Sundays (analytics/recap_insights.py). The Clays Broken
-    sentences are recomputed from the engine's facts, one per shooter who crossed a thousand-target
-    mark (named headlines, as the site renders a single crossing), so a stored roll-up can never
-    hide anyone. Both come from one set of frames, built once per request and then memoized.
+    "This week" is up to 6 plain sentences (on the fixture world, 3 or more in 81% of weeks and 4
+    or more in 60% with the club lines on, 81% and 56% off): the eligible stored insights and the
+    recap-only facts, replayed over the last 36 held Sundays (analytics/recap_insights.py). The
+    Clays Broken sentences are recomputed from the engine's facts, one per shooter who crossed a
+    thousand-target mark (named headlines, as the site renders a single crossing), so a stored
+    roll-up can never hide anyone. Both come from one set of frames, built once per request and
+    then memoized.
     """
     fr = build_frames(session)
     held = [d for d in held_dates(session) if d <= day]

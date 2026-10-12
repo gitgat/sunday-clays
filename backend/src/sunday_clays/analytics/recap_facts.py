@@ -48,7 +48,7 @@ FACT_TYPES: Final[tuple[str, ...]] = (
 
 # --- thresholds: tune here ---------------------------------------------------------------------
 #: "Biggest/coldest/... since" claims need the last time to be at least this many weeks back.
-SINCE_WEEKS: Final = 6
+SINCE_WEEKS: Final = 3
 #: "...on record" claims need at least this many earlier held Sundays behind them.
 RECORD_MIN_HISTORY: Final = 26
 #: A claim about the first Sundays of the data (nothing to compare with) is never made.
@@ -72,8 +72,9 @@ YEAR_MIN_SUNDAYS: Final = 26  # a "full" earlier year
 #: club_next: within this many typical Sundays of the next club milestone.
 CLUB_REACH_SUNDAYS: Final = 5
 CLUB_TYPICAL_WINDOW: Final = 8
-#: attendance streak: a multiple of STREAK_STEP, or the Sunday after (a longer-run rule made one
-#: person news every five weeks).
+#: attendance streak: a multiple of STREAK_STEP from STREAK_MIN, or the Sunday after it. The
+#: picker rests a person for 26 weeks after any streak line (`REST_WEEKS`), so a longer-run rule
+#: cannot make one person news every five weeks.
 STREAK_STEP: Final = 5
 STREAK_MIN: Final = 10
 STREAK_WINDOW: Final = 2  # the multiple itself and the Sunday after it, until said
@@ -489,8 +490,10 @@ class FactSource:
             return [_fact("year_so_far", text, 1.5, key=f"passed:{year - 1}")]
         crossed = so_far // YEAR_ROUND_STEP
         if crossed > before // YEAR_ROUND_STEP:
-            text = f"{lead}, past the {crossed * YEAR_ROUND_STEP:,}-round mark."
-            return [_fact("year_so_far", text, 1.0, key=f"step:{crossed * YEAR_ROUND_STEP}")]
+            mark = crossed * YEAR_ROUND_STEP
+            verb = "reached" if so_far == mark else "past"
+            text = f"{lead}, {verb} the {mark:,}-round mark."
+            return [_fact("year_so_far", text, 1.0, key=f"{year}:step:{mark}")]
         return []
 
     # --- 7. club_next -----------------------------------------------------------------------
@@ -551,9 +554,11 @@ class FactSource:
             if sid not in came:
                 continue
             if s >= STREAK_MIN and s % STREAK_STEP < STREAK_WINDOW:
-                text = f"{fr.profiles[sid].name} has come out {s} Sundays in a row."
-                key = str(s - s % STREAK_STEP)
-                out.append(_fact("attendance_streak", text, s / 30.0, (sid,), key))
+                round_count = s - s % STREAK_STEP
+                tail = "." if s == round_count else ", and is still going."
+                text = f"{fr.profiles[sid].name} has come out {round_count} Sundays in a row{tail}"
+                # about the person, not the number: the picker rests them whatever the count
+                out.append(_fact("attendance_streak", text, s / 30.0, (sid,)))
         return out
 
     # --- 9. station_feats -------------------------------------------------------------------

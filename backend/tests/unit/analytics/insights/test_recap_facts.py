@@ -76,15 +76,15 @@ def test_turnout_biggest_crowd_in_at_least_eight_weeks_names_the_last_bigger_mon
     ]
 
 
-def test_turnout_is_silent_when_a_bigger_crowd_came_inside_six_weeks(make_world: Any) -> None:
-    fr = weekly(make_world, 13, event=heads(w7=40, w12=35)).frames()  # 5 weeks back
+def test_turnout_is_silent_when_a_bigger_crowd_came_inside_three_weeks(make_world: Any) -> None:
+    fr = weekly(make_world, 13, event=heads(w10=40, w12=35)).frames()  # 2 weeks back
     assert texts(fr, wk(FIRST, 12), "turnout") == []
 
 
-def test_turnout_boundary_is_exactly_six_weeks(make_world: Any) -> None:
-    fr = weekly(make_world, 13, event=heads(w6=40, w12=35)).frames()  # 6 weeks back
+def test_turnout_boundary_is_exactly_three_weeks(make_world: Any) -> None:
+    fr = weekly(make_world, 13, event=heads(w9=40, w12=35)).frames()  # 3 weeks back
     assert texts(fr, wk(FIRST, 12), "turnout") == [
-        "35 came out, the biggest crowd since February 2024."
+        "35 came out, the biggest crowd since March 2024."
     ]
 
 
@@ -123,14 +123,14 @@ OCT_N = (OCT_D - OCT_START).days // 7 + 1
 
 
 def october_world(make_world: Any, *, prior: int, big: int = 60) -> Any:
-    """Weekly crowds of 20 from Oct 2022; Octobers of 2022-24 at `prior`; a crowd of `big` three
+    """Weekly crowds of 20 from Oct 2022; Octobers of 2022-24 at `prior`; a crowd of `big` two
     weeks before D (so no 'since' claim is available); D's crowd is 45."""
 
     def event(i: int) -> dict[str, Any]:
         day = wk(OCT_START, i)
         if day == OCT_D:
             return {"head_count": 45}
-        if day == OCT_D - timedelta(weeks=3):
+        if day == OCT_D - timedelta(weeks=2):
             return {"head_count": big}
         return {"head_count": prior if day.month == 10 else 20}
 
@@ -166,12 +166,12 @@ def test_course_type_first_of_its_kind_since_a_month(make_world: Any) -> None:
     ]
 
 
-def test_course_type_silent_when_the_type_changed_back_inside_six_weeks(make_world: Any) -> None:
-    # super sporting at week 5, sporting at 6-9, super sporting again at 10: five weeks apart
-    fr = weekly(make_world, 11, event=types(w5="super_sporting", w10="super_sporting")).frames()
+def test_course_type_silent_when_the_type_changed_back_inside_three_weeks(make_world: Any) -> None:
+    # super sporting at week 8, sporting at 9, super sporting again at 10: two weeks apart
+    fr = weekly(make_world, 11, event=types(w8="super_sporting", w10="super_sporting")).frames()
     assert texts(fr, wk(FIRST, 10), "course_type") == []
-    fr = weekly(make_world, 11, event=types(w4="super_sporting", w10="super_sporting")).frames()
-    assert len(texts(fr, wk(FIRST, 10), "course_type")) == 1  # six weeks apart is enough
+    fr = weekly(make_world, 11, event=types(w7="super_sporting", w10="super_sporting")).frames()
+    assert len(texts(fr, wk(FIRST, 10), "course_type")) == 1  # three weeks apart is enough
 
 
 def test_course_type_first_ever_says_on_record(make_world: Any) -> None:
@@ -362,8 +362,8 @@ def test_weather_first_wet_sunday_since(make_world: Any) -> None:
     assert texts(fr, wk(FIRST, 14), "weather") == ["The first wet Sunday since January 2024."]
 
 
-def test_weather_silent_when_the_extreme_was_matched_inside_eight_weeks(make_world: Any) -> None:
-    ev = weather(w9={"temp_f": 45.0}, w14={"temp_f": 49.0})
+def test_weather_silent_when_the_extreme_was_matched_inside_three_weeks(make_world: Any) -> None:
+    ev = weather(w12={"temp_f": 45.0}, w14={"temp_f": 49.0})
     assert texts(weekly(make_world, 15, event=ev).frames(), wk(FIRST, 14), "weather") == []
 
 
@@ -445,6 +445,16 @@ def test_year_so_far_round_number_crossed_today(make_world: Any) -> None:
     ]
     assert texts(fr, date(2024, 4, 21), "year_so_far") == []
     assert texts(fr, date(2024, 3, 31), "year_so_far") == []  # 91: nothing crossed
+
+
+def test_year_so_far_says_reached_not_past_when_it_lands_exactly_on_the_mark(
+    make_world: Any,
+) -> None:
+    # at 5 a Sunday, 2024 is on exactly 100 rounds on the 20th Sunday
+    fr = year_world(make_world, 5)
+    assert texts(fr, date(2024, 5, 19), "year_so_far") == [
+        "2024 so far: 100 rounds over 20 Sundays, reached the 100-round mark."
+    ]
 
 
 def test_year_so_far_passing_last_year_comes_before_the_round_number(make_world: Any) -> None:
@@ -560,10 +570,15 @@ def test_attendance_streak_at_a_multiple_of_ten(make_world: Any) -> None:
     (fact,) = by_type(fr, wk(FIRST, 29))["attendance_streak"]
     assert fact.text == "Ike Hadley1 has come out 10 Sundays in a row."
     assert fact.named_ids == (1,)
-    assert fact.key == "10"
+    assert fact.key == ""  # about the person: the picker rests them whatever the count
 
 
-def test_attendance_streak_silent_below_ten_or_two_past_a_multiple(make_world: Any) -> None:
+def test_attendance_streak_starts_at_ten_in_a_row(make_world: Any) -> None:
+    fr = streak_world(make_world, {1: range(25, 30)})  # 5: a streak, but not yet news
+    assert texts(fr, wk(FIRST, 29), "attendance_streak") == []
+
+
+def test_attendance_streak_silent_between_multiples_of_five(make_world: Any) -> None:
     for weeks in (range(21, 30), range(18, 30)):  # 9, then 12 in a row
         fr = streak_world(make_world, {1: weeks})
         assert texts(fr, wk(FIRST, 29), "attendance_streak") == []
@@ -574,8 +589,8 @@ def test_attendance_streak_is_still_eligible_the_week_after_a_multiple_of_ten(
 ) -> None:
     fr = streak_world(make_world, {1: range(19, 30)})  # 11 in a row
     (fact,) = by_type(fr, wk(FIRST, 29))["attendance_streak"]
-    assert fact.text == "Ike Hadley1 has come out 11 Sundays in a row."
-    assert fact.key == "10"  # the same subject as the 10th: said once
+    # said as the round number, not as an odd count that reads as random
+    assert fact.text == "Ike Hadley1 has come out 10 Sundays in a row, and is still going."
 
 
 def test_attendance_streak_only_around_multiples_of_five_even_for_the_clubs_longest(
@@ -930,9 +945,9 @@ KEYS = {
     "scores_context": "overall:2024-02",
     "weather": "cold:2024-01",
     "on_this_day": "",
-    "year_so_far": "step:100",
+    "year_so_far": "2024:step:100",
     "club_next": "rounds:40",
-    "attendance_streak": "10",
+    "attendance_streak": "",
     "station_feats": "5",
     "improvement": "step:4",
     "coming_up": "50",

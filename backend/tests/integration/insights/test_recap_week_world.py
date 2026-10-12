@@ -127,6 +127,32 @@ def test_rule_3_nobody_is_named_in_two_consecutive_weeks(world) -> None:
         assert not before & {n for x in lines[b] for n in x.named_ids}, (a, b)
 
 
+def test_an_improvement_line_is_a_high_water_mark_never_a_shrinking_number(world) -> None:
+    """Round 2 fix: once a person's step is said, only a higher step is said (the same step, or
+    a lower one after the gain fell, would read as a decline). Each date is replayed alone, so this
+    is measured across the 52 weeks."""
+    days, lines, _ = world
+    said: dict[int, list[int]] = collections.defaultdict(list)
+    for d in days:
+        for x in lines[d]:
+            if x.type == "improvement":
+                said[x.named_ids[0]].append(int(x.key.removeprefix("step:")))
+    assert said, "the fixture world has improvement lines"
+    for who, steps in said.items():
+        assert steps == sorted(set(steps)), (who, steps)
+
+
+def test_no_event_fact_is_said_twice_for_the_same_subject(world) -> None:
+    """Improvement, coming_up and club_next are news once: not even 13 weeks later."""
+    days, lines, _ = world
+    seen: set[tuple[str, tuple[int, ...], str]] = set()
+    for d in days:
+        for x in lines[d]:
+            if x.type in {"improvement", "coming_up", "club_next"}:
+                assert subject(x) not in seen, (d, x.text)
+                seen.add(subject(x))  # type: ignore[arg-type]
+
+
 def test_no_sentence_repeats_within_twelve_weeks(world) -> None:
     """Exact words for every line; numbers aside for the stored insights, whose template carries
     them. (A recap fact such as 'a year ago this week: N shooters' is new content each week.)"""
