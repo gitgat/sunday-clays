@@ -17,9 +17,11 @@ from sqlalchemy.orm import Session
 
 from sunday_clays.analytics import frames
 from sunday_clays.analytics.achievements.participation import THREE_BIRD_LABELS, normalize_label
+from sunday_clays.analytics.cache import cached_by_data_version
 from sunday_clays.analytics.club_milestones import club_milestones
 from sunday_clays.analytics.insights.store import insights_table, load_rows
 from sunday_clays.analytics.insights.templates import natural_name
+from sunday_clays.analytics.recap_facts import FactSource
 from sunday_clays.analytics.recap_insights import HORIZON, week_insights
 from sunday_clays.analytics.recap_insights import milestone_sentences as targets_sentences
 from sunday_clays.analytics.recap_trophies import recap_milestone_items
@@ -64,20 +66,24 @@ def three_bird_counts(award_dates: Sequence[date], day: date) -> tuple[int, int]
     return sum(d == day for d in award_dates), sum(d <= day for d in award_dates)
 
 
-def this_week(session: Session, day: date) -> list[str]:
-    """3-5 plain-sentence insights for a held regular Sunday (replayed over the last 36)."""
+@cached_by_data_version
+def week_texts(
+    session: Session, day: date, club_next: bool
+) -> tuple[list[str], list[tuple[int, str]]]:
+    """("This week" sentences, (shooter id, Clays Broken sentence) pairs) for a regular Sunday.
+
+    "This week" is 4-6 plain sentences: the eligible stored insights and the recap-only facts,
+    replayed over the last 36 held Sundays (analytics/recap_insights.py). The Clays Broken
+    sentences are recomputed from the engine's facts, one per shooter who crossed a thousand-target
+    mark (named headlines, as the site renders a single crossing), so a stored roll-up can never
+    hide anyone. Both come from one set of frames, built once per request and then memoized.
+    """
+    fr = build_frames(session)
     held = [d for d in held_dates(session) if d <= day]
     t = insights_table()
     rows = load_rows(session, t.c.anchor_date.in_(held[-HORIZON:]), t.c.pages.contains(["sunday"]))
-    return week_insights(rows, held, day, supersedes_of)
-
-
-def milestone_sentences(session: Session, day: date) -> tuple[list[str], set[int]]:
-    """The Sunday's Clays Broken sentences, one per shooter (named headlines, as the site renders
-    a single crossing) and the shooters they name (their own `Clays Broken - N` line would say
-    it twice). Recomputed from the engine's facts, so a stored roll-up can never hide anyone."""
-    found = targets_sentences(build_frames(session), day)
-    return [line for _, line in found], {i for i, _ in found}
+    source = FactSource(fr, club_next=club_next)
+    return week_insights(rows, held, day, supersedes_of, source.on), targets_sentences(fr, day)
 
 
 @router.get("/recap/{date}")
@@ -103,7 +109,9 @@ def get_recap(
         ),
         {"d": event_date},
     ).all()
-    sentences, told = ([], set()) if special else milestone_sentences(session, event_date)
+    club_on = switch_on(session, settings, "club_milestones")
+    insights, found = ([], []) if special else week_texts(session, event_date, club_on)
+    sentences, told = [line for _, line in found], {i for i, _ in found}
     codes: dict[str, list[str]] = defaultdict(list)
     for shooter, name, code in awards:
         if code == THREE_BIRD_CODE or (int(shooter) in told and str(code).startswith(CLAYS_BROKEN)):
@@ -120,7 +128,7 @@ def get_recap(
             for c in club_milestones(session, event_date).milestones
             if c.event_date == event_date
         ]
-        if switch_on(session, settings, "club_milestones")
+        if club_on
         else []
     )
     new = holders = None
@@ -145,7 +153,7 @@ def get_recap(
         shooters=int(event["n_shooters"]),
         head_count=opt_int(event["head_count"]),
         rounds=int(event["n_rounds"]),
-        insights=[] if special else this_week(session, event_date),
+        insights=insights,
         milestones=[
             *sentences,
             *trophy_lines,

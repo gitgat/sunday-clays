@@ -16,13 +16,17 @@ from sunday_clays.analytics.insights.templates import (
     render,
     template_slots,
 )
+from sunday_clays.analytics.recap_facts import RecapFact
 from sunday_clays.analytics.recap_insights import (
     ELIGIBLE,
     EXCLUDED,
     HORIZON,
+    MAX_PICKS,
     MILESTONE_KINDS,
+    MIN_PICKS,
     NO_REPEAT_WEEKS,
     recap_text_problems,
+    week_insights,
     week_picks,
 )
 
@@ -88,7 +92,7 @@ def row(kind: str, day: date, *, score: float = 1.0, sid: int = 1, **changes: An
         rank_score=score,
         headline=[
             {"t": "shooter", "id": sid, "v": f"Shooter, N{sid}"},
-            {"t": "text", "v": f" did {kind}."},
+            {"t": "text", "v": f" did {kind} on {day}."},
         ],
         headline_you=[{"t": "text", "v": f"You did {kind}."}],
         how=[],
@@ -107,7 +111,7 @@ def sundays(n: int) -> list[date]:
 
 
 def picks(rows: list[InsightRow], held: list[date], day: date) -> list[str]:
-    return [r.kind for r in week_picks(rows, held, day, no_supersedes)]
+    return [x.type for x in week_picks(rows, held, day, no_supersedes)]
 
 
 # --- eligibility ----------------------------------------------------------------------------------
@@ -241,7 +245,7 @@ def test_a_row_for_another_day_or_page_is_never_picked() -> None:
     rows = [
         row(KINDS[0], DAY - timedelta(weeks=1), score=9),
         row(KINDS[1], DAY, pages=("profile",), score=9),
-        row(KINDS[2], DAY, score=1),
+        row(KINDS[2], DAY, score=1, sid=2),
     ]
     assert picks(rows, [DAY - timedelta(weeks=1), DAY], DAY) == [KINDS[2]]
 
@@ -264,27 +268,33 @@ def test_text_that_trips_the_lint_is_dropped_but_a_shooter_called_gold_is_not() 
         row(KINDS[1], DAY, headline=named_gold, score=1, sid=2),
     ]
     out = week_picks(rows, [DAY], DAY, no_supersedes)
-    assert [r.kind for r in out] == [KINDS[1]]
+    assert [x.type for x in out] == [KINDS[1]]
 
 
-# --- picking 3-5 ---------------------------------------------------------------------------------
+# --- picking 4-6 ---------------------------------------------------------------------------------
 
 
-def test_picks_the_five_highest_ranked_and_never_the_you_form() -> None:
+def test_picks_the_six_highest_ranked_and_never_the_you_form() -> None:
+    assert (MIN_PICKS, MAX_PICKS) == (4, 6)
     rows = [row(k, DAY, score=10 - i, sid=i + 1) for i, k in enumerate(KINDS[:8])]
     out = week_picks(rows, [DAY], DAY, no_supersedes)
-    assert [r.kind for r in out] == KINDS[:5]
-    assert all("You" not in plain(r.headline) for r in out)
+    assert [x.type for x in out] == KINDS[:6]
+    assert all("You" not in x.text for x in out)
 
 
-def test_one_per_family_and_one_named_story_per_shooter() -> None:
+def test_one_per_type_and_one_named_story_per_shooter() -> None:
     rows = [
-        row(KINDS[0], DAY, score=9, sid=1, family="form"),
-        row(KINDS[1], DAY, score=8, sid=2, family="form"),  # same family: skipped
-        row(KINDS[2], DAY, score=7, sid=1, family="streak"),  # same shooter: skipped
-        row(KINDS[3], DAY, score=6, sid=3, family="streak"),
+        row(KINDS[0], DAY, score=9, sid=1),
+        row(KINDS[0], DAY, score=8, sid=2),  # same type: skipped
+        row(KINDS[2], DAY, score=7, sid=1),  # same shooter: skipped
+        row(KINDS[3], DAY, score=6, sid=3),
     ]
     assert picks(rows, [DAY], DAY) == [KINDS[0], KINDS[3]]
+
+
+def test_a_line_that_names_nobody_never_blocks_anyone() -> None:
+    rows = [row(k, DAY, score=9 - i, named_shooter_ids=()) for i, k in enumerate(KINDS[:3])]
+    assert picks(rows, [DAY], DAY) == KINDS[:3]
 
 
 def test_superseded_rows_are_dropped() -> None:
@@ -292,13 +302,65 @@ def test_superseded_rows_are_dropped() -> None:
     out = week_picks(
         rows, [DAY], DAY, lambda k: frozenset({KINDS[1]}) if k == KINDS[0] else frozenset()
     )
-    assert [r.kind for r in out] == [KINDS[0]]
+    assert [x.type for x in out] == [KINDS[0]]
 
 
-def test_fewer_than_three_eligible_is_fine_and_a_special_or_unheld_day_has_none() -> None:
+def test_a_small_pool_gives_fewer_than_four_and_a_special_or_unheld_day_has_none() -> None:
     assert picks([row(KINDS[0], DAY)], [DAY], DAY) == [KINDS[0]]
     assert picks([], [DAY], DAY) == []
     assert picks([row(KINDS[0], DAY)], [DAY - timedelta(weeks=1)], DAY) == []
+
+
+def fact(kind: str, text: str, strength: float, *named: int) -> RecapFact:
+    return RecapFact(kind, text, tuple(named), strength)
+
+
+def test_recap_facts_share_the_pool_with_the_stored_insights() -> None:
+    rows = [row(KINDS[0], DAY, score=2.0, sid=1)]  # ranks 2.0 x 1.5 = 3.0
+    facts = [fact("turnout", "35 came out.", 9.0), fact("weather", "A wet one.", 1.0)]
+    out = week_picks(rows, [DAY], DAY, no_supersedes, lambda d: facts)
+    assert [x.type for x in out] == ["turnout", KINDS[0], "weather"]
+    assert week_insights(rows, [DAY], DAY, no_supersedes, lambda d: facts)[0] == "35 came out."
+
+
+def test_only_the_strongest_fact_of_a_type_is_used_and_the_shooter_is_named_once() -> None:
+    facts = [
+        fact("improvement", "A is up.", 8.0, 1),
+        fact("improvement", "B is up.", 7.0, 2),  # same type
+        fact("coming_up", "A is close.", 6.0, 1),  # same shooter
+        fact("coming_up", "C is close.", 5.0, 3),
+    ]
+    out = week_picks([], [DAY], DAY, no_supersedes, lambda d: facts)
+    assert [x.text for x in out] == ["A is up.", "C is close."]
+
+
+# --- the previous Sunday's shooters ------------------------------------------------------------
+
+
+def test_nobody_named_in_the_previous_sundays_recap_is_named_again() -> None:
+    days = sundays(3)
+    facts = {
+        days[0]: [fact("improvement", "A is up.", 9.0, 1)],
+        days[1]: [fact("coming_up", "A is close.", 9.0, 1), fact("turnout", "B came.", 1.0, 2)],
+        days[2]: [fact("coming_up", "A is close again.", 9.0, 1)],
+    }
+    lines = lambda d: [x.text for x in week_picks([], days, d, no_supersedes, lambda e: facts[e])]  # noqa: E731
+    assert lines(days[0]) == ["A is up."]
+    assert lines(days[1]) == ["B came."]  # A was named last week
+    assert lines(days[2]) == ["A is close again."]  # A skipped a week: free again
+
+
+def test_the_previous_sundays_shooters_are_off_limits_even_to_the_fill() -> None:
+    days = sundays(3)
+    pool = {
+        days[0]: [fact("t1", "one", 9.0, 1), fact("t2", "two", 8.0, 2)],
+        days[1]: [fact("t3", "three", 9.0, 3), fact("t1", "one again", 8.0, 1)],
+        days[2]: [fact("t1", "one yet again", 8.0, 1), fact("t4", "four", 7.0, 4)],
+    }
+    out = [x.text for x in week_picks([], days, days[2], no_supersedes, lambda d: pool[d])]
+    assert out == ["one yet again", "four"]  # shooter 3 (the week before) is not in the pool
+    out1 = [x.text for x in week_picks([], days, days[1], no_supersedes, lambda d: pool[d])]
+    assert out1 == ["three"]  # shooter 1 was named last week; the fill cannot bring them back
 
 
 # --- the 12-week rotation ------------------------------------------------------------------------
@@ -309,35 +371,43 @@ def weekly_pool(days: list[date], kinds: list[str]) -> list[InsightRow]:
     return [row(k, d, score=100 - i, sid=i + 1) for d in days for i, k in enumerate(kinds)]
 
 
-def test_a_kind_used_in_the_last_12_weeks_is_skipped() -> None:
+def test_a_type_used_in_the_last_12_weeks_is_skipped() -> None:
     days = sundays(3)
     pool = KINDS[:12]
     rows = weekly_pool(days, pool)
-    assert picks(rows, days, days[0]) == pool[0:5]
-    assert picks(rows, days, days[1]) == pool[5:10]
+    assert picks(rows, days, days[0]) == pool[0:6]
+    assert picks(rows, days, days[1]) == pool[6:12]
 
 
-def test_fewer_than_three_fresh_kinds_fill_from_the_least_recently_used() -> None:
+def test_fewer_than_four_fresh_types_fill_from_the_least_recently_used() -> None:
     days = sundays(4)
     pool = KINDS[:12]
     rows = weekly_pool(days, pool)
-    # Week 3: only pool[10], pool[11] are unused; pool[0] (week 1) is the least recently used.
-    assert picks(rows, days, days[2]) == [pool[10], pool[11], pool[0]]
-    # Week 4: nothing is unused; the three least recently used are pool[1..3] (week 1, by rank).
-    assert picks(rows, days, days[3]) == [pool[1], pool[2], pool[3]]
+    # Week 3: nothing is unused; the four least recently used are pool[0:4] (week 1, by rank).
+    assert picks(rows, days, days[2]) == pool[0:4]
+    # Week 4: pool[0:4] were just named (their shooters rest). The least recently used are then
+    # pool[4], pool[5] (week 1) and pool[6], pool[7] (week 2).
+    assert picks(rows, days, days[3]) == pool[4:8]
+
+
+def test_a_fill_never_repeats_a_sentence_sent_in_the_previous_12_weeks() -> None:
+    days = sundays(3)
+    same = [{"t": "text", "v": "The same sentence."}]
+    rows = [row(KINDS[0], d, headline=same, sid=1, score=9) for d in days[:2]]
+    rows += [row(k, d, score=8 - i, sid=2 + i) for d in days for i, k in enumerate(KINDS[1:5])]
+    rows += [row(KINDS[0], days[2], headline=same, sid=9, score=9)]
+    out = picks(rows, days, days[2])
+    assert KINDS[0] not in out  # identical to week 1's and week 2's, so even as a fill it is out
 
 
 def test_the_window_is_exactly_twelve_held_sundays() -> None:
     assert NO_REPEAT_WEEKS == 12
     days = sundays(14)
-    x, fillers, fresh = KINDS[0], KINDS[1:2], KINDS[2:12]
+    x, fresh = KINDS[0], KINDS[1:9]
     rows = [row(x, days[0], score=50, sid=1)]
-    rows += [row(fillers[0], d, score=1, sid=2) for d in days[1:12]]
-    # Day 12: X again, with three fresh kinds. Day 13: X again, with three more.
-    rows += [row(x, days[12], score=50, sid=1)]
-    rows += [row(k, days[12], score=5 - i, sid=10 + i) for i, k in enumerate(fresh[0:3])]
-    rows += [row(x, days[13], score=50, sid=1)]
-    rows += [row(k, days[13], score=5 - i, sid=10 + i) for i, k in enumerate(fresh[3:6])]
+    rows += [row(x, days[12], score=50, sid=1), row(x, days[13], score=50, sid=1)]
+    rows += [row(k, days[12], score=5, sid=10 + i) for i, k in enumerate(fresh[0:4])]
+    rows += [row(k, days[13], score=5, sid=20 + i) for i, k in enumerate(fresh[4:8])]
     assert x not in picks(rows, days, days[12])  # day 0 is 12 Sundays back: still blocked
     assert x in picks(rows, days, days[13])  # 13 back: free again
 
@@ -347,8 +417,7 @@ def test_only_held_regular_sundays_count_as_weeks() -> None:
     days = sundays(14)
     x = KINDS[0]
     rows = [row(x, days[0], score=50, sid=1), row(x, days[13], score=50, sid=1)]
-    rows += [row(KINDS[1], d, score=1, sid=2) for d in days[1:13]]
-    rows += [row(k, days[13], score=5 - i, sid=10 + i) for i, k in enumerate(KINDS[2:5])]
+    rows += [row(k, days[13], score=5, sid=10 + i) for i, k in enumerate(KINDS[2:6])]
     # All 14 held: X was 13 Sundays back, so it is free.
     assert x in picks(rows, days, days[13])
     # Day 5 was a special Sunday (not held): X was 12 held Sundays back, so it is still blocked.

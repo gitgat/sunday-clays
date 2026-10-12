@@ -1,12 +1,15 @@
-"""The weekly club email's "This week" insights (owner, 2026-10-04).
+"""The weekly club email's "This week" lines (owner, 2026-10-04; amended 2026-10-11).
 
 The email goes to people who never open the site, so only a vetted subset of the Sunday page's
-stored insight rows is eligible, rendered with the named headline, three to five per Sunday, and a
-kind is not repeated within 12 held Sundays. Stateless: earlier weeks' picks are recomputed by
-replaying the held regular Sundays in date order over a bounded horizon, so the same date always
-gives the same picks.
+stored insight rows is eligible (rendered with the named headline), and they share the pool with
+the recap-only facts of `recap_facts`. Four to six lines a Sunday, one per type, nobody named
+twice or named in the previous Sunday's recap, and a type is not repeated within 12 held Sundays
+(unless fewer than four lines remain). Stateless: earlier weeks' picks are recomputed by replaying
+the held regular Sundays in date order over a bounded horizon, so the same date always gives the
+same picks.
 """
 
+import functools
 import re
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date
@@ -19,10 +22,11 @@ from sunday_clays.analytics.insights.rank import RECENCY_TOP
 from sunday_clays.analytics.insights.store import InsightRow
 from sunday_clays.analytics.insights.templates import Segment, plain, render
 from sunday_clays.analytics.insights.types import Scope
+from sunday_clays.analytics.recap_facts import RecapFact
 
 TARGETS_KIND: Final = "pf.targets-milestone"
-MAX_PICKS: Final = 5
-MIN_PICKS: Final = 3
+MAX_PICKS: Final = 6
+MIN_PICKS: Final = 4
 NO_REPEAT_WEEKS: Final = 12
 HORIZON: Final = 36  # held regular Sundays replayed, ending at the requested date
 
@@ -123,30 +127,55 @@ def candidates(
     return [r for r in ordered if _eligible(r)]
 
 
+def row_line(r: InsightRow) -> RecapFact:
+    """A stored Sunday insight as a candidate line: its kind is its type, its rank its strength."""
+    return RecapFact(
+        r.kind, plain(r.headline), tuple(r.named_shooter_ids), r.base_score * RECENCY_TOP
+    )
+
+
+def _order(line: RecapFact) -> tuple[float, str, str]:
+    return (-line.strength, line.type, line.text)
+
+
 def _pick(
-    ordered: Sequence[InsightRow], recent: set[str], last_used: Mapping[str, int]
-) -> list[InsightRow]:
-    chosen: list[InsightRow] = []
-    families: set[str] = set()
+    pool: Sequence[RecapFact],
+    recent: set[str],
+    last_used: Mapping[str, int],
+    previous_names: set[int],
+    recent_texts: set[str],
+) -> list[RecapFact]:
+    """4-6 lines (R2): strongest first, one per type, nobody named twice or named last week.
+
+    A type used in the previous 12 held Sundays is skipped; only if fewer than MIN_PICKS remain
+    are the least recently used types let back in (nobody named last week, and never a sentence
+    sent in the previous 12 weeks).
+    """
+    chosen: list[RecapFact] = []
+    types: set[str] = set()
     named: set[int] = set()
 
-    def take_if_fits(r: InsightRow) -> None:
-        if r.family in families or named & set(r.named_shooter_ids):
+    def take_if_fits(line: RecapFact) -> None:
+        if (
+            line.type in types
+            or line.text in recent_texts
+            or named & set(line.named_ids)
+            or previous_names & set(line.named_ids)
+        ):
             return
-        chosen.append(r)
-        families.add(r.family)
-        named.update(r.named_shooter_ids)
+        chosen.append(line)
+        types.add(line.type)
+        named.update(line.named_ids)
 
-    for r in ordered:
-        if len(chosen) < MAX_PICKS and r.kind not in recent:
-            take_if_fits(r)
-    skipped = sorted(
-        (r for r in ordered if r.kind in recent), key=lambda r: last_used.get(r.kind, -1)
-    )
-    for r in skipped:
+    ordered = sorted(pool, key=_order)
+    for line in ordered:
+        if len(chosen) < MAX_PICKS and line.type not in recent:
+            take_if_fits(line)
+    skipped = sorted((x for x in ordered if x.type in recent), key=lambda x: last_used[x.type])
+    for line in skipped:  # stable sort: ties keep the strongest first
         if len(chosen) < MIN_PICKS:
-            take_if_fits(r)
-    return chosen
+            take_if_fits(line)
+    return sorted(chosen, key=_order)
 
 
 def week_picks(
@@ -154,18 +183,31 @@ def week_picks(
     held: Sequence[date],
     day: date,
     supersedes: Callable[[str], frozenset[str]],
-) -> list[InsightRow]:
-    """The insights for `day`: replay up to HORIZON held regular Sundays from empty history."""
+    facts_for: Callable[[date], Sequence[RecapFact]] | None = None,
+) -> list[RecapFact]:
+    """The lines for `day`: replay up to HORIZON held regular Sundays from empty history.
+
+    The pool of a Sunday is the eligible stored insights plus `facts_for(that Sunday)`.
+    """
     horizon = [d for d in sorted(held) if d <= day][-HORIZON:]
     if not horizon or horizon[-1] != day:
         return []
-    history: list[list[InsightRow]] = []
+    history: list[list[RecapFact]] = []
     last_used: dict[str, int] = {}
+    supersedes = functools.cache(supersedes)  # the registry lookup scans modules: ask once per kind
     for i, d in enumerate(horizon):
-        recent = {r.kind for week in history[-NO_REPEAT_WEEKS:] for r in week}
-        picked = _pick(candidates(rows, d, supersedes), recent, last_used)
+        window = history[-NO_REPEAT_WEEKS:]
+        pool = [row_line(r) for r in candidates(rows, d, supersedes)]
+        pool += facts_for(d) if facts_for is not None else []
+        picked = _pick(
+            pool,
+            {x.type for week in window for x in week},
+            last_used,
+            {n for x in history[-1] for n in x.named_ids} if history else set(),
+            {x.text for week in window for x in week},
+        )
         history.append(picked)
-        last_used.update({r.kind: i for r in picked})
+        last_used.update({x.type: i for x in picked})
     return history[-1]
 
 
@@ -174,9 +216,10 @@ def week_insights(
     held: Sequence[date],
     day: date,
     supersedes: Callable[[str], frozenset[str]],
+    facts_for: Callable[[date], Sequence[RecapFact]] | None = None,
 ) -> list[str]:
-    """Plain sentences, each the row's named headline."""
-    return [plain(r.headline) for r in week_picks(rows, held, day, supersedes)]
+    """Plain sentences for "This week"."""
+    return [x.text for x in week_picks(rows, held, day, supersedes, facts_for)]
 
 
 def milestone_sentences(fr: InsightFrames, day: date) -> list[tuple[int, str]]:
