@@ -159,22 +159,32 @@ def types(**by_week: str) -> Callable[[int], dict[str, Any]]:
 
 
 def test_course_type_first_of_its_kind_since_a_month(make_world: Any) -> None:
-    fr = weekly(make_world, 11, event=types(w3="super_sporting", w10="super_sporting")).frames()
+    fr = weekly(make_world, 11, event=types(w2="super_sporting", w10="super_sporting")).frames()
     assert texts(fr, wk(FIRST, 10), "course_type") == [
         "The first super sporting course since January 2024."
     ]
 
 
+def test_course_type_silent_when_the_type_changed_back_inside_eight_weeks(make_world: Any) -> None:
+    # super sporting at week 3, sporting at 4-9, super sporting again at 10: seven weeks apart
+    fr = weekly(make_world, 11, event=types(w3="super_sporting", w10="super_sporting")).frames()
+    assert texts(fr, wk(FIRST, 10), "course_type") == []
+    fr = weekly(make_world, 11, event=types(w2="super_sporting", w10="super_sporting")).frames()
+    assert len(texts(fr, wk(FIRST, 10), "course_type")) == 1  # eight weeks apart is enough
+
+
 def test_course_type_first_ever_says_on_record(make_world: Any) -> None:
-    fr = weekly(make_world, 11, event=types(w10="super_sporting")).frames()
-    assert texts(fr, wk(FIRST, 10), "course_type") == ["The first super sporting course on record."]
+    fr = weekly(make_world, 27, event=types(w26="super_sporting")).frames()
+    assert texts(fr, wk(FIRST, 26), "course_type") == ["The first super sporting course on record."]
+    short = weekly(make_world, 11, event=types(w10="super_sporting")).frames()
+    assert texts(short, wk(FIRST, 10), "course_type") == []  # too little history for 'on record'
 
 
 def test_course_type_going_back_to_sporting(make_world: Any) -> None:
-    ev = types(w6="super_sporting", w7="super_sporting", w8="super_sporting", w9="super_sporting")
+    ev = types(**{f"w{i}": "super_sporting" for i in range(2, 10)})
     fr = weekly(make_world, 11, event=ev).frames()
     assert texts(fr, wk(FIRST, 10), "course_type") == [
-        "The first sporting course since February 2024."
+        "The first sporting course since January 2024."
     ]
 
 
@@ -186,10 +196,10 @@ def test_course_type_silent_when_the_type_did_not_change(make_world: Any) -> Non
 def test_course_type_compares_with_the_last_known_type_and_skips_an_unknown_day(
     make_world: Any,
 ) -> None:
-    ev = types(w9="unknown", w10="super_sporting")
-    fr = weekly(make_world, 11, event=ev).frames()
-    # week 9 has no known type, so week 8 (sporting) is the one compared with
-    assert texts(fr, wk(FIRST, 10), "course_type") == ["The first super sporting course on record."]
+    ev = types(w25="unknown", w26="super_sporting")
+    fr = weekly(make_world, 27, event=ev).frames()
+    # week 25 has no known type, so week 24 (sporting) is the one compared with
+    assert texts(fr, wk(FIRST, 26), "course_type") == ["The first super sporting course on record."]
 
 
 def test_course_type_silent_when_today_has_no_known_type(make_world: Any) -> None:
@@ -426,13 +436,13 @@ def test_year_so_far_passed_all_of_last_year(make_world: Any) -> None:
 
 
 def test_year_so_far_round_number_crossed_today(make_world: Any) -> None:
-    # at 7 a Sunday, 2024 reaches 203 rounds on the 29th Sunday (196 the week before)
+    # at 7 a Sunday, 2024 reaches 252 rounds on the 36th Sunday (245 the week before)
     fr = year_world(make_world, 7)
-    assert texts(fr, date(2024, 7, 21), "year_so_far") == [
-        "2024 so far: 203 rounds over 29 Sundays, past the 200-round mark."
+    assert texts(fr, date(2024, 9, 8), "year_so_far") == [
+        "2024 so far: 252 rounds over 36 Sundays, past the 250-round mark."
     ]
-    assert texts(fr, date(2024, 7, 28), "year_so_far") == []
-    assert texts(fr, date(2024, 9, 8), "year_so_far") == []  # 252: between marks
+    assert texts(fr, date(2024, 9, 15), "year_so_far") == []
+    assert texts(fr, date(2024, 7, 21), "year_so_far") == []  # 203: a hundred is not news
 
 
 def test_year_so_far_passing_last_year_comes_before_the_round_number(make_world: Any) -> None:
@@ -464,9 +474,21 @@ def only_rounds(monkeypatch: pytest.MonkeyPatch, *marks: int) -> None:
 def test_club_next_within_reach(make_world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     only_rounds(monkeypatch, 40)
     fr = weekly(make_world, 12).frames()  # 36 rounds, 3 a Sunday
-    assert texts(fr, wk(FIRST, 11), "club_next") == [
-        "4 more rounds and the club reaches 40 rounds shot all time."
+    assert texts(fr, wk(FIRST, 10), "club_next") == [  # 33 rounds: first within 9 of 40
+        "7 more rounds and the club reaches 40 rounds shot all time."
     ]
+    assert by_type(fr, wk(FIRST, 10))["club_next"][0].key == "rounds:40"
+
+
+def test_club_next_says_each_milestone_once_when_it_first_comes_within_reach(
+    make_world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    only_rounds(monkeypatch, 40)
+    fr = weekly(make_world, 13).frames()
+    assert texts(fr, wk(FIRST, 9), "club_next") == []  # 30 rounds: 10 away
+    assert len(texts(fr, wk(FIRST, 10), "club_next")) == 1
+    assert texts(fr, wk(FIRST, 11), "club_next") == []  # already said
+    assert texts(fr, wk(FIRST, 12), "club_next") == []
 
 
 def test_club_next_silent_when_far_away(make_world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -487,7 +509,7 @@ def test_club_next_boundary_is_three_typical_sundays(
 def test_club_next_can_be_switched_off(make_world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     only_rounds(monkeypatch, 40)
     fr = weekly(make_world, 12).frames()
-    assert texts(fr, wk(FIRST, 11), "club_next", club_next=False) == []
+    assert texts(fr, wk(FIRST, 10), "club_next", club_next=False) == []
 
 
 def test_club_next_says_sundays_held(make_world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -497,8 +519,8 @@ def test_club_next_says_sundays_held(make_world: Any, monkeypatch: pytest.Monkey
         {"clays_thrown": (), "sundays_held": (13,), "shooters": (), "rounds": ()},
     )
     fr = weekly(make_world, 12).frames()
-    assert texts(fr, wk(FIRST, 11), "club_next") == [
-        "1 more Sunday and the club reaches 13 Sundays held all time."
+    assert texts(fr, wk(FIRST, 9), "club_next") == [
+        "3 more Sundays and the club reaches 13 Sundays held all time."
     ]
 
 
@@ -527,29 +549,16 @@ def test_attendance_streak_silent_below_ten_or_between_tiers(make_world: Any) ->
         assert texts(fr, wk(FIRST, 29), "attendance_streak") == []
 
 
-def test_attendance_streak_long_one_is_a_fact_at_each_five_when_it_is_the_clubs_longest(
+def test_attendance_streak_only_at_multiples_of_ten_even_for_the_clubs_longest(
     make_world: Any,
 ) -> None:
-    fr = streak_world(make_world, {1: range(15, 30)})  # 15 in a row
-    assert texts(fr, wk(FIRST, 29), "attendance_streak") == [
-        "Ike Hadley1 has come out 15 Sundays in a row."
-    ]
-
-
-def test_attendance_streak_longest_run_between_fives_is_not_news_every_week(
-    make_world: Any,
-) -> None:
-    for first in (17, 16):  # 13 and 14 in a row, each the club's longest
+    for first in (15, 17, 16, 14):  # 15, 13, 14 and 16 in a row, each the club's longest
         fr = streak_world(make_world, {1: range(first, 30)})
         assert texts(fr, wk(FIRST, 29), "attendance_streak") == []
-
-
-def test_attendance_streak_long_one_is_silent_when_someone_has_a_longer_current_run(
-    make_world: Any,
-) -> None:
-    fr = streak_world(make_world, {1: range(17, 30), 2: range(15, 30)})  # 13 and 15
-    assert texts(fr, wk(FIRST, 29), "attendance_streak") == [
-        "Noel Kaplan2 has come out 15 Sundays in a row."
+    fr = streak_world(make_world, {1: range(10, 30), 2: range(20, 30)})  # 20 and 10
+    assert sorted(texts(fr, wk(FIRST, 29), "attendance_streak")) == [
+        "Ike Hadley1 has come out 20 Sundays in a row.",
+        "Noel Kaplan2 has come out 10 Sundays in a row.",
     ]
 
 
@@ -645,9 +654,17 @@ def climber(make_world: Any, n: int, then: int, now: int, *, since: int = 50) ->
 def test_improvement_up_on_a_year_ago(make_world: Any) -> None:
     fr = climber(make_world, 120, 36, 40, since=100)
     assert texts(fr, wk(FIRST, 119), "improvement") == [
-        "Ike Hadley's average over the last 20 Sundays is up 4.0 targets on a year ago."
+        "Ike Hadley's average over the last 20 rounds is up 4.0 targets compared with a year ago."
     ]
     assert by_type(fr, wk(FIRST, 119))["improvement"][0].named_ids == (1,)
+
+
+def test_improvement_fires_when_the_gain_first_reaches_two_and_at_each_whole_target_after(
+    make_world: Any,
+) -> None:
+    fr = climber(make_world, 120, 36, 40, since=100)  # +0.2 a Sunday from the 101st round on
+    said = [i for i in range(100, 120) if texts(fr, wk(FIRST, i), "improvement")]
+    assert said == [109, 114, 119]  # 2.0, 3.0, then 4.0 (3.8 the week before)
 
 
 def test_improvement_boundary_is_two_targets(make_world: Any) -> None:
@@ -693,36 +710,37 @@ def sunday_count_world(make_world: Any, k: int) -> Any:
     return world.frames()
 
 
-def test_coming_up_names_the_next_round_number(make_world: Any) -> None:
-    fr = sunday_count_world(make_world, 48)
-    (fact,) = by_type(fr, wk(FIRST, 47))["coming_up"]
-    assert fact.text == "Ike Hadley is 2 Sundays away from a 50th Sunday."
+def test_coming_up_names_the_next_round_number_when_one_away(make_world: Any) -> None:
+    fr = sunday_count_world(make_world, 49)
+    (fact,) = by_type(fr, wk(FIRST, 48))["coming_up"]
+    assert fact.text == "Ike Hadley is 1 Sunday away from 50 Sundays at the club."
     assert fact.named_ids == (1,)
 
 
-def test_coming_up_singular(make_world: Any) -> None:
-    fr = sunday_count_world(make_world, 49)
-    assert texts(fr, wk(FIRST, 48), "coming_up") == [
-        "Ike Hadley is 1 Sunday away from a 50th Sunday."
-    ]
-
-
-def test_coming_up_silent_when_four_away_or_when_it_is_today(make_world: Any) -> None:
-    assert texts(sunday_count_world(make_world, 46), wk(FIRST, 45), "coming_up") == []
+def test_coming_up_says_it_once_at_exactly_one_away(make_world: Any) -> None:
+    for n in (46, 47, 48):  # 4, 3 and 2 away
+        assert texts(sunday_count_world(make_world, n), wk(FIRST, n - 1), "coming_up") == []
     # the 50th is today: the Milestones section carries it
     assert texts(sunday_count_world(make_world, 50), wk(FIRST, 49), "coming_up") == []
 
 
+def test_coming_up_has_no_article_to_get_wrong_for_800(make_world: Any) -> None:
+    fr = sunday_count_world(make_world, 799)
+    assert texts(fr, wk(FIRST, 798), "coming_up") == [
+        "Ike Hadley is 1 Sunday away from 800 Sundays at the club."
+    ]
+
+
 def test_coming_up_counts_special_sundays_as_sundays(make_world: Any) -> None:
-    world = weekly(make_world, 44)  # 44 regular Sundays, 4 specials among them: 48 shot
+    world = weekly(make_world, 45)  # 45 regular Sundays, 4 specials among them: 49 shot
     world.shooter(1, "Hadley, Ike")
-    for i in range(44):
+    for i in range(45):
         world.round(1, wk(FIRST, i), 40)
     for i in (5, 15, 25, 35):
         world.special(1, wk(FIRST, i) + timedelta(days=3), heads=30)
     fr = world.frames()
-    assert texts(fr, wk(FIRST, 43), "coming_up") == [
-        "Ike Hadley is 2 Sundays away from a 50th Sunday."
+    assert texts(fr, wk(FIRST, 44), "coming_up") == [
+        "Ike Hadley is 1 Sunday away from 50 Sundays at the club."
     ]
 
 
@@ -743,8 +761,8 @@ def case_turnout(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
 
 
 def case_course_type(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
-    fr = weekly(make_world, 11, event=types(w10="super_sporting")).frames()
-    return Case(fr, wk(FIRST, 10), "course_type", "The first super sporting course on record.")
+    fr = weekly(make_world, 27, event=types(w26="super_sporting")).frames()
+    return Case(fr, wk(FIRST, 26), "course_type", "The first super sporting course on record.")
 
 
 def case_course_stations(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
@@ -787,9 +805,9 @@ def case_on_this_day(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
 def case_year(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
     return Case(
         year_world(make_world, 7),
-        date(2024, 7, 21),
+        date(2024, 9, 8),
         "year_so_far",
-        "2024 so far: 203 rounds over 29 Sundays, past the 200-round mark.",
+        "2024 so far: 252 rounds over 36 Sundays, past the 250-round mark.",
     )
 
 
@@ -798,9 +816,9 @@ def case_club_next(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
     fr = weekly(make_world, 12).frames()
     return Case(
         fr,
-        wk(FIRST, 11),
+        wk(FIRST, 10),
         "club_next",
-        "4 more rounds and the club reaches 40 rounds shot all time.",
+        "7 more rounds and the club reaches 40 rounds shot all time.",
     )
 
 
@@ -825,16 +843,16 @@ def case_improvement(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
         climber(make_world, 120, 36, 40, since=100),
         wk(FIRST, 119),
         "improvement",
-        "Ike Hadley's average over the last 20 Sundays is up 4.0 targets on a year ago.",
+        "Ike Hadley's average over the last 20 rounds is up 4.0 targets compared with a year ago.",
     )
 
 
 def case_coming_up(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
     return Case(
-        sunday_count_world(make_world, 48),
-        wk(FIRST, 47),
+        sunday_count_world(make_world, 49),
+        wk(FIRST, 48),
         "coming_up",
-        "Ike Hadley is 2 Sundays away from a 50th Sunday.",
+        "Ike Hadley is 1 Sunday away from 50 Sundays at the club.",
     )
 
 
@@ -955,7 +973,7 @@ def test_appending_later_sundays_never_changes_an_earlier_days_facts(
             )
     fr = world.frames()
     seen: set[str] = set()
-    for i in range(60, 110, 3):
+    for i in range(60, 110):
         day = wk(FIRST, i)
         now = week_facts(fr, day)
         assert now == week_facts(fr.until(day), day), day

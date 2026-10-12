@@ -47,7 +47,8 @@ class RecapOut(BaseModel):
     shooters: int
     head_count: int | None
     rounds: int
-    #: "This week": plain sentences, named headlines of the Sunday's insights.
+    #: "This week": plain sentences, the stored Sunday insights' named headlines plus recap-only
+    #: facts (`analytics/recap_facts`), one per type.
     insights: list[str]
     #: Clays Broken sentences, "First Last: <Trophy> - <N>", "Club: ... all time!".
     milestones: list[str]

@@ -14,11 +14,12 @@ Wording rules (the same as the rest of the email): plain words with no site jarg
 from __future__ import annotations
 
 import calendar
+import math
 import statistics
 from bisect import bisect_right
 from collections import Counter, defaultdict
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from itertools import pairwise
 from typing import Any, Final, cast
@@ -27,7 +28,7 @@ import pandas as pd
 
 from sunday_clays.analytics import club_milestones as cm
 from sunday_clays.analytics import frames, streaks
-from sunday_clays.analytics.insights.context import InsightFrames, Sunday, mean
+from sunday_clays.analytics.insights.context import Day, InsightFrames, Sunday, mean
 from sunday_clays.station_label import label_sort_key
 
 FACT_TYPES: Final[tuple[str, ...]] = (
@@ -66,27 +67,26 @@ COLD_MAX_F: Final = 50.0
 HOT_MIN_F: Final = 80.0
 GUST_MIN_MPH: Final = 20.0
 #: The year-so-far line fires on crossing a multiple of this many rounds, or on passing last year.
-YEAR_ROUND_STEP: Final = 100
+YEAR_ROUND_STEP: Final = 250
 YEAR_MIN_SUNDAYS: Final = 26  # a "full" earlier year
 #: club_next: within this many typical Sundays of the next club milestone.
 CLUB_REACH_SUNDAYS: Final = 3
 CLUB_TYPICAL_WINDOW: Final = 8
-#: attendance streak: a multiple of STREAK_STEP, or at least STREAK_LONG, a multiple of
-#: STREAK_LONG_STEP and the club's longest (without the step the longest run is news every week).
+#: attendance streak: only a multiple of STREAK_STEP (a longer-run rule made one person news
+#: every five weeks).
 STREAK_STEP: Final = 10
-STREAK_LONG: Final = 12
-STREAK_LONG_STEP: Final = 5
 #: station feats: every target broken at this many stations; this many shooters on one station.
 FEAT_STATIONS_MIN: Final = 4
 FEAT_CLUB_MIN: Final = 3
-#: improvement: 20-Sunday average up this many targets on 52 weeks earlier.
+#: improvement: average of the last 20 rounds up this many targets on 52 weeks earlier, said when
+#: the gain first reaches it and again at each whole target above it.
 IMPROVE_WINDOW: Final = 20
 IMPROVE_MIN_GAIN: Final = 2.0
 IMPROVE_MIN_LAST_YEAR: Final = 10
 YEAR_DAYS: Final = 364
-#: coming_up: within this many Sundays of the next multiple of COMING_STEP.
+#: coming_up: said once, exactly this many Sundays before the next multiple of COMING_STEP.
 COMING_STEP: Final = 25
-COMING_WITHIN: Final = 3
+COMING_AT: Final = 1
 
 #: How much each type matters, on the scale of the site's ranked insights (care x strength).
 CARE: Final[dict[str, float]] = {
@@ -120,6 +120,8 @@ class RecapFact:
     text: str
     named_ids: tuple[int, ...]
     strength: float
+    #: What else the line is about besides who it names (a club milestone); '' when nothing.
+    key: str = ""
 
 
 def _fact(kind: str, text: str, magnitude: float, named: tuple[int, ...] = ()) -> RecapFact:
@@ -288,6 +290,8 @@ class FactSource:
             return []
         same = next((s for s in reversed(prior) if self._known_type(s.date) == current), None)
         last = None if same is None else same.date
+        if not _long_enough(last, today.date, len(prior)):
+            return []
         label = current.replace("_", " ")
         return [
             _fact(
@@ -451,31 +455,41 @@ class FactSource:
 
     # --- 7. club_next -----------------------------------------------------------------------
 
-    def _club_next(self, day: date) -> list[RecapFact]:
+    def _reach(self, index: int, metric: cm.Metric) -> tuple[int, int, float] | None:
+        """(next milestone, still to go, limit) when within reach as of series row `index`."""
         series = self._club_series()
+        window = series[max(0, index - CLUB_TYPICAL_WINDOW) : index + 1]
+        current = int(getattr(series[index], metric))
+        upcoming = next((t for t in cm.THRESHOLDS[metric] if t > current), None)
+        if upcoming is None:
+            return None
+        steps = [int(getattr(b, metric)) - int(getattr(a, metric)) for a, b in pairwise(window)]
+        typical = statistics.median(steps) if steps else 0.0
+        remaining = upcoming - current
+        limit = CLUB_REACH_SUNDAYS * max(typical, 1.0)
+        return (upcoming, remaining, limit) if remaining <= limit else None
+
+    def _club_next(self, day: date) -> list[RecapFact]:
+        self._club_series()
         index = bisect_right(self._series_days, day) - 1
         if index < 0:
             return []
-        row = series[index]
-        window = series[max(0, index - CLUB_TYPICAL_WINDOW) : index + 1]
         out: list[RecapFact] = []
         for metric in cm.METRICS:
-            current = int(getattr(row, metric))
-            upcoming = next((t for t in cm.THRESHOLDS[metric] if t > current), None)
-            if upcoming is None:
+            reach = self._reach(index, metric)
+            if reach is None:
                 continue
-            steps = [int(getattr(b, metric)) - int(getattr(a, metric)) for a, b in pairwise(window)]
-            typical = statistics.median(steps) if steps else 0.0
-            limit = CLUB_REACH_SUNDAYS * max(typical, 1.0)
-            remaining = upcoming - current
-            if remaining > limit:
-                continue
+            upcoming, remaining, limit = reach
+            earlier = self._reach(index - 1, metric) if index > 0 else None
+            if earlier is not None and earlier[0] == upcoming:
+                continue  # said when it first came within reach
             one, many = _NOUNS[metric]
             text = (
                 f"{_plural(remaining, 'more ' + one, 'more ' + many)} and the club reaches "
                 f"{cm.milestone_label(metric, upcoming)} all time."
             )
-            out.append(_fact("club_next", text, 2.0 - 1.5 * remaining / limit))
+            fact = _fact("club_next", text, 2.0 - 1.5 * remaining / limit)
+            out.append(replace(fact, key=f"{metric}:{upcoming}"))
         return out
 
     # --- 8. attendance_streak ---------------------------------------------------------------
@@ -495,14 +509,11 @@ class FactSource:
             for s, c in zip(run["shooter_id"], run["current_streak"], strict=True)
             if fr.profiles.get(int(s)) is not None and not fr.profiles[int(s)].deceased
         }
-        longest = max(current.values(), default=0)
         out: list[RecapFact] = []
         for sid, s in sorted(current.items()):
             if sid not in came:
                 continue
-            tier = s >= STREAK_STEP and s % STREAK_STEP == 0
-            long_one = s >= STREAK_LONG and s == longest and s % STREAK_LONG_STEP == 0
-            if tier or long_one:
+            if s >= STREAK_STEP and s % STREAK_STEP == 0:
                 text = f"{fr.profiles[sid].name} has come out {s} Sundays in a row."
                 out.append(_fact("attendance_streak", text, s / 30.0, (sid,)))
         return out
@@ -557,10 +568,18 @@ class FactSource:
 
     # --- 10. improvement --------------------------------------------------------------------
 
+    def _gain(self, days: Sequence[Day], on: date) -> float | None:
+        """Last IMPROVE_WINDOW rounds against the same window a year earlier, as of `on`."""
+        old = [d for d in days if d.date <= on - timedelta(days=YEAR_DAYS)]
+        if len(old) < IMPROVE_WINDOW or len(days) - len(old) < IMPROVE_MIN_LAST_YEAR:
+            return None
+        now = mean([float(d.score) for d in days[-IMPROVE_WINDOW:]])
+        then = mean([float(d.score) for d in old[-IMPROVE_WINDOW:]])
+        return round(now - then, 1)
+
     def _improvement(self, i: int) -> list[RecapFact]:
         fr = self.fr
         today = fr.sundays[i]
-        cutoff = today.date - timedelta(days=YEAR_DAYS)
         out: list[RecapFact] = []
         for result in today.results:
             sid = result.shooter_id
@@ -568,18 +587,17 @@ class FactSource:
             if profile is None or profile.deceased:
                 continue
             days = fr.history_until(sid, today.date)
-            old = [d for d in days if d.date <= cutoff]
-            if len(old) < IMPROVE_WINDOW or len(days) - len(old) < IMPROVE_MIN_LAST_YEAR:
+            gain = self._gain(days, today.date)
+            if gain is None or gain < IMPROVE_MIN_GAIN:
                 continue
-            now = mean([float(d.score) for d in days[-IMPROVE_WINDOW:]])
-            then = mean([float(d.score) for d in old[-IMPROVE_WINDOW:]])
-            gain = round(now - then, 1)
-            if gain >= IMPROVE_MIN_GAIN:
-                text = (
-                    f"{profile.name}'s average over the last {IMPROVE_WINDOW} Sundays is up "
-                    f"{gain:.1f} targets on a year ago."
-                )
-                out.append(_fact("improvement", text, gain / 3.0, (sid,)))
+            before = self._gain(days[:-1], days[-2].date) if len(days) > 1 else None
+            if before is not None and math.floor(before) >= math.floor(gain):
+                continue  # already said at this whole-target step
+            text = (
+                f"{profile.name}'s average over the last {IMPROVE_WINDOW} rounds is up "
+                f"{gain:.1f} targets compared with a year ago."
+            )
+            out.append(_fact("improvement", text, gain / 3.0, (sid,)))
         return out
 
     # --- 11. coming_up ----------------------------------------------------------------------
@@ -596,14 +614,14 @@ class FactSource:
             count = fr.appearances_through(sid, today.date)
             upcoming = (count // COMING_STEP + 1) * COMING_STEP
             to_go = upcoming - count  # 25 when today is itself the round number: Milestones'
-            if to_go > COMING_WITHIN:
+            if to_go != COMING_AT:
                 continue
             text = (
                 f"{profile.name} is {_plural(to_go, 'Sunday', 'Sundays')} away from "
-                f"a {upcoming}th Sunday."
+                f"{upcoming:,} Sundays at the club."
             )
             bonus = 0.5 if upcoming % 100 == 0 else 0.0
-            out.append(_fact("coming_up", text, 1.2 - 0.2 * to_go + bonus, (sid,)))
+            out.append(_fact("coming_up", text, 1.0 + bonus, (sid,)))
         return out
 
 
