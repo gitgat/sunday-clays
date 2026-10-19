@@ -49,7 +49,7 @@ def test_labels() -> None:
     assert cm.milestone_label("clays_thrown", 350_000) == "350,000 clays thrown"
     assert cm.milestone_label("sundays_held", 300) == "300 Sundays held"
     assert cm.milestone_label("shooters", 250) == "250 different shooters"
-    assert cm.milestone_label("rounds", 10_000) == "10,000 rounds shot"
+    assert cm.milestone_label("rounds", 10_000) == "10,000 rounds of sporting clays shot"
 
 
 def test_crossing_dates_series_and_next() -> None:

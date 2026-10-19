@@ -28,7 +28,7 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
       'It makes easy and hard Sundays comparable.',
     ],
     computed: [
-      'Score minus the middle score (median) of every round shot that Sunday, all shooters.',
+      'Score minus the middle score (median) of every round that Sunday, all shooters.',
       'Only Sundays with full results have a middle score; other rounds are left out.',
     ],
     terms: ['held-sunday'],

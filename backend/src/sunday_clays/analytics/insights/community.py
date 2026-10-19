@@ -307,8 +307,8 @@ register(
             "": (
                 T(
                     named(
-                        "A calendar year. Rounds = every round shot; busiest = the highest head "
-                        "count."
+                        "A calendar year. Rounds = every round of sporting clays; busiest = the "
+                        "highest head count."
                     )
                 ),
                 T(
