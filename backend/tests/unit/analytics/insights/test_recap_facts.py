@@ -508,7 +508,7 @@ def test_club_next_within_reach(make_world: Any, monkeypatch: pytest.MonkeyPatch
     only_rounds(monkeypatch, 40)
     fr = weekly(make_world, 12).frames()  # 36 rounds, 3 a Sunday
     assert texts(fr, wk(FIRST, 10), "club_next") == [  # 33 rounds: first within 9 of 40
-        "7 more rounds and the club reaches 40 rounds shot all time."
+        "7 more rounds and the club reaches 40 rounds of sporting clays shot all time."
     ]
     assert by_type(fr, wk(FIRST, 10))["club_next"][0].key == "rounds:40"
 
@@ -904,7 +904,7 @@ def case_club_next(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
         fr,
         wk(FIRST, 10),
         "club_next",
-        "7 more rounds and the club reaches 40 rounds shot all time.",
+        "7 more rounds and the club reaches 40 rounds of sporting clays shot all time.",
     )
 
 

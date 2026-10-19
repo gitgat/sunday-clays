@@ -11,7 +11,7 @@ export const explainers = {
       'The number in brackets is this year minus last year. A plus means more than last year.',
     ],
     computed: [
-      'Sundays with scores: Sundays in the year that have scores. Rounds: every 50-target round shot, second rounds included.',
+      'Sundays with scores: Sundays in the year that have scores. Rounds: every 50-target round of sporting clays, second rounds included.',
       'Shooters: different people who shot at least one round. Newcomers: shooters whose very first round in our records fell in this year (people already shooting when the records begin are not counted).',
       'Clays broken: the sum of every round’s score. Average score: clays broken divided by rounds.',
     ],
@@ -37,11 +37,11 @@ export const explainers = {
   clubMonths: {
     what: 'How busy and how well the club shot in each month of the year.',
     read: [
-      'Bars are the rounds shot that month (left scale). The line is the average score (right scale).',
+      'Bars are the rounds of sporting clays shot that month (left scale). The line is the average score (right scale).',
       'A month with no bar had no Sundays with scores.',
     ],
     computed: [
-      'Rounds: every round shot on a Sunday in that month. Average: those rounds’ scores added up and divided by the number of rounds.',
+      'Rounds: every round on a Sunday in that month. Average: those rounds’ scores added up and divided by the number of rounds.',
     ],
   },
   shooterYear: {

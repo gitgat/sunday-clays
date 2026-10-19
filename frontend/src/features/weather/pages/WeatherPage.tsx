@@ -235,7 +235,7 @@ function WeatherCharts({ events, range }: { events: WeatherEvent[]; range: Windo
           {effects.data ? (
             <ChartFrame
               title="Scores by conditions"
-              subtitle="Mean score of every round shot in each band"
+              subtitle="Mean score of every round in each band"
               {...chartProps(bandScoreChart(effects.data.bands, dimension))}
               csvName="weather-scores-by-band"
               ariaLabel="Bar chart of mean score per weather band"

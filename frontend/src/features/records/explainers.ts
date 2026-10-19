@@ -44,7 +44,7 @@ export const explainers: Record<string, Explainer> = {
     terms: ['round-types', 'streak'],
   },
   'rec-highest': {
-    what: 'The highest single rounds shot in the time window.',
+    what: 'The highest single-round scores in the time window.',
     read: ['50 is a perfect round. Ties share a place.'],
     computed: [
       'Every round counts, second rounds on doubleheader Sundays too.',

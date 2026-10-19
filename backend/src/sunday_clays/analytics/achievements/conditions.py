@@ -106,7 +106,7 @@ register(
     Achievement(
         code="sub_gauge",
         name="Sub-Gauge",
-        description="Shot a round with a 20, 28 or .410 gauge.",
+        description="Shot a round of sporting clays with a 20, 28 or .410 gauge.",
         category=Category.CONDITIONS,
         art_key="sub_gauge",
         evaluate=_sub_gauge,

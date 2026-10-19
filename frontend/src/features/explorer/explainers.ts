@@ -28,7 +28,7 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
       'It makes easy and hard Sundays comparable.',
     ],
     computed: [
-      'Score minus the middle score (median) of every round shot that Sunday, all shooters.',
+      'Score minus the middle score (median) of every round that Sunday, all shooters.',
       'Only Sundays with full results have a middle score; other rounds are left out.',
     ],
     terms: ['held-sunday'],
@@ -57,7 +57,7 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
     ],
   },
   rounds: {
-    what: 'How many rounds were shot.',
+    what: 'How many rounds of sporting clays were shot.',
     read: ['A bigger bar means more shooting. There is no Aggregate choice for this metric.'],
     computed: [
       'The rounds in each group after the filters; both rounds on a doubleheader count.',
