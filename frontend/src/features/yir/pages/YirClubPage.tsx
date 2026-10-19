@@ -126,7 +126,7 @@ function ClubYearView({ data }: { data: YirClub }) {
       <Leaders year={data.year} years={data.years} />
       <ChartFrame
         title="Month by month"
-        subtitle={`Rounds shot (bars) and the average score (line) in ${data.year}`}
+        subtitle={`Rounds of sporting clays shot (bars) and the average score (line) in ${data.year}`}
         option={chart.option}
         columns={chart.data.columns}
         rows={chart.data.rows}

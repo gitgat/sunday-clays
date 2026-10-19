@@ -33,7 +33,7 @@ const explainers = {
     ],
   },
   results: {
-    what: 'Every round shot this Sunday, best score first.',
+    what: 'Every round this Sunday, best score first.',
     read: [
       '"T3" is a tie for third; "R2" is a second round.',
       '"Vs middle score" of +5.0 means 5 targets above the middle score that day.',
@@ -62,12 +62,12 @@ const explainers = {
     what: 'The middle score of the day: half the rounds were this or better, half this or worse.',
     read: ['A .5 means the two middle rounds were one target apart.'],
     computed: [
-      'Every round shot that day counts, second rounds included.',
+      'Every round that day counts, second rounds included.',
       'Rounds are sorted by score and the middle one is taken.',
     ],
   },
   topScore: {
-    what: 'The best single round shot this Sunday, out of 50.',
+    what: 'The best single round this Sunday, out of 50.',
     computed: ['The highest score among all rounds that day, second rounds included.'],
   },
   difficulty: {

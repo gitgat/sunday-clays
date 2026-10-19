@@ -43,7 +43,7 @@ _UNITS: Final[dict[Metric, str]] = {
     "clays_thrown": "clays thrown",
     "sundays_held": "Sundays held",
     "shooters": "different shooters",
-    "rounds": "rounds shot",
+    "rounds": "rounds of sporting clays shot",
 }
 
 

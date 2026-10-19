@@ -372,7 +372,7 @@ export function HighestRatings({
   return (
     <RecordTable
       title="Highest rating in these dates"
-      subtitle={`${period} · All round types · needs 5 or more rounds. Peaks on Sundays inside these dates; the 5-round rule still counts every round shot before them.`}
+      subtitle={`${period} · All round types · needs 5 or more rounds. Peaks on Sundays inside these dates; the 5-round rule still counts every round before them.`}
       valueLabel="Rating"
       rows={roundRows(rows, formatRating)}
       size={size}

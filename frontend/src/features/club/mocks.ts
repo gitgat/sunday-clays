@@ -325,7 +325,7 @@ export const clubMilestones: ClubMilestones = {
       threshold: 10000,
       current: 7175,
       remaining: 2825,
-      label: '10,000 rounds shot',
+      label: '10,000 rounds of sporting clays shot',
     },
   ],
   series: [

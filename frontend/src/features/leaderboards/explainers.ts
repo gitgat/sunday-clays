@@ -11,7 +11,7 @@ const METRIC_COMPUTED: Record<LeaderboardMetric, readonly string[]> = {
     FILTERS_APPLY,
   ],
   avg_adjusted: [
-    'For each round: score minus that Sunday’s middle score (every round shot that day, second rounds included, lined up low to high). Then average those differences.',
+    'For each round: score minus that Sunday’s middle score (every round that day, second rounds included, lined up low to high). Then average those differences.',
     `Only Sundays with complete results count. ${FILTERS_APPLY}`,
   ],
   best_score: [
@@ -31,7 +31,7 @@ const METRIC_COMPUTED: Record<LeaderboardMetric, readonly string[]> = {
     FILTERS_APPLY,
   ],
   rounds: [
-    'A count of the 50-target rounds shot in the period. Second rounds on the same Sunday count separately.',
+    'A count of the 50-target rounds of sporting clays shot in the period. Second rounds on the same Sunday count separately.',
     FILTERS_APPLY,
   ],
   rating_gain: [

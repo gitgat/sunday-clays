@@ -47,7 +47,7 @@ export const explainers: Record<string, Explainer> = {
     computed: [
       'Sundays in the chosen time window with full results and weather are put into bands (for example 55-70 °F or 10-20 mph gusts). Fullscreen and the CSV download use every Sunday with weather on record.',
       'Time of year groups Sundays by month: winter is December to February, spring March to May, summer June to August and fall September to November. A time of year with no Sundays in the window has no bar, so a short window shows only some of them.',
-      'Each bar is the average of every round shot on those Sundays. All rounds count, including second rounds.',
+      'Each bar is the average of every round on those Sundays. All rounds count, including second rounds.',
       'The round-type filter applies.',
     ],
     scope: 'windowed',

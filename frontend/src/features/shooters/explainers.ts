@@ -26,7 +26,7 @@ export const explainers = {
       'A score that drops while the right-hand line holds steady means the targets were just harder.',
     ],
     computed: [
-      'Vs middle score = your score minus the middle score of every round shot that Sunday. Blank when the Sunday’s results are incomplete.',
+      'Vs middle score = your score minus the middle score of every round that Sunday. Blank when the Sunday’s results are incomplete.',
       'A PB pin marks a round that beat all your earlier rounds, once you have 5 or more earlier rounds. Ties do not count.',
       'Line chooser: the 10- or 20-Sunday average is the average of your best round on each of your last 10 or 20 Sundays; average so far is every round you shot before that Sunday; personal best is your highest round up to that Sunday.',
       'One point per round, spaced evenly. Opens on the time window. Fullscreen shows every round you have shot, and the CSV download has them all. The round-type filter applies.',
@@ -125,14 +125,14 @@ export const explainers = {
     ],
     computed: [
       'How the day played = how much harder that Sunday was than a typical Sunday of the past year, in targets, allowing for who shot (positive = harder, negative = easier).',
-      'Against the field = your best round that Sunday minus the middle score of every round shot that day. Only Sundays with complete results appear.',
+      'Against the field = your best round that Sunday minus the middle score of every round that day. Only Sundays with complete results appear.',
       'Opens on the time window; fullscreen and the CSV download show every Sunday you shot. The round-type filter picks which of your Sundays appear; how hard the day played always uses everyone’s scores that Sunday.',
     ],
     scope: 'windowed',
     terms: ['round-types', 'time-window'],
   },
   'hero-rounds': {
-    what: 'How many rounds you have shot, for the round types picked in the filter.',
+    what: 'How many rounds of sporting clays you have shot, for the round types picked in the filter.',
     computed: [
       'Every round counts, including second rounds on the same day and Sundays with incomplete results.',
     ],
