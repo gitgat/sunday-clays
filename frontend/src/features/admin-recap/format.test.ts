@@ -5,7 +5,7 @@ import { regularRecap, specialRecap } from './mocks';
 
 const REGULAR_TEXT = `Sunday Clays · Sunday, September 27, 2026
 
-Turnout: 24 came out and 27 rounds were shot.
+Turnout: 24 came out and 27 rounds of sporting clays were shot.
 
 This week
 - Scores up 3 Sundays straight for Alvin McGinnis: 33, 36, then 46.
@@ -19,7 +19,7 @@ Milestones
 
 const REGULAR_MARKDOWN = `**Sunday Clays · Sunday, September 27, 2026**
 
-Turnout: 24 came out and 27 rounds were shot.
+Turnout: 24 came out and 27 rounds of sporting clays were shot.
 
 **This week**
 - Scores up 3 Sundays straight for Alvin McGinnis: 33, 36, then 46.
@@ -89,7 +89,7 @@ describe('recap formatting', () => {
   it('omits empty sections with their headings, and uses the shooter count without a head count', () => {
     const bare = { ...regularRecap, head_count: null, insights: [], milestones: [] };
     const text = formatRecap(bare).text;
-    expect(text).toContain('Turnout: 23 shooters and 27 rounds were shot.');
+    expect(text).toContain('Turnout: 23 shooters and 27 rounds of sporting clays were shot.');
     expect(text).not.toContain('This week');
     expect(text).not.toContain('Milestones');
     expect(formatRecap(bare).markdown).not.toContain('Milestones');
@@ -170,7 +170,7 @@ describe('recap formatting', () => {
 
   it('says "1 round was" and leaves out a special shoot top score nobody has', () => {
     const one = { ...regularRecap, rounds: 1 };
-    expect(formatRecap(one).text).toContain('and 1 round was shot.');
+    expect(formatRecap(one).text).toContain('and 1 round of sporting clays was shot.');
     const noTop = { ...specialRecap, top_score: null };
     expect(formatRecap(noTop).text).not.toContain('Top score');
   });

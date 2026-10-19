@@ -25,7 +25,7 @@ ONE_OFF_EXPLANATIONS: Final[dict[str, str]] = {
     "anniversary_5": "five years since a first Sunday",
     "four_seasons": "shot in winter, spring, summer and fall of one year",
     "perfect_month": "shot every Sunday of a month",
-    "sub_gauge": "shot a round with a 20, 28 or .410 gauge",
+    "sub_gauge": "shot a round of sporting clays with a 20, 28 or .410 gauge",
     "rain": "shot in the rain",
     "cold": "shot on a day colder than 35 F",
     "heat": "shot on a day of 85 F or hotter",
