@@ -508,7 +508,7 @@ def test_club_next_within_reach(make_world: Any, monkeypatch: pytest.MonkeyPatch
     only_rounds(monkeypatch, 40)
     fr = weekly(make_world, 12).frames()  # 36 rounds, 3 a Sunday
     assert texts(fr, wk(FIRST, 10), "club_next") == [  # 33 rounds: first within 9 of 40
-        "7 more rounds and the club reaches 40 rounds of sporting clays shot all time."
+        "7 more rounds and the club reaches 40 rounds of sporting clays shot since January 2024."
     ]
     assert by_type(fr, wk(FIRST, 10))["club_next"][0].key == "rounds:40"
 
@@ -537,7 +537,7 @@ def test_club_next_is_not_lost_when_it_came_within_reach_on_a_special_sunday(
     fr = world.frames()
     assert texts(fr, wk(FIRST, 8), "club_next") == []  # 9 held: 6 to go
     assert texts(fr, wk(FIRST, 9), "club_next") == [
-        "4 more Sundays and the club reaches 15 Sundays held all time."
+        "4 more Sundays and the club reaches 15 Sundays held since January 2024."
     ]
 
 
@@ -570,7 +570,7 @@ def test_club_next_says_sundays_held(make_world: Any, monkeypatch: pytest.Monkey
     )
     fr = weekly(make_world, 12).frames()
     assert texts(fr, wk(FIRST, 9), "club_next") == [
-        "3 more Sundays and the club reaches 13 Sundays held all time."
+        "3 more Sundays and the club reaches 13 Sundays held since January 2024."
     ]  # 10 held, a typical week is 1 Sunday, 5 x 1 in reach
 
 
@@ -904,7 +904,7 @@ def case_club_next(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
         fr,
         wk(FIRST, 10),
         "club_next",
-        "7 more rounds and the club reaches 40 rounds of sporting clays shot all time.",
+        "7 more rounds and the club reaches 40 rounds of sporting clays shot since January 2024.",
     )
 
 
