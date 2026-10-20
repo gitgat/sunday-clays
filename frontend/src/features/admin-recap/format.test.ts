@@ -15,7 +15,7 @@ Milestones
 - Wylie Marsden has now broken 4,000 targets on Sundays: 4,018 in all.
 - Preston Abernathy: Clays Broken - 1,000
 - Pat Kim: Clays Broken - 1,000
-- Club: 7,500 rounds of sporting clays shot all time!`;
+- Club: 7,500 rounds of sporting clays shot since March 2020!`;
 
 const REGULAR_MARKDOWN = `**Sunday Clays · Sunday, September 27, 2026**
 
@@ -29,7 +29,7 @@ Turnout: 24 came out and 27 rounds of sporting clays were shot.
 - Wylie Marsden has now broken 4,000 targets on Sundays: 4,018 in all.
 - Preston Abernathy: Clays Broken - 1,000
 - Pat Kim: Clays Broken - 1,000
-- Club: 7,500 rounds of sporting clays shot all time!`;
+- Club: 7,500 rounds of sporting clays shot since March 2020!`;
 
 const SPECIAL_TEXT = `Sunday Clays · Sunday, September 20, 2026
 3-Bird Shoot (special shoot, 60 targets)

@@ -529,7 +529,7 @@ class FactSource:
             one, many = _NOUNS[metric]
             text = (
                 f"{_plural(remaining, 'more ' + one, 'more ' + many)} and the club reaches "
-                f"{cm.milestone_label(metric, upcoming)} all time."
+                f"{cm.milestone_label(metric, upcoming)} {cm.since(self._series_days[0])}."
             )
             magnitude = 2.0 - 1.5 * remaining / limit
             out.append(_fact("club_next", text, magnitude, key=f"{metric}:{upcoming}"))
