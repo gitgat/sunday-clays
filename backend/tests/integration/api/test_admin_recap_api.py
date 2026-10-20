@@ -137,7 +137,8 @@ def test_milestones_come_as_insight_sentences_then_trophies_then_the_club(
     assert sentence not in recap["insights"]  # never in "This week"
     assert recap_text_problems(sentence) == []
     assert len(lines) > 2
-    assert lines[-1] == f"Club: {cm.milestone_label('rounds', crossed)} all time!"
+    since = cm.since(series[0].event_date)
+    assert lines[-1] == f"Club: {cm.milestone_label('rounds', crossed)} {since}!"
     assert f"{natural_name(name)}: Clays Broken - 1,000" in lines[1:-1]
 
 
@@ -286,7 +287,8 @@ def test_milestones_only_when_their_switch_is_on(
     set_switch(fx_session, get_settings(), "club_milestones", True)
     clear_cache()
     on = club_lines(fx_admin_client.get(f"/api/admin/recap/{LATEST}").json())
-    assert on == [f"Club: {cm.milestone_label('rounds', crossed)} all time!"]
+    since = cm.since(series[0].event_date)
+    assert on == [f"Club: {cm.milestone_label('rounds', crossed)} {since}!"]
 
 
 def test_special_recap(fx_special_admin_client: TestClient, fx_special_session: Session) -> None:

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from sunday_clays.analytics import frames
 from sunday_clays.analytics.achievements.participation import THREE_BIRD_LABELS, normalize_label
 from sunday_clays.analytics.cache import cached_by_data_version
-from sunday_clays.analytics.club_milestones import club_milestones
+from sunday_clays.analytics.club_milestones import club_milestones, since
 from sunday_clays.analytics.insights.store import insights_table, load_rows
 from sunday_clays.analytics.insights.templates import natural_name
 from sunday_clays.analytics.recap_facts import FactSource
@@ -54,7 +54,7 @@ class RecapOut(BaseModel):
     #: (owner settings, 2026-10-12): 3+ lines in 37 weeks (71%) and 4+ in 20 (38%) with the club
     #: lines on (35 and 21 off); two weeks had none.
     insights: list[str]
-    #: Clays Broken sentences, "First Last: <Trophy> - <N>", "Club: ... all time!".
+    #: Clays Broken sentences, "First Last: <Trophy> - <N>", "Club: ... since <Month Year>!".
     milestones: list[str]
     three_bird_new: int | None
     three_bird_holders: int | None
@@ -129,13 +129,14 @@ def get_recap(
         for name, held in codes.items()
         for item in recap_milestone_items(held)
     ]
+    club = club_milestones(session, event_date) if club_on else None
     club_lines = (
         [
-            f"Club: {c.label} all time!"
-            for c in club_milestones(session, event_date).milestones
+            f"Club: {c.label} {since(club.series[0].event_date)}!"
+            for c in club.milestones
             if c.event_date == event_date
         ]
-        if club_on
+        if club is not None
         else []
     )
     new = holders = None

@@ -1,6 +1,7 @@
 """Club milestones (Plan 19 §3.5.1, D17): running club totals, dated at the Sunday each round
 number was first reached. Computed on read from the cached frames."""
 
+import calendar
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -49,6 +50,11 @@ _UNITS: Final[dict[Metric, str]] = {
 
 def milestone_label(metric: Metric, threshold: int) -> str:
     return f"{threshold:,} {_UNITS[metric]}"
+
+
+def since(first: date) -> str:
+    """Where a club total starts counting: the first Sunday on record, as "since March 2020"."""
+    return f"since {calendar.month_name[first.month]} {first.year}"
 
 
 @dataclass(frozen=True)

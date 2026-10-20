@@ -149,3 +149,7 @@ def test_as_of_cuts_the_data_no_leak() -> None:
         assert cut.series == full.series[: i + 1]
         for n in cut.next:
             assert n.current == getattr(full.series[i], n.metric)
+
+
+def test_since_names_the_month_and_year_of_the_first_sunday() -> None:
+    assert cm.since(date(2020, 3, 8)) == "since March 2020"
