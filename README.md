@@ -34,8 +34,8 @@ requests. We built it with [Claude Code](https://claude.com/claude-code) and a h
 - **Trophy Case:** 32 trophies (66 to collect once tiers are counted), from the tiered "Clays Broken" family (bronze through diamond) to Mudder (40+ in
   the rain) and Welcome Back. Tiered trophies show a progress bar toward the next tier.
 - **Insights:** 74 kinds of precomputed facts ("first 45+ in over a year", "the club shot 2 targets better
-  in the dry"). Every number in an insight is checked in CI against the chart it links to, and insights are
-  recomputed only when the data changes.
+  in the dry"). CI checks insight numbers against the charts they link to, and insights are recomputed only
+  when the data changes.
 - **Explorer:** pick any metric, group by anything, filter, and get a chart, a table and a CSV. Every chart has
   a plain-English "what this shows" explainer, a table view, CSV export and fullscreen.
 - **Phone and desktop:** both are first-class, and every page is tested at both sizes.
@@ -131,7 +131,7 @@ a skill estimate and its variance.
 ### Weather (`weather_effects.py`)
 
 - **Club level:** a weighted regression of each Sunday's difficulty on temperature, gusts, rain and cloud cover.
-- **Per shooter:** a regression of that shooter's residuals on the same conditions (10 rounds minimum). The
+- **Per shooter:** a regression of that shooter's residuals on temperature, gusts and rain (10 rounds minimum). The
   results are then shrunk with empirical Bayes toward zero, so a shooter only gets a "wind sensitivity" when the
   data supports it. Effects are reported per 10 °F, per 10 mph of gust and per 0.1 in of rain.
 - Plus band summaries: scores and difficulty by temperature, wind and rain band, and by season.
@@ -182,17 +182,18 @@ checks that prove its numbers.
 - **Lints on the template text** (`lints.py`): no gendered pronouns, no jargon (residual, percentile, median,
   correlation...), no head-to-head language (upset, rival, odds), and no negative words in any clause that names
   someone.
-- **Proof in CI** (`proof.py`): for every insight, the test suite rebuilds the linked chart and reads the number
-  back from it. If the headline says 42 and the chart says 41, the build fails.
+- **Proof in CI** (`proof.py`): for the latest 20 facts of every kind and phrasing, the test suite rebuilds the
+  linked chart and reads the number back from it. If the headline says 42 and the chart says 41, the build fails.
 - **No time travel.** Each Sunday's insights are computed from data up to that Sunday only.
 - **Ranking** (`rank.py`) is care × strength × rarity × recency: rare facts beat common ones, and recent ones beat
-  old ones. Pages then pick a few per family, so a profile doesn't show three streak facts at once.
+  old ones. The top of each page takes one per family, so a profile doesn't lead with three streak facts; the
+  rest go under "More".
 - Wording is chosen from each kind's phrasings by a hash of the insight, so it doesn't change on every recompute.
 
 ### Trophies (`analytics/achievements/`)
 
 32 achievements in six categories (milestone, calendar, conditions, scoring, stations, competition). Nine are
-tiered, from bronze up to diamond, for 66 collectible trophies. Each one is either a value with thresholds (clays
+tiered in metals (bronze, silver, gold, platinum, and diamond for the biggest ones), for 66 collectible trophies. Each one is either a value with thresholds (clays
 broken, Sundays attended, best single round) awarded on the Sunday it was first reached, or a one-off check
 (shot in the rain, sub-gauge round). They're recomputed from scratch on every pipeline run, so a rolled-back
 upload takes its trophies with it.
@@ -201,7 +202,8 @@ upload takes its trophies with it.
 
 An admin page (`/api/admin/recap/{date}`) builds a copy-and-paste recap for the club newsletter: turnout, up to
 five "This week" lines, and milestones. It draws on the Sunday's insights plus recap-only facts
-(`recap_facts.py`) and won't repeat a topic, person or sentence within 12 weeks.
+(`recap_facts.py`). It won't repeat the same fact about the same subject, or the same sentence, within 12
+  weeks, and doesn't name someone two Sundays running.
 
 ## Running it
 
@@ -275,8 +277,8 @@ uv run python -m sunday_clays.jobs.worker      # in another terminal
 
 | What | Where | Command |
 |---|---|---|
-| Backend | `backend/` | `uv run ruff check . && uv run mypy --strict src && uv run pytest` |
-| Frontend | `frontend/` | `pnpm lint && pnpm typecheck && pnpm test` |
+| Backend | `backend/` | `uv run ruff check . && uv run ruff format --check . && uv run mypy --strict src && uv run pytest --cov --cov-branch` |
+| Frontend | `frontend/` | `pnpm lint && pnpm typecheck && pnpm exec prettier --check . && pnpm test --coverage` |
 | End to end | `frontend/` | stack running, then `pnpm exec playwright install chromium && pnpm exec playwright test` |
 
 - Backend tests start a throwaway Postgres container per run, so Docker has to be running. Point
@@ -284,7 +286,8 @@ uv run python -m sunday_clays.jobs.worker      # in another terminal
 - `pnpm typecheck` regenerates the API types from the backend's OpenAPI schema first, so it needs `uv` too.
 - E2E logs in with `E2E_VIEWER_PASSWORD` and `E2E_ADMIN_PASSWORD`, which must match the passwords the stack was
   started with.
-- CI also holds coverage at 99% and the JS bundle under its budget (`ratchets/`). The floors only ever go up.
+- CI also holds coverage at 99% and the JS bundle under a size budget (`ratchets/`). The coverage floors only
+  ever go up.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow, branch naming and hooks.
 
