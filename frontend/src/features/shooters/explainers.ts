@@ -132,7 +132,7 @@ export const explainers = {
     terms: ['round-types', 'time-window'],
   },
   'hero-rounds': {
-    what: 'How many rounds of sporting clays you have shot, for the round types picked in the filter.',
+    what: 'How many Sunday Clays rounds you have shot, for the round types picked in the filter.',
     computed: [
       'Every round counts, including second rounds on the same day and Sundays with incomplete results.',
     ],

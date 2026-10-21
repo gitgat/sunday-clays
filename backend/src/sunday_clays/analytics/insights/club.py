@@ -742,7 +742,7 @@ register(
             "": (
                 T(
                     named(
-                        "Rounds = every round of sporting clays, counted from Jan 1 to the same "
+                        "Rounds = every Sunday Clays round, counted from Jan 1 to the same "
                         "date in each year."
                     )
                 ),
