@@ -49,7 +49,7 @@ def test_labels() -> None:
     assert cm.milestone_label("clays_thrown", 350_000) == "350,000 clays thrown"
     assert cm.milestone_label("sundays_held", 300) == "300 Sundays held"
     assert cm.milestone_label("shooters", 250) == "250 different shooters"
-    assert cm.milestone_label("rounds", 10_000) == "10,000 rounds of sporting clays shot"
+    assert cm.milestone_label("rounds", 10_000) == "10,000 Sunday Clays rounds"
 
 
 def test_crossing_dates_series_and_next() -> None:
@@ -151,5 +151,5 @@ def test_as_of_cuts_the_data_no_leak() -> None:
             assert n.current == getattr(full.series[i], n.metric)
 
 
-def test_since_names_the_month_and_year_of_the_first_sunday() -> None:
-    assert cm.since(date(2020, 3, 8)) == "since March 2020"
+def test_since_names_the_first_sunday() -> None:
+    assert cm.since(date(2020, 3, 8)) == "since March 8, 2020"

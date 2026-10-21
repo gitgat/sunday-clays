@@ -80,7 +80,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     id: 'rarity',
     term: 'Rarity',
     definition:
-      'The share of everyone who has shot a round of sporting clays who holds that trophy. 5% means about 1 in 20 shooters.',
+      'The share of everyone who has shot a Sunday Clays round who holds that trophy. 5% means about 1 in 20 shooters.',
   },
   {
     id: 'round-types',

@@ -44,7 +44,7 @@ _UNITS: Final[dict[Metric, str]] = {
     "clays_thrown": "clays thrown",
     "sundays_held": "Sundays held",
     "shooters": "different shooters",
-    "rounds": "rounds of sporting clays shot",
+    "rounds": "Sunday Clays rounds",
 }
 
 
@@ -53,8 +53,8 @@ def milestone_label(metric: Metric, threshold: int) -> str:
 
 
 def since(first: date) -> str:
-    """Where a club total starts counting: the first Sunday on record, as "since March 2020"."""
-    return f"since {calendar.month_name[first.month]} {first.year}"
+    """Where a club total starts counting: the first Sunday on record, as "since March 8, 2020"."""
+    return f"since {calendar.month_name[first.month]} {first.day}, {first.year}"
 
 
 @dataclass(frozen=True)

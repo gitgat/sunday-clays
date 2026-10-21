@@ -31,7 +31,7 @@ const METRIC_COMPUTED: Record<LeaderboardMetric, readonly string[]> = {
     FILTERS_APPLY,
   ],
   rounds: [
-    'A count of the 50-target rounds of sporting clays shot in the period. Second rounds on the same Sunday count separately.',
+    'A count of the 50-target Sunday Clays rounds shot in the period. Second rounds on the same Sunday count separately.',
     FILTERS_APPLY,
   ],
   rating_gain: [

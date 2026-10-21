@@ -40,7 +40,7 @@ function threeBirdLine(r: Recap): string | null {
 }
 
 function rounds(n: number): string {
-  return n === 1 ? '1 round of sporting clays was' : `${String(n)} rounds of sporting clays were`;
+  return n === 1 ? '1 Sunday Clays round was' : `${String(n)} Sunday Clays rounds were`;
 }
 
 /** Plain text and Markdown of one Sunday's recap, built to complement the club newsletter (owner,

@@ -17,7 +17,7 @@ export const regularRecap: Recap = {
     'Wylie Marsden has now broken 4,000 targets on Sundays: 4,018 in all.',
     'Preston Abernathy: Clays Broken - 1,000',
     'Pat Kim: Clays Broken - 1,000',
-    'Club: 7,500 rounds of sporting clays shot since March 2020!',
+    'Club: 7,500 Sunday Clays rounds since January 5, 2020!',
   ],
   three_bird_new: null,
   three_bird_holders: null,
