@@ -41,8 +41,13 @@ export function AboutPage() {
       <Card title="What is Sunday Clays?" className="space-y-3">
         <p>
           Every Sunday from 10:00 to noon, Tri-County Gun Club members and their guests shoot a
-          50-target sporting clays round in Sherwood. It runs under NSCA rules but isn’t sanctioned:
-          a relaxed weekly shoot that welcomes new shooters and gives regulars structured practice.
+          50-target Sunday Clays round in Sherwood. The course changes week to week: sporting, super
+          sporting, sometimes a bit of FITASC. It runs under NSCA rules but isn’t sanctioned: a
+          relaxed weekly shoot that welcomes new shooters and gives regulars structured practice.
+        </p>
+        <p>
+          Scores here start on January 5, 2020, the first Sunday the club recorded them, and come
+          from the club’s weekly score sheets.
         </p>
         <p>
           <ExternalLink href="https://tcgc.org/sunday-clays/">Read more on tcgc.org</ExternalLink>
