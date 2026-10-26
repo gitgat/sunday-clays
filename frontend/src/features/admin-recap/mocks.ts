@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw';
 import type { Recap } from './api';
 
 export const regularRecap: Recap = {
+  thrown_out: [],
   event_date: '2026-09-27',
   kind: 'regular',
   label: null,
@@ -26,6 +27,7 @@ export const regularRecap: Recap = {
 };
 
 export const specialRecap: Recap = {
+  thrown_out: [],
   event_date: '2026-09-20',
   kind: 'special',
   label: '3-Bird Shoot',

@@ -21,6 +21,8 @@ describe('sundaysOfYear', () => {
 // Every Plan 06 EventSummaryOut field is required; these dates have no scores, so no metrics and no winners.
 function unscored(event_date: string, head_count: number | null): EventSummary {
   return {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,

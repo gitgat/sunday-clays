@@ -68,6 +68,7 @@ class ExportRound:
     score: int
     gauge_class: str | None
     stations: tuple[ExportStation, ...]
+    thrown_out: str | None = None  # the thrown_out_phrase for the round's Sunday
 
     @property
     def target_count(self) -> int:
@@ -118,9 +119,12 @@ def round_name(number: int) -> str:
 def _notes(round_out: ExportRound) -> str:
     # The gauge class ("20 Gauge", "Sub-gauge") goes here: ClaySmasher's Gauge column only
     # accepts 12/16/20/28/410 and rejects the whole row otherwise.
+    parts = [SOURCE_NOTE]
+    if round_out.thrown_out:
+        parts.append(round_out.thrown_out)
     if round_out.gauge_class:
-        return f"{SOURCE_NOTE}; class: {round_out.gauge_class}"
-    return SOURCE_NOTE
+        parts.append(f"class: {round_out.gauge_class}")
+    return "; ".join(parts)
 
 
 def _row(round_out: ExportRound, stations: int) -> list[str]:

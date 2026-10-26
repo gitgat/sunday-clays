@@ -27,6 +27,7 @@ from sunday_clays.analytics.recap_insights import milestone_sentences as targets
 from sunday_clays.analytics.recap_trophies import recap_milestone_items
 from sunday_clays.analytics.steps.s60_insights import build_frames
 from sunday_clays.api.routes._convert import opt_int, opt_str, rows
+from sunday_clays.api.routes.events import ThrownOutOut, thrown_out_out
 from sunday_clays.api.routes.insights import held_dates, supersedes_of
 from sunday_clays.config import Settings, get_settings
 from sunday_clays.db import SessionDep
@@ -47,6 +48,8 @@ class RecapOut(BaseModel):
     shooters: int
     head_count: int | None
     rounds: int
+    #: Stations thrown out that Sunday (empty on a special Sunday); the email says so.
+    thrown_out: list[ThrownOutOut]
     #: "This week": up to 5 plain sentences, the stored Sunday insights' named headlines plus
     #: recap-only facts (`analytics/recap_facts`), one per type. Not a kind two Sundays running,
     #: not the same (kind, subject) within 12 Sundays, nobody named two Sundays running, and
@@ -161,6 +164,7 @@ def get_recap(
         shooters=int(event["n_shooters"]),
         head_count=opt_int(event["head_count"]),
         rounds=int(event["n_rounds"]),
+        thrown_out=thrown_out_out(frames.load_thrown_out(session).get(event_date, ())),
         insights=insights,
         milestones=[
             *sentences,

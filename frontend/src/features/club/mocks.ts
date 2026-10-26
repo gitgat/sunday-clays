@@ -43,6 +43,7 @@ export const clubSummary: ClubSummary = {
 /** Two attendance-only dates, a multi-round day (36 score rows by 35 shooters) and two ordinary days. */
 export const clubAttendance: AttendancePoint[] = [
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -54,6 +55,7 @@ export const clubAttendance: AttendancePoint[] = [
     results_complete: false,
   },
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -65,6 +67,7 @@ export const clubAttendance: AttendancePoint[] = [
     results_complete: false,
   },
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -76,6 +79,7 @@ export const clubAttendance: AttendancePoint[] = [
     results_complete: true,
   },
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -87,6 +91,7 @@ export const clubAttendance: AttendancePoint[] = [
     results_complete: true,
   },
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,

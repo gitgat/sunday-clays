@@ -5,8 +5,8 @@ import { stationLongData, stationMatrixModel } from './charts';
 // Cells are matched by label, not position: Hadley's first cell list is out of layout order on purpose.
 const matrix: StationMatrix = {
   layout: [
-    { label: '4', station_no: 4, target_count: 7 },
-    { label: '10', station_no: 10, target_count: 8 },
+    { dropped: false, label: '4', station_no: 4, target_count: 7 },
+    { dropped: false, label: '10', station_no: 10, target_count: 8 },
   ],
   entries: [
     {
@@ -109,9 +109,9 @@ describe('stationLongData', () => {
 describe('a lettered station', () => {
   const lettered: StationMatrix = {
     layout: [
-      { label: '7', station_no: 7, target_count: 8 },
-      { label: '7A', station_no: 7, target_count: 6 },
-      { label: '8', station_no: 8, target_count: 7 },
+      { dropped: false, label: '7', station_no: 7, target_count: 8 },
+      { dropped: false, label: '7A', station_no: 7, target_count: 6 },
+      { dropped: false, label: '8', station_no: 8, target_count: 7 },
     ],
     entries: [
       {

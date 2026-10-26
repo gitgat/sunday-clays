@@ -77,6 +77,7 @@ def test_club_openapi_paths_and_response_schemas() -> None:
         "kind",
         "label",
         "target_total",
+        "stats_excluded",
     ]
     assert attendance["required"] == list(attendance["properties"])
     nested = {
@@ -192,6 +193,7 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "kind": "regular",
             "label": None,
             "target_total": 50,
+            "stats_excluded": False,
         },
         {
             "event_date": "2026-09-06",
@@ -203,6 +205,7 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "kind": "regular",
             "label": None,
             "target_total": 50,
+            "stats_excluded": False,
         },
         {
             "event_date": "2026-09-13",
@@ -214,6 +217,7 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "kind": "regular",
             "label": None,
             "target_total": 50,
+            "stats_excluded": False,
         },
     ]
 

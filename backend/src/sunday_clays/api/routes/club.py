@@ -70,6 +70,7 @@ class AttendanceOut(BaseModel):
     kind: Literal["regular", "special"] = "regular"  # Plan 17
     label: str | None = None
     target_total: int = frames.REGULAR_TARGETS
+    stats_excluded: bool = False
 
 
 class RetentionOut(BaseModel):
@@ -209,6 +210,7 @@ def club_attendance(session: SessionDep) -> list[AttendanceOut]:
             kind="special" if r["kind"] == frames.EVENT_KIND_SPECIAL else "regular",
             label=opt_str(r["label"]),
             target_total=int(r["target_total"]),
+            stats_excluded=bool(r["stats_excluded"]),
         )
         for r in rows(frames.load_calendar(session))
     ]
