@@ -22,11 +22,11 @@ ROUND_COLUMNS = [
     "gauge_class", "status", "shooter_status", "round_type", "field_median", "adjusted",
     "event_rank", "is_best_round", "percentile", "expected", "residual", "mu_before",
     "mu_after", "temp_f", "apparent_f", "precip_in", "wind_mph", "gust_mph", "wind_dir_deg",
-    "cloud_pct", "condition", "gauge",
+    "cloud_pct", "condition", "gauge", "stats_excluded",
 ]  # fmt: skip
 EVENT_COLUMNS = [
     "event_date", "round_type", "round_type_source", "head_count", "n_rounds", "n_shooters",
-    "has_scores", "has_stations", "results_complete",
+    "has_scores", "has_stations", "results_complete", "stats_excluded",
 ]  # fmt: skip
 D = [date(2026, 1, 4) + timedelta(weeks=i) for i in range(8)]
 
@@ -40,13 +40,20 @@ class World:
     history_rows: list[dict[str, Any]] = field(default_factory=list)
 
     def event(
-        self, day: date, *, round_type: str = "sporting", held: bool = True, scores: bool = True
+        self,
+        day: date,
+        *,
+        round_type: str = "sporting",
+        held: bool = True,
+        scores: bool = True,
+        excluded: bool = False,
     ) -> World:
         self.event_rows[day] = dict.fromkeys(EVENT_COLUMNS) | {
             "event_date": day,
             "round_type": round_type,
             "has_scores": scores,
             "results_complete": scores and held,
+            "stats_excluded": excluded,
         }
         return self
 
@@ -69,6 +76,7 @@ class World:
                 "shooter_status": "member",
                 "round_type": self.event_rows[day]["round_type"],
                 "gauge": "unspecified",
+                "stats_excluded": self.event_rows[day]["stats_excluded"],
             }
         )
         return self
@@ -467,4 +475,26 @@ def test_most_sundays_ties_use_the_scored_tie_key_not_a_special_sheet_spelling()
         ("Ace, Amy", 2.0),
         ("Bee, Bob", 2.0),
         ("Cy, Cal", 1.0),
+    ]
+
+
+def test_thrown_out_sundays_leave_score_records_but_keep_attendance() -> None:
+    w = World().event(D[1], excluded=True)
+    w.shot(D[0], 1, 40, adjusted=1.0).shot(D[1], 1, 50).shot(D[2], 1, 46, adjusted=2.0)
+    r = w.records()
+    assert [x.value for x in r.highest_scores] == [46.0, 40.0]
+    assert r.perfect_rounds == ()
+    assert [x.value for x in r.biggest_adjusted] == [2.0, 1.0]
+    assert [(j.prev_event_date, j.event_date, j.value) for j in r.biggest_jumps] == [
+        (D[0], D[2], 6.0)
+    ]
+    assert [x.value for x in r.most_events] == [3.0]
+    assert [x.value for x in r.longest_streaks] == [3.0]
+
+
+def test_the_rating_record_floor_counts_thrown_out_rounds() -> None:  # guard
+    w = _five_rounds(World().event(D[2], excluded=True), 1)
+    w.rating(1, D[4], 33.0)
+    assert [(r.shooter_id, r.event_date, r.value) for r in w.records().highest_ratings] == [
+        (1, D[4], 33.0)
     ]

@@ -23,6 +23,8 @@ from sunday_clays.analytics.frames import (
     load_events,
     load_rating_history,
     load_rounds,
+    stat_events,
+    stat_rounds,
 )
 from sunday_clays.analytics.points import season_points
 from sunday_clays.domain.round_type import RoundType
@@ -134,7 +136,9 @@ def period_bounds(
 
 
 def scaled_min_rounds(events: pd.DataFrame, period: LeaderboardPeriod, as_of: date) -> int:
-    """Season/YTD average-board minimum: min(5, max(1, ceil(0.4 * E))), E = scored Sundays in it."""
+    """Season/YTD average-board minimum: min(5, max(1, ceil(0.4 * E))), E = scored Sundays in it
+    (a Sunday with a station thrown out is not in the average, so it is not counted)."""
+    events = stat_events(events)
     start, end = period_bounds(period, as_of)
     in_window = events[
         events["has_scores"].eq(True)
@@ -149,8 +153,9 @@ def custom_min_rounds(events: pd.DataFrame, since: date, as_of: date) -> int:
     """Average-board minimum for a custom range: min(15, max(1, min(5, ceil(.4n)), ceil(.15n))).
 
     ``n`` is the number of scored Sundays in ``[since, as_of]``; integer ceilings avoid float
-    rounding at the boundaries.
+    rounding at the boundaries. A Sunday with a station thrown out is not counted.
     """
+    events = stat_events(events)
     in_range = events[
         events["has_scores"].eq(True)
         & (events["event_date"] >= since)
@@ -159,6 +164,11 @@ def custom_min_rounds(events: pd.DataFrame, since: date, as_of: date) -> int:
     n = int(in_range["event_date"].nunique())
     return min(15, max(1, min(5, -(-2 * n // 5)), -(-3 * n // 20)))
 
+
+# Boards that average or rank scores leave a thrown-out Sunday out; count boards keep it.
+SCORE_STAT_METRICS = frozenset(
+    {LeaderboardMetric.AVG_SCORE, LeaderboardMetric.AVG_ADJUSTED, LeaderboardMetric.BEST_SCORE}
+)
 
 _AVERAGE_MIN_ROUNDS = {LeaderboardPeriod.ROLLING_12: 8, LeaderboardPeriod.ALL_TIME: 15}
 
@@ -445,7 +455,10 @@ def leaderboard(
         body = _events(apply_round_type_filter(seen, filters.round_types))
     else:
         start, end = period_bounds(period, as_of, since)
-        body = ROUND_METRICS[metric](_round_filters(_window(frames.rounds, start, end), filters))
+        window = _round_filters(_window(frames.rounds, start, end), filters)
+        if metric in SCORE_STAT_METRICS:
+            window = stat_rounds(window)
+        body = ROUND_METRICS[metric](window)
     rows = _finalize(body, _shooters_as_of(frames, as_of), min_rounds, filters.status)
     return Leaderboard(period, metric, as_of, min_rounds, rows, since)
 
