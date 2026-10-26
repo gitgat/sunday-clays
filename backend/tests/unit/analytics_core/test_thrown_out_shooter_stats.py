@@ -219,3 +219,23 @@ def test_pb_notables_skip_a_thrown_out_sunday_and_its_score(make_rounds: MakeRou
     assert [(n.kind, n.detail) for n in event_notables(rounds, shooters, days[6])] == [
         ("pb", "New personal best 45 (was 40)")
     ]
+
+
+def test_no_pb_notable_when_every_earlier_round_was_thrown_out(make_rounds: MakeRounds) -> None:
+    days = [date(2026, 1, 4) + timedelta(weeks=i) for i in range(6)]
+    rounds = make_rounds(
+        [
+            {"event_date": d, "shooter_id": 1, "score": 40, "stats_excluded": i < 5}
+            for i, d in enumerate(days)
+        ],
+        is_best_round=True,
+    )
+    shooters = pd.DataFrame(
+        {
+            "shooter_id": [1],
+            "display_name": ["Hadley, Ike"],
+            "first_event": [days[0]],
+            "left_censored": [False],
+        }
+    )
+    assert event_notables(rounds, shooters, days[5]) == []

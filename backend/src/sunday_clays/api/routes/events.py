@@ -346,7 +346,7 @@ def event_notables(
     for r in rows(best):
         shooter = int(r["shooter_id"])
         n_prior = int(n_earlier.get(shooter, 0))
-        previous = int(top_scored.get(shooter, 0))
+        previous = int(top_scored[shooter]) if shooter in top_scored.index else None
         if is_new_pb(int(r["score"]), previous, n_prior):
             notables.append(
                 NotableOut(
