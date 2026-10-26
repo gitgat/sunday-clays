@@ -12,7 +12,7 @@ from sunday_clays.domain.errors import ConflictError, DomainError, NotFoundError
 from sunday_clays.domain.identity import resolve_shooter
 from sunday_clays.domain.imports import stage_import
 from sunday_clays.domain.rebuild import rebuild_live
-from sunday_clays.domain.rules import RuleType, create_rule, deactivate_rule
+from sunday_clays.domain.rules import RuleType, create_rule, deactivate_rule, load_active_rules
 from sunday_clays.models import (
     DataIssue,
     Event,
@@ -76,6 +76,16 @@ def _issues(session: Session, code: str) -> list[DataIssue]:
         (RuleType.RENAME_SHOOTER, {"shooter_id": 1, "display_name": "   "}, "display_name"),
         (RuleType.ALIAS_NAME, {"name_key": "hadley dik", "shooter_id": 1, "extra": True}, "extra"),
         ("not_a_rule", {}, "not_a_rule"),
+        (
+            RuleType.STATION_DROP,
+            {"event_date": "2026-10-25", "station_label": None, "dropped": False},
+            "A Sunday-level rule can only mark a Sunday as thrown out",
+        ),
+        (
+            RuleType.STATION_DROP,
+            {"event_date": "2026-10-25", "station_label": "11", "dropped": True, "reason": "x"},
+            "reason",
+        ),
     ],
 )
 def test_create_rule_rejects_invalid_payloads(
@@ -299,6 +309,35 @@ def test_round_type_override_wins_and_missing_date_is_reported(
         "rule_id": orphan,
         "event_date": "2026-09-20",
         "round_type": "sporting",
+    }
+
+
+def test_station_drop_rules_load_newest_per_station_and_sunday(session: Session) -> None:
+    create_rule(
+        session,
+        RuleType.STATION_DROP,
+        {"event_date": "2026-10-25", "station_label": "11", "dropped": True},
+        None,
+    )
+    newer = create_rule(
+        session,
+        RuleType.STATION_DROP,
+        {"event_date": "2026-10-25", "station_label": "11", "dropped": False},
+        None,
+    )
+    sunday = create_rule(
+        session, RuleType.STATION_DROP, {"event_date": "2026-01-11", "dropped": True}, None
+    )
+    gone = create_rule(
+        session,
+        RuleType.STATION_DROP,
+        {"event_date": "2026-10-18", "station_label": "4", "dropped": True},
+        None,
+    )
+    deactivate_rule(session, gone)
+    assert load_active_rules(session).station_drops == {
+        (date(2026, 10, 25), "11"): (newer, False),
+        (date(2026, 1, 11), None): (sunday, True),
     }
 
 
