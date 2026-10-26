@@ -248,3 +248,29 @@ describe('allRowsSpec / allHistorySpec', () => {
     expect(spec).toEqual(before);
   });
 });
+
+describe('toTabular thrown-out column', () => {
+  it('adds a thrown_out column for the Sundays the server lists', () => {
+    const t = toTabular({
+      columns: [
+        { key: 'event', label: 'Sunday', type: 'date' },
+        { key: 'value', label: 'Rounds', type: 'int' },
+      ],
+      rows: [
+        { event: '2026-10-25', value: 20 },
+        { event: '2026-10-18', value: 22 },
+      ],
+      n_rounds: 42,
+      truncated: false,
+      thrown_out_dates: ['2026-10-25'],
+    });
+    expect(t.columns.at(-1)).toEqual({ key: 'thrown_out', label: 'Thrown out', type: 'string' });
+    expect(t.rows.map((r) => r.thrown_out)).toEqual(['yes', '']);
+  });
+
+  it('adds nothing when no Sunday is listed', () =>
+    expect(
+      toTabular({ columns: [], rows: [], n_rounds: 0, truncated: false, thrown_out_dates: [] })
+        .columns,
+    ).toEqual([]));
+});

@@ -32,6 +32,7 @@ describe('lastResult', () => {
       score: 37,
       rank: 16,
       ratingMove: 0.1,
+      thrownOut: false,
     });
   });
 
@@ -50,8 +51,20 @@ describe('lastResult', () => {
       score: 40,
       rank: null,
       ratingMove: null,
+      thrownOut: false,
     });
   });
+
+  it('stars a thrown-out last Sunday and shows no rating move', () =>
+    expect(
+      lastResult([{ ...latest, stats_excluded: true, mu_before: 35, mu_after: 35.4 }]),
+    ).toEqual({
+      date: latest.event_date,
+      score: latest.score,
+      rank: latest.event_rank,
+      ratingMove: null,
+      thrownOut: true,
+    }));
 
   it('is null without rounds', () => {
     expect(lastResult([])).toBeNull();

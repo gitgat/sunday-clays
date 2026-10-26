@@ -4,7 +4,9 @@ import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { Stat } from '../../../components/ui/Stat';
+import { ThrownOutMark } from '../../../components/ui/ThrownOutMark';
 import { isSpecial, specialLine, targetsOf } from '../../events/format';
+import { thrownOutPhrase } from '../../events/thrownOut';
 import { useRoundTypeLink } from '../../../lib/roundTypes';
 import { useEventDetail, useMeta } from '../api';
 import type { EventDetail } from '../api';
@@ -64,6 +66,9 @@ function LatestEventBody({
 }) {
   const top = winners(event.results);
   const special = isSpecial(event);
+  const mark = event.stats_excluded ? (
+    <ThrownOutMark phrase={thrownOutPhrase(event.thrown_out)} />
+  ) : null;
   const eventLink = useRoundTypeLink(`/events/${event.event_date}`);
   const fullLink = useRoundTypeLink(`/events/${lastFull ?? event.event_date}`);
   return (
@@ -80,7 +85,10 @@ function LatestEventBody({
         <>
           {/* No rank-1 best round (metrics not computed yet): no names to show; Top score below. */}
           {top.length > 0 && (
-            <p>{`${top.length > 1 ? 'Winners' : 'Winner'}: ${top.join(' & ')} — ${formatScore(event.top_score)}`}</p>
+            <p>
+              {`${top.length > 1 ? 'Winners' : 'Winner'}: ${top.join(' & ')} — ${formatScore(event.top_score)}`}
+              {mark}
+            </p>
           )}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Stat
@@ -90,12 +98,22 @@ function LatestEventBody({
             />
             <Stat
               label="Median"
-              value={formatScore(event.median)}
+              value={
+                <>
+                  {formatScore(event.median)}
+                  {mark}
+                </>
+              }
               explainer={homeExplainers.latestMedian}
             />
             <Stat
               label="Top score"
-              value={formatScore(event.top_score)}
+              value={
+                <>
+                  {formatScore(event.top_score)}
+                  {mark}
+                </>
+              }
               explainer={homeExplainers.latestTop}
             />
           </div>

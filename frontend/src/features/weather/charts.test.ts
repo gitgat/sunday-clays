@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WeatherShooter } from './api';
+import type { WeatherEvent, WeatherShooter } from './api';
 import {
   SENSITIVITY_CHART_ROWS,
   bandScoreChart,
@@ -14,9 +14,9 @@ describe('difficultyFitChart', () => {
   it('plots scored events and the partial-effect line of the club model', () => {
     const { data, option } = difficultyFitChart(WEATHER_EVENTS, WEATHER_EFFECTS.model, 'gust_mph');
     expect(data.rows).toEqual([
-      { event_date: '2026-08-16', x: 12, difficulty: -1.5 },
-      { event_date: '2026-09-13', x: 25, difficulty: 1.2 },
-      { event_date: '2026-09-27', x: 6, difficulty: -0.5 },
+      { event_date: '2026-08-16', x: 12, difficulty: -1.5, thrown_out: '' },
+      { event_date: '2026-09-13', x: 25, difficulty: 1.2, thrown_out: '' },
+      { event_date: '2026-09-27', x: 6, difficulty: -0.5, thrown_out: '' },
     ]);
     // others at their means: 1 - 0.02*60 + 2*0.05 + 0.01*50 = 0.4; line = 0.4 + 0.1 * gust
     expect(option.series).toEqual([
@@ -210,5 +210,38 @@ describe('sensitivityChart', () => {
     expect((inline.option.yAxis as { data: string[] }).data).toHaveLength(12);
     expect((all.option.yAxis as { data: string[] }).data).toHaveLength(15);
     expect(all.data.rows).toHaveLength(15);
+  });
+});
+
+describe('thrown-out Sundays in weather charts', () => {
+  it('wind rose leaves out a Sunday with a station thrown out', () => {
+    const e = { ...(WEATHER_EVENTS[0] as WeatherEvent), wind_dir_deg: 0, median: 30 };
+    expect(windRoseChart([e, { ...e, median: 50, stats_excluded: true }]).data.rows[0]).toEqual({
+      sector: 'N',
+      events: 1,
+      median: 30,
+    });
+  });
+
+  it('the difficulty fit keeps a thrown-out Sunday in its table, flagged, but not as a point', () => {
+    const e = WEATHER_EVENTS[0] as WeatherEvent;
+    const chart = difficultyFitChart(
+      [
+        { ...e, event_date: '2026-10-18', difficulty: 1.5 },
+        { ...e, event_date: '2026-10-25', difficulty: null, stats_excluded: true },
+      ],
+      null,
+      'temp_f',
+    );
+    expect(chart.data.columns.at(-1)).toEqual({
+      key: 'thrown_out',
+      label: 'Thrown out',
+      type: 'string',
+    });
+    expect(chart.data.rows.map((r) => [r.event_date, r.difficulty, r.thrown_out])).toEqual([
+      ['2026-10-18', 1.5, ''],
+      ['2026-10-25', null, 'yes'],
+    ]);
+    expect((chart.option.series as { name: string; data: unknown[] }[])[0]?.data).toHaveLength(1);
   });
 });

@@ -1,5 +1,6 @@
 import { useParams } from 'react-router';
 import { ChartFrame } from '../../../components/charts/ChartFrame';
+import { excludedNote } from '../../events/thrownOut';
 import { useYirShooter, type YirShooter } from '../api';
 import { shooterMonthChart } from '../charts';
 import { Stat } from '../components/Stat';
@@ -44,6 +45,9 @@ function TheYear({ data }: { data: YirShooter }) {
         />
         <Stat label="Rating gain" value={ratingGain(data)} />
       </dl>
+      {excludedNote(totals.n_excluded) !== null && (
+        <p className="text-sm text-text-muted">{excludedNote(totals.n_excluded)}</p>
+      )}
     </YirCard>
   );
 }
