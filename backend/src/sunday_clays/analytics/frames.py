@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from sunday_clays.analytics.cache import cached_by_data_version
 from sunday_clays.domain.round_type import RoundType
+from sunday_clays.domain.thrown_out import ThrownOut
 
 TEMP_BANDS: tuple[str, ...] = ("<40", "40-55", "55-70", "70-85", "85+")
 WIND_BANDS: tuple[str, ...] = ("<10", "10-20", "20+")
@@ -52,6 +53,7 @@ ROUND_COLUMNS: tuple[str, ...] = (
     "condition",
     "gauge",
     "held",
+    "stats_excluded",
 )
 EVENT_COLUMNS: tuple[str, ...] = (
     "event_date",
@@ -79,6 +81,7 @@ EVENT_COLUMNS: tuple[str, ...] = (
     "humidity_pct",
     "pressure_hpa",
     "condition",
+    "stats_excluded",
 )
 STATION_HIT_COLUMNS: tuple[str, ...] = (
     "event_date",
@@ -92,6 +95,7 @@ STATION_HIT_COLUMNS: tuple[str, ...] = (
     "round_id",
     "hits",
     "round_type",
+    "dropped",
 )
 RATING_COLUMNS: tuple[str, ...] = ("shooter_id", "event_date", "mu", "var")
 SHOOTER_COLUMNS: tuple[str, ...] = (
@@ -137,7 +141,7 @@ SELECT r.id AS round_id, r.event_date, r.shooter_id, r.name_key, p.display_name,
        e.round_type, m.field_median, m.adjusted, m.event_rank, m.is_best_round,
        m.percentile, m.expected, m.residual, m.mu_before, m.mu_after, w.temp_f,
        w.apparent_f, w.precip_in, w.wind_mph, w.gust_mph, w.wind_dir_deg, w.cloud_pct,
-       w.condition, e.results_complete AS held
+       w.condition, e.results_complete AS held, e.stats_excluded
 FROM rounds r
 JOIN events e ON e.event_date = r.event_date
 JOIN shooter_profiles p ON p.shooter_id = r.shooter_id
@@ -151,7 +155,7 @@ SELECT e.event_date, e.round_type, e.round_type_source, e.head_count, e.n_rounds
        e.n_shooters, e.has_scores, e.has_stations, e.results_complete, m.n, m.median,
        m.mean, m.stdev, m.top_score, m.difficulty, w.temp_f, w.apparent_f, w.precip_in,
        w.wind_mph, w.gust_mph, w.wind_dir_deg, w.cloud_pct, w.humidity_pct,
-       w.pressure_hpa, w.condition
+       w.pressure_hpa, w.condition, e.stats_excluded
 FROM events e
 LEFT JOIN event_metrics m ON m.event_date = e.event_date
 LEFT JOIN event_weather w ON w.event_date = e.event_date
@@ -163,7 +167,7 @@ SELECT e.event_date, e.round_type, e.round_type_source, e.head_count, e.n_rounds
        e.n_shooters, e.has_scores, e.has_stations, e.results_complete, m.n, m.median,
        m.mean, m.stdev, m.top_score, m.difficulty, w.temp_f, w.apparent_f, w.precip_in,
        w.wind_mph, w.gust_mph, w.wind_dir_deg, w.cloud_pct, w.humidity_pct,
-       w.pressure_hpa, w.condition, e.kind, e.label, e.target_total
+       w.pressure_hpa, w.condition, e.stats_excluded, e.kind, e.label, e.target_total
 FROM events e
 LEFT JOIN event_metrics m ON m.event_date = e.event_date
 LEFT JOIN event_weather w ON w.event_date = e.event_date
@@ -171,7 +175,7 @@ ORDER BY e.event_date
 """
 _STATION_HITS_SQL = """
 SELECT h.event_date, h.station_no, h.station_label, l.target_count, h.sheet_id, h.entry_row,
-       h.name_key, h.shooter_id, h.round_id, h.hits, e.round_type
+       h.name_key, h.shooter_id, h.round_id, h.hits, e.round_type, l.dropped
 FROM station_hits h
 JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
 JOIN events e ON e.event_date = h.event_date
@@ -180,7 +184,7 @@ ORDER BY h.event_date, h.entry_row, h.station_no, h.station_label
 """
 _SPECIAL_STATION_HITS_SQL = """
 SELECT h.event_date, h.station_no, h.station_label, l.target_count, h.sheet_id, h.entry_row,
-       h.name_key, h.shooter_id, h.round_id, h.hits, e.round_type
+       h.name_key, h.shooter_id, h.round_id, h.hits, e.round_type, l.dropped
 FROM station_hits h
 JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
 JOIN events e ON e.event_date = h.event_date
@@ -269,7 +273,7 @@ def load_rounds(session: Session) -> pd.DataFrame:
             "wind_dir_deg",
             "cloud_pct",
         ),
-        bools=("is_best_round", "held"),
+        bools=("is_best_round", "held", "stats_excluded"),
     )
     df["gauge"] = df["gauge_class"].where(df["gauge_class"].notna(), UNSPECIFIED_GAUGE)
     return df[list(ROUND_COLUMNS)]
@@ -293,7 +297,12 @@ _EVENT_FLOATS: tuple[str, ...] = (
     "humidity_pct",
     "pressure_hpa",
 )
-_EVENT_BOOLS: tuple[str, ...] = ("has_scores", "has_stations", "results_complete")
+_EVENT_BOOLS: tuple[str, ...] = (
+    "has_scores",
+    "has_stations",
+    "results_complete",
+    "stats_excluded",
+)
 
 
 @cached_by_data_version
@@ -353,6 +362,7 @@ def _station_frame(session: Session, sql: str) -> pd.DataFrame:
         STATION_HIT_COLUMNS,
         ints=("station_no", "target_count", "sheet_id", "entry_row", "hits"),
         nullable_ints=("shooter_id", "round_id"),
+        bools=("dropped",),
     )
     df["station_label"] = df["station_label"].astype(str)  # text dtype, empty or not
     return df
@@ -402,10 +412,78 @@ def appearances_from_rounds(rounds: pd.DataFrame) -> pd.DataFrame:
 def calendar_from_events(events: pd.DataFrame) -> pd.DataFrame:
     """The calendar an events frame implies: every Sunday regular, 50 targets (Plan 17)."""
     out = events.copy()
+    if "stats_excluded" not in out.columns:
+        out["stats_excluded"] = False
     out["kind"] = EVENT_KIND_REGULAR
     out["label"] = None
     out["target_total"] = REGULAR_TARGETS
     return out
+
+
+def _without(df: pd.DataFrame, column: str) -> pd.DataFrame:
+    """`df` minus the rows whose `column` is True; NaN counts as kept, no column means no-op."""
+    if column not in df.columns:
+        return df
+    return df[~df[column].eq(True)]
+
+
+def stat_rounds(rounds: pd.DataFrame) -> pd.DataFrame:
+    """The rounds that feed score statistics: those of a Sunday with a station thrown out stay
+    on the page but out of every average, PB and record."""
+    return _without(rounds, "stats_excluded")
+
+
+def stat_events(events: pd.DataFrame) -> pd.DataFrame:
+    """The Sundays that feed score statistics (a thrown-out Sunday is left out)."""
+    return _without(events, "stats_excluded")
+
+
+def live_station_hits(hits: pd.DataFrame) -> pd.DataFrame:
+    """Station hits without the stations thrown out."""
+    return _without(hits, "dropped")
+
+
+_THROWN_OUT_STATIONS_SQL = """
+SELECT l.event_date, l.station_label, l.target_count, l.dropped_source,
+       count(h.hits) AS n_hits, coalesce(bool_and(h.hits = l.target_count), false) AS all_full
+FROM station_layouts l
+JOIN events e ON e.event_date = l.event_date
+LEFT JOIN station_hits h
+       ON h.event_date = l.event_date AND h.station_label = l.station_label
+WHERE l.dropped AND e.kind = 'regular'
+GROUP BY l.event_date, l.station_no, l.station_label, l.target_count, l.dropped_source
+ORDER BY l.event_date, l.station_no, l.station_label
+"""
+_THROWN_OUT_SUNDAYS_SQL = """
+SELECT e.event_date FROM events e
+WHERE e.stats_excluded AND e.kind = 'regular'
+  AND NOT EXISTS (
+    SELECT 1 FROM station_layouts l WHERE l.event_date = e.event_date AND l.dropped
+  )
+"""
+
+
+@cached_by_data_version
+def load_thrown_out(session: Session) -> dict[date, tuple[ThrownOut, ...]]:
+    """What was thrown out on each regular Sunday, dates ascending.
+
+    A station item per dropped layout (layout order); a Sunday-level item only for a flagged
+    Sunday with no dropped layout.
+    """
+    out: dict[date, list[ThrownOut]] = {}
+    for r in session.execute(text(_THROWN_OUT_STATIONS_SQL)).mappings():
+        source = r["dropped_source"]
+        out.setdefault(r["event_date"], []).append(
+            ThrownOut(
+                station_label=str(r["station_label"]),
+                target_count=int(r["target_count"]),
+                credited=int(r["n_hits"]) > 0 and bool(r["all_full"]),
+                source="override" if source == "override" else "auto",
+            )
+        )
+    for r in session.execute(text(_THROWN_OUT_SUNDAYS_SQL)).mappings():
+        out[r["event_date"]] = [ThrownOut(None, None, False, "override")]
+    return {d: tuple(out[d]) for d in sorted(out)}
 
 
 @cached_by_data_version
