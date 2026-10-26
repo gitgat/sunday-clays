@@ -27,6 +27,7 @@ from sunday_clays.analytics.insights.context import (
 from sunday_clays.analytics.insights.form import VS_FIELD_LABEL, vs_field_chart
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Count,
     Int,
     NameList,
@@ -70,6 +71,7 @@ def run_facts(
     profile_min: int,
     strength_unit: float,
     min_prior_rounds: int = 0,
+    scored: bool = False,
 ) -> Iterator[Fact]:
     """Anchored Facts when a run reaches one of `crossings`; a profile Fact while >= profile_min."""
 
@@ -88,14 +90,14 @@ def run_facts(
             named_shooter_ids=(last.shooter_id,),
         )
 
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=scored):
         upto = days[: i + 1]
         if ok(upto[-1]) is not True:
             continue
         k = run_back(upto, ok)
         if k in crossings and (f := fact(upto, k, variant="", pages=frozenset({P.SUNDAY, P.HOME}))):
             yield f
-    for _sid, days in evergreen_days(fr, scope):
+    for _sid, days in evergreen_days(fr, scope, scored=scored):
         k = run_back(days, ok)
         if k >= profile_min and shot_recently(days, scope.as_of):
             f = fact(days, k, variant=PROFILE, pages=frozenset({P.PROFILE}))
@@ -124,7 +126,13 @@ def above_field(day: Day) -> bool | None:
 
 def _beat_field(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     yield from run_facts(
-        fr, scope, above_field, crossings=(6, 10, 15, 20), profile_min=5, strength_unit=5
+        fr,
+        scope,
+        above_field,
+        crossings=(6, 10, 15, 20),
+        profile_min=5,
+        strength_unit=5,
+        scored=True,
     )
 
 
@@ -206,6 +214,7 @@ register(
                         "your profile from 5. All round types count."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
             ROLLUP: (
                 T(
@@ -214,6 +223,7 @@ register(
                         "or 20 today."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
         },
         labels=(VS_FIELD_LABEL, ROLLUP_LABEL),
@@ -243,6 +253,7 @@ def _own_avg(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         profile_min=4,
         strength_unit=4,
         min_prior_rounds=OWN_AVG_PRIOR,
+        scored=True,
     )
 
 
@@ -323,8 +334,12 @@ register(
                         "reaches 6, 10, 15 or 20, and on your profile from 4."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
-            ROLLUP: (T(named("Runs above their own average reaching 6, 10, 15 or 20 today.")),),
+            ROLLUP: (
+                T(named("Runs above their own average reaching 6, 10, 15 or 20 today.")),
+                THROWN_OUT_ROUNDS_HOW,
+            ),
         },
         labels=(OWN_AVG_LABEL, ROLLUP_LABEL),
         chart=_own_avg_chart,
@@ -368,7 +383,7 @@ def _tier_run_fact(
 
 
 def _tier_run(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         upto = days[: i + 1]
         tier = own_tier(upto)
         if tier is None:
@@ -376,7 +391,7 @@ def _tier_run(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         k = run_back(upto, at_least(tier))
         if k == TIER_PROFILE_RUN[tier]:
             yield _tier_run_fact(upto, tier, k, variant="", pages=frozenset({P.SUNDAY, P.HOME}))
-    for _sid, days in evergreen_days(fr, scope):
+    for _sid, days in evergreen_days(fr, scope, scored=True):
         tier = own_tier(days)
         if tier is None or not shot_recently(days, scope.as_of):
             continue
@@ -448,8 +463,12 @@ register(
                         "on your profile while it lasts."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
-            ROLLUP: (T(named("Each reached a long run at their own mark today.")),),
+            ROLLUP: (
+                T(named("Each reached a long run at their own mark today.")),
+                THROWN_OUT_ROUNDS_HOW,
+            ),
         },
         labels=(charts.BEST_EACH_LABEL, ROLLUP_LABEL),
         chart=_tier_chart,
@@ -467,7 +486,7 @@ RISING_TOTAL = 4
 
 
 def _three_rising(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         if i < RISING_BEST_OF:
             continue
         d1, d2, d3 = days[i - 2 : i + 1]
@@ -564,8 +583,12 @@ register(
                     named("The last must beat every one of the 20 Sundays before it."),
                     you=named("Your last must beat every one of your 20 Sundays before it."),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
-            ROLLUP: (T(named("Each has 3 rising Sundays in a row.")),),
+            ROLLUP: (
+                T(named("Each has 3 rising Sundays in a row.")),
+                THROWN_OUT_ROUNDS_HOW,
+            ),
         },
         labels=(charts.BEST_EACH_LABEL, ROLLUP_LABEL),
         chart=_rising_chart,

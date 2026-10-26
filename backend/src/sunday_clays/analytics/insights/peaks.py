@@ -20,6 +20,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Dec1,
     FullDate,
     Int,
@@ -82,7 +83,7 @@ ROLL10_LABEL = T(
 
 
 def _best_stretch(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         upto = days[: i + 1]
         if upto[-1].rounds_through < STRETCH_MIN_ROUNDS or len(upto) < STRETCH + 1:
             continue
@@ -166,8 +167,12 @@ register(
                         "career average."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
-            ROLLUP: (T(named("Each has just set their best 10-Sunday average.")),),
+            ROLLUP: (
+                T(named("Each has just set their best 10-Sunday average.")),
+                THROWN_OUT_ROUNDS_HOW,
+            ),
         },
         labels=(ROLL10_LABEL, RESULTS_LABEL),
         chart=_stretch_chart,
@@ -193,7 +198,7 @@ def _average_milestone(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     # rolling[k] is the mean of days[k : k + AVG_WINDOW], so it is the same at every anchor; each
     # anchor at i reads the first i - AVG_WINDOW + 2 of them.
     cache: dict[int, tuple[list[float], list[float], list[date]]] = {}
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         upto = days[: i + 1]
         if len(upto) < AVG_WINDOW + 1:
             continue
@@ -297,9 +302,11 @@ register(
                     named("It must also be 1 or more above where it stood a year ago."),
                     you=named("It must also be 1 or more above where yours stood a year ago."),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
             ROLLUP: (
                 T(named("Each 20-Sunday average crossed 30, 35, 40 or 45 for the first time.")),
+                THROWN_OUT_ROUNDS_HOW,
             ),
         },
         labels=(ROLL20_LABEL, RESULTS_LABEL),
@@ -404,6 +411,7 @@ register(
                         "and a round in the last 8 weeks."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(RATING_LABEL,),
@@ -523,6 +531,7 @@ register(
                     named("Shown at 2 or more ahead, while they have shot 40 Sundays or fewer."),
                     you=named("Shown at 2 or more ahead, while you have shot 40 Sundays or fewer."),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(LEARN_LABEL,),
@@ -543,7 +552,7 @@ SEASON_LABEL = T(named(Shooter("s"), "'s scores this year"), you=named("Your sco
 
 def _season_best(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     year = scope.as_of.year
-    for sid, days in evergreen_days(fr, scope):
+    for sid, days in evergreen_days(fr, scope, scored=True):
         this_year = [d for d in days if d.date.year == year]
         if len(this_year) < SEASON_MIN_ROUNDS:
             continue
@@ -639,6 +648,7 @@ register(
                         "personal best instead."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(SEASON_LABEL,),
@@ -741,7 +751,7 @@ register(
         guard={"min_gap": BEST_DAY_MIN, "fallback_gap": BEST_DAY_FALLBACK},
         params=frozenset({"s", "best", "day", "latest"}),
         templates={"": _BEST_DAY_TEXT, "fallback": _BEST_DAY_TEXT},
-        how={"": _BEST_DAY_HOW},
+        how={"": (*_BEST_DAY_HOW, THROWN_OUT_ROUNDS_HOW)},
         labels=(BEST_DAY_LABEL,),
         chart=_best_day_chart,
         proof=(cell("best"),),

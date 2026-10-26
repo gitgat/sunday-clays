@@ -22,7 +22,14 @@ from sunday_clays.analytics.insights.context import (
     stable_seed,
 )
 from sunday_clays.analytics.insights.registry import Kind, register
-from sunday_clays.analytics.insights.templates import Shooter, Signed, T, Word, named
+from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
+    Shooter,
+    Signed,
+    T,
+    Word,
+    named,
+)
 from sunday_clays.analytics.insights.types import (
     ChartLink,
     Fact,
@@ -162,6 +169,7 @@ register(
                         "and a gap bigger than 90% of 1,000 random reshuffles."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(RAIN_LABEL,),
@@ -243,6 +251,7 @@ register(
                         "at or over the field, with 6 wet and 12 dry Sundays."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(RAIN_LABEL,),
@@ -429,6 +438,7 @@ register(
                         "Sundays in it, and beat 95% of 1,000 random reshuffles."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(TEMP_LABEL,),
@@ -551,6 +561,7 @@ register(
                         "Sundays, and a gap bigger than 95% of 1,000 random reshuffles."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(TOUGH_LABEL,),

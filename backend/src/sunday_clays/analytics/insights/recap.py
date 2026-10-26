@@ -196,7 +196,7 @@ def _sunday_recap(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         if sunday.temp_band is not None and sunday.wind_band is not None:
             flags += "w"
             params |= {"temp": sunday.temp_band, "wind": sunday.wind_band}
-        if sunday.difficulty is not None:
+        if sunday.difficulty is not None and not sunday.stats_excluded:
             flags += "p"
             params["played"] = played_word(sunday.difficulty)
         if len(winners) > 1:
