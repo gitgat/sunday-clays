@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from sunday_clays.analytics.cache import clear_cache
 from sunday_clays.api.routes import _filters
 
 MONTHS_2025 = [
@@ -257,3 +258,32 @@ def test_club_and_shooter_year_follow_round_type(
         )
         total += mine["totals"]["rounds"]
     assert total == 27
+
+
+EXCLUDED = "2026-09-13"
+
+
+def test_yir_counts_a_thrown_out_sunday_and_says_how_many_rounds_are_left_out(
+    fx_session: Session, fx_viewer_client: TestClient
+) -> None:
+    before = _ok(fx_viewer_client, "/api/yir/2026")["totals"]
+    ike = fx_session.execute(
+        text("SELECT shooter_id FROM rounds WHERE event_date = :d AND name_key = 'hadley ike'"),
+        {"d": EXCLUDED},
+    ).scalar_one()
+    ike_rounds = fx_session.execute(
+        text("SELECT count(*) FROM rounds WHERE event_date = :d AND shooter_id = :s"),
+        {"d": EXCLUDED, "s": ike},
+    ).scalar_one()
+    fx_session.execute(
+        text("UPDATE events SET stats_excluded = true WHERE event_date = :d"), {"d": EXCLUDED}
+    )
+    clear_cache()
+    club = _ok(fx_viewer_client, "/api/yir/2026")
+    assert (club["totals"]["rounds"], club["totals"]["n_excluded"]) == (before["rounds"], 13)
+    assert {r["stats_excluded"] for r in club["top_rounds"]} <= {False}
+    assert (
+        _ok(fx_viewer_client, f"/api/yir/2026/shooters/{ike}")["totals"]["n_excluded"] == ike_rounds
+    )
+    (item, *_) = _ok(fx_viewer_client, "/api/on-this-day", {"date": "2027-09-13"})["items"]
+    assert (item["event_date"], item["stats_excluded"]) == (EXCLUDED, True)
