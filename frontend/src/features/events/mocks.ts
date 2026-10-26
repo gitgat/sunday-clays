@@ -481,7 +481,6 @@ export const specialDetail: EventDetail = {
   target_total: 60,
 };
 
-// Default handlers are branch-free (every line runs in routes.test.tsx); tests needing other data use server.use.
 export const THROWN_OUT_10: ThrownOut = { station_label: '10', target_count: 8, credited: true };
 
 /** A Sunday with Station 10 thrown out; kept out of `eventSummaries` so existing lists are unchanged. */
@@ -514,6 +513,7 @@ export const thrownOutSummary: EventSummary = {
   thrown_out: [THROWN_OUT_10],
 };
 
+// Default handlers are branch-free (every line runs in routes.test.tsx); tests needing other data use server.use.
 export const handlers = [
   http.get('*/api/events', ({ request }) => {
     // A `year`, or the inclusive `from`/`to` window; either end may be absent (All has no `from`).
