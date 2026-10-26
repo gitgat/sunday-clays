@@ -18,7 +18,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from sunday_clays.analytics.frames import apply_round_type_filter, wind_band
+from sunday_clays.analytics.frames import apply_round_type_filter, live_station_hits, wind_band
 from sunday_clays.domain.round_type import RoundType
 from sunday_clays.station_label import label_number, parse_label
 
@@ -44,6 +44,7 @@ STATION_FRAME_COLUMNS: tuple[str, ...] = (
     "hits",
     "round_type",
     "display_name",
+    "dropped",
 )
 # `label` is the station's text ("7A") and `station_no` its sort integer (7); every stations
 # output is keyed by label and sorted by (station_no, label): 4, 5, 6, 7, 7A, 8.
@@ -77,7 +78,7 @@ WIND_COLUMNS: tuple[str, ...] = (
 _FRAME_SQL = text(
     """
     SELECT h.event_date, h.station_no, h.station_label, l.target_count, h.sheet_id, h.entry_row,
-           h.shooter_id, h.round_id, h.hits, e.round_type, p.display_name
+           h.shooter_id, h.round_id, h.hits, e.round_type, p.display_name, l.dropped
     FROM station_hits h
     JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
     JOIN events e ON e.event_date = h.event_date
@@ -96,7 +97,8 @@ _WEATHER_SQL = text("SELECT event_date, gust_mph FROM event_weather ORDER BY eve
 
 
 def add_sheet_totals(frame: pd.DataFrame) -> pd.DataFrame:
-    """`sheet_total` = the entry's recomputed station-sheet total, taken before any filtering."""
+    """`sheet_total` = the entry's recomputed station-sheet total over live (not thrown-out)
+    stations, taken before any other filtering."""
     return frame.assign(
         sheet_total=frame.groupby(["event_date", "entry_row"])["hits"].transform("sum")
     )
@@ -107,7 +109,8 @@ def load_station_frame(session: Session) -> pd.DataFrame:
     frame = pd.DataFrame(rows, columns=list(STATION_FRAME_COLUMNS))
     for column in ("shooter_id", "round_id"):
         frame[column] = frame[column].astype("Int64")
-    return add_sheet_totals(frame)
+    frame["dropped"] = frame["dropped"].eq(True)
+    return add_sheet_totals(live_station_hits(frame))
 
 
 def window_frame(frame: pd.DataFrame, since: date | None, as_of: date | None) -> pd.DataFrame:
