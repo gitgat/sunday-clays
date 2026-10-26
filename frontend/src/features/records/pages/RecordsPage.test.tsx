@@ -21,6 +21,24 @@ const LAZY = { timeout: 10_000 };
 afterEach(() => vi.restoreAllMocks());
 
 describe('RecordsPage', () => {
+  it('says the score records leave thrown-out Sundays out', async () => {
+    renderWithProviders(<RecordsPage />, { route: '/records' });
+    await screen.findByRole('table', { name: 'Highest scores' });
+    for (const name of [
+      'Perfect 50s',
+      'Biggest day vs the field',
+      'Biggest jump from one Sunday to the next',
+      'Highest rating in these dates',
+    ]) {
+      expect(
+        within(screen.getByRole('region', { name })).getByText(
+          /Sundays with a station thrown out \(marked \*\) are left out\.$/,
+        ),
+        name,
+      ).toBeVisible();
+    }
+  });
+
   it('shows every record section', async () => {
     renderWithProviders(<RecordsPage />, { route: '/records' });
     expect(await screen.findByRole('heading', { name: 'Highest scores' })).toBeInTheDocument();

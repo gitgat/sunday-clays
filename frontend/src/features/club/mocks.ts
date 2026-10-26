@@ -43,6 +43,7 @@ export const clubSummary: ClubSummary = {
 /** Two attendance-only dates, a multi-round day (36 score rows by 35 shooters) and two ordinary days. */
 export const clubAttendance: AttendancePoint[] = [
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -54,6 +55,7 @@ export const clubAttendance: AttendancePoint[] = [
     results_complete: false,
   },
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -65,6 +67,7 @@ export const clubAttendance: AttendancePoint[] = [
     results_complete: false,
   },
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -76,6 +79,7 @@ export const clubAttendance: AttendancePoint[] = [
     results_complete: true,
   },
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -87,6 +91,7 @@ export const clubAttendance: AttendancePoint[] = [
     results_complete: true,
   },
   {
+    stats_excluded: false,
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -235,6 +240,7 @@ export const clubTrends: ClubTrends = {
       top_score: 48,
       median: 36,
       difficulty: 0.3,
+      stats_excluded: false,
       top_score_rolling8: 46.875,
       median_rolling8: 38.125,
       difficulty_rolling8: 0.44,
@@ -244,6 +250,7 @@ export const clubTrends: ClubTrends = {
       top_score: 42,
       median: 34,
       difficulty: 2.1,
+      stats_excluded: false,
       top_score_rolling8: 46.5,
       median_rolling8: 37.375,
       difficulty_rolling8: 0.61,
@@ -253,6 +260,7 @@ export const clubTrends: ClubTrends = {
       top_score: 49,
       median: 39,
       difficulty: -1.4,
+      stats_excluded: false,
       top_score_rolling8: 46.625,
       median_rolling8: 37.25,
       difficulty_rolling8: 0.33,

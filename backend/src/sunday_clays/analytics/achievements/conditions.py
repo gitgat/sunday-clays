@@ -74,7 +74,10 @@ def _all_weather(ctx: AchContext) -> Iterator[Award]:
 def _mudder(ctx: AchContext) -> Iterator[Award]:
     rounds = ctx.rounds
     first = _first_rounds(
-        rounds, (rounds["score"] >= MUDDER_SCORE) & (_num(rounds["precip_in"]) >= RAIN_IN)
+        rounds,
+        (rounds["score"] >= MUDDER_SCORE)
+        & (_num(rounds["precip_in"]) >= RAIN_IN)
+        & ~rounds["stats_excluded"],
     )
     for sid, ts, rid, score, precip in zip(
         first["shooter_id"],

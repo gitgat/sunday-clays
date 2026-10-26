@@ -9,6 +9,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from sunday_clays.analytics import frames
+
 RECENT_ROUNDS = 20
 BAD_DAY_RESIDUAL = -6.0
 FORM_ROUNDS = 5
@@ -76,7 +78,11 @@ def _chronological(rounds: pd.DataFrame) -> pd.DataFrame:
 
 def floor_ceiling(rounds: pd.DataFrame) -> tuple[float | None, float | None, int]:
     """P10/P90 (linear) of the last 20 rounds, and how many rounds were used."""
-    recent = _chronological(rounds).tail(RECENT_ROUNDS)["score"].to_numpy(dtype=np.float64)
+    recent = (
+        _chronological(frames.stat_rounds(rounds))
+        .tail(RECENT_ROUNDS)["score"]
+        .to_numpy(dtype=np.float64)
+    )
     if recent.size == 0:
         return None, None, 0
     p10, p90 = np.percentile(recent, [10, 90])
@@ -85,13 +91,14 @@ def floor_ceiling(rounds: pd.DataFrame) -> tuple[float | None, float | None, int
 
 def bad_day_rate(rounds: pd.DataFrame) -> float | None:
     """Share of rounds (with a residual) whose residual is <= -6."""
-    residuals = rounds["residual"].dropna()
+    residuals = frames.stat_rounds(rounds)["residual"].dropna()
     return None if residuals.empty else float((residuals <= BAD_DAY_RESIDUAL).mean())
 
 
 def form(rounds: pd.DataFrame) -> tuple[float | None, FormLabel | None]:
     """Mean residual of the last 5 rounds with a residual; None with fewer than 5."""
-    with_residual = _chronological(rounds.loc[rounds["residual"].notna()])
+    scored = frames.stat_rounds(rounds)
+    with_residual = _chronological(scored.loc[scored["residual"].notna()])
     if len(with_residual) < FORM_ROUNDS:
         return None, None
     value = float(with_residual.tail(FORM_ROUNDS)["residual"].mean())
@@ -100,8 +107,11 @@ def form(rounds: pd.DataFrame) -> tuple[float | None, FormLabel | None]:
 
 
 def event_values(rounds: pd.DataFrame) -> pd.DataFrame:
-    """[shooter_id, k, value]: mean `adjusted` per (shooter, held event), k by date."""
-    held = rounds.loc[rounds["adjusted"].notna()]
+    """[shooter_id, k, value]: mean `adjusted` per (shooter, held event), k by date.
+
+    A thrown-out Sunday is a held event that counts toward `k` but plots no value."""
+    excluded_held = rounds["held"].eq(True) & rounds["stats_excluded"].eq(True)
+    held = rounds.loc[rounds["adjusted"].notna() | excluded_held]
     per_event = (
         held.groupby(["shooter_id", "event_date"])["adjusted"]
         .mean()
@@ -109,7 +119,8 @@ def event_values(rounds: pd.DataFrame) -> pd.DataFrame:
         .sort_values(["shooter_id", "event_date"])
     )
     per_event["k"] = per_event.groupby("shooter_id").cumcount() + 1
-    return per_event.rename(columns={"adjusted": "value"})[["shooter_id", "k", "value"]]
+    plotted = per_event.loc[per_event["adjusted"].notna()]
+    return plotted.rename(columns={"adjusted": "value"})[["shooter_id", "k", "value"]]
 
 
 def learning_curve(
@@ -160,7 +171,7 @@ def rust_effect(rounds: pd.DataFrame) -> tuple[float | None, int]:
     enter either mean. None when either side is empty.
     """
     after_layoff = _post_layoff_mask(rounds)
-    has_residual = rounds["residual"].notna()
+    has_residual = rounds["residual"].notna() & ~rounds["stats_excluded"].eq(True)
     post, other = after_layoff & has_residual, ~after_layoff & has_residual
     n = int(post.sum())
     if n == 0 or not other.any():

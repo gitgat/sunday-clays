@@ -1,4 +1,9 @@
 import type { Explainer } from '../../components/charts/types';
+import {
+  THROWN_OUT_COUNTS,
+  THROWN_OUT_HOLLOW,
+  THROWN_OUT_ROUNDS,
+} from '../../components/charts/thrownOutCopy';
 
 /**
  * Plain-language copy per ChartFrame `urlKey` and per profile stat id
@@ -15,34 +20,41 @@ export const explainers = {
       'Everyone starts at 30. After each Sunday with complete results the rating moves part way toward your score that day, allowing for how hard the day was for everyone else.',
       'Likely range: we are about 95% sure your true level sits inside it.',
       'Opens on the time window. Fullscreen opens on all your history, and the CSV download has every point. Ignores the round-type filter.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   trend: {
     what: 'Every round you shot: your score, and your score against the field that Sunday. Pins mark new personal bests.',
     read: [
       'Above 0 on the right-hand scale means you beat that Sunday’s middle score; below 0 means you trailed it.',
       'A score that drops while the right-hand line holds steady means the targets were just harder.',
+      THROWN_OUT_HOLLOW,
     ],
     computed: [
       'Vs middle score = your score minus the middle score of every round that Sunday. Blank when the Sunday’s results are incomplete.',
       'A PB pin marks a round that beat all your earlier rounds, once you have 5 or more earlier rounds. Ties do not count.',
       'Line chooser: the 10- or 20-Sunday average is the average of your best round on each of your last 10 or 20 Sundays; average so far is every round you shot before that Sunday; personal best is your highest round up to that Sunday.',
       'One point per round, spaced evenly. Opens on the time window. Fullscreen shows every round you have shot, and the CSV download has them all. The round-type filter applies.',
+      `Lines and PB pins: ${THROWN_OUT_ROUNDS}`,
     ],
     scope: 'windowed',
-    terms: ['personal-best', 'round-types', 'time-window'],
+    terms: ['personal-best', 'round-types', 'time-window', 'thrown-out-station'],
   },
   finishes: {
     what: 'Where you finished on each Sunday with full results, 1st at the top.',
-    read: ['Points on or above the dashed line are podium finishes (1st to 3rd).'],
+    read: [
+      'Points on or above the dashed line are podium finishes (1st to 3rd).',
+      THROWN_OUT_HOLLOW,
+    ],
     computed: [
       'Place = your best round that Sunday against everyone else’s best round; ties share the place.',
       'Only Sundays with complete results count. Opens on the time window. Fullscreen shows every Sunday you finished, and the CSV download has them all. The round-type filter applies.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'windowed',
-    terms: ['held-sunday', 'round-types', 'time-window'],
+    terms: ['held-sunday', 'round-types', 'time-window', 'thrown-out-station'],
   },
   dist: {
     what: 'How often you shoot each score in the time window, next to how often the whole club does in the same window.',
@@ -52,11 +64,11 @@ export const explainers = {
     ],
     computed: [
       'For each score from the lowest anyone has shot up to 50: the share of your rounds that were exactly that score, and the same share across every club round (yours included). Both sides only count Sundays inside the time window.',
-      'Every round counts, including second rounds and Sundays with incomplete results.',
+      `Second rounds and Sundays with incomplete results count. ${THROWN_OUT_ROUNDS}`,
       'The round-type filter applies to both sides. Fullscreen and the CSV download show every round and every year.',
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   learn: {
     what: 'How you improved with experience, next to a typical club shooter at the same stage.',
@@ -68,9 +80,10 @@ export const explainers = {
       'Your Sundays with complete results are numbered 1, 2, 3 and so on. Each point is your score minus that Sunday’s middle score (two rounds averaged).',
       'Club line = the middle of every shooter’s value at their own 1st, 2nd, 3rd Sunday, leaving out shooters who were already regulars when records began. It shows only once at least 3 shooters have reached that Sunday.',
       'Career-long, so the time window and the round-type filter are ignored.',
+      `${THROWN_OUT_ROUNDS} They still count in the Sunday numbering.`,
     ],
     scope: 'all-time',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   splits: {
     what: 'Your average score in the time window by year, time of year (winter to fall), month, round type, gauge or weather, so you can see where you shoot best.',
@@ -79,13 +92,13 @@ export const explainers = {
       'These are raw scores, not adjusted for how hard the day was.',
     ],
     computed: [
-      'Average = your scores in the group divided by the rounds in it. Every round inside the time window counts; the round-type filter applies.',
+      `Average = your scores in the group divided by the rounds in it. Rounds inside the time window count; the round-type filter applies. ${THROWN_OUT_ROUNDS}`,
       'Winter is Dec to Feb, and so on. Month means each month of each year separately.',
       'Weather uses 10 am to noon that day: average temperature (°F), strongest gust (mph) and total rain (0.02 in or more counts as wet).',
       'Fullscreen and the CSV download cover every round you have shot.',
     ],
     scope: 'windowed',
-    terms: ['field-adjusted', 'round-types', 'time-window'],
+    terms: ['field-adjusted', 'round-types', 'time-window', 'thrown-out-station'],
   },
   cal: {
     what: 'Every Sunday the club shot this year. Filled squares are Sundays you shot; outlined ones you missed.',
@@ -99,9 +112,10 @@ export const explainers = {
       'Missed = the club has complete results for that Sunday and you have no round in it. A special shoot is never missed.',
       'The round-type filter applies to your rounds and to the club’s Sundays, special shoots included. The calendar opens on the year the time window ends in; the year tabs pick any other year.',
       'The fullscreen table and the CSV download cover every year you shot.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'all-time',
-    terms: ['round-types', 'special-shoot', 'time-window'],
+    terms: ['round-types', 'special-shoot', 'time-window', 'thrown-out-station'],
   },
   'cal-month': {
     what: 'How many Sundays you shot in each month, from your first round to your latest.',
@@ -127,17 +141,19 @@ export const explainers = {
       'How the day played = how much harder that Sunday was than a typical Sunday of the past year, in targets, allowing for who shot (positive = harder, negative = easier).',
       'Against the field = your best round that Sunday minus the middle score of every round that day. Only Sundays with complete results appear.',
       'Opens on the time window; fullscreen and the CSV download show every Sunday you shot. The round-type filter picks which of your Sundays appear; how hard the day played always uses everyone’s scores that Sunday.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   'hero-rounds': {
     what: 'How many Sunday Clays rounds you have shot, for the round types picked in the filter.',
     computed: [
       'Every round counts, including second rounds on the same day and Sundays with incomplete results.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   'hero-sundays': {
     what: 'How many different Sundays you have shot, for the round types picked in the filter.',
@@ -151,37 +167,40 @@ export const explainers = {
     what: 'Your typical score out of 50.',
     read: ['An average well below your median means a few bad rounds are pulling it down.'],
     computed: [
-      'All your scores added up, divided by your rounds.',
+      `Your scores added up, divided by the rounds they come from. ${THROWN_OUT_ROUNDS}`,
       'The round-type filter applies.',
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   'hero-median': {
     what: 'Your middle score: half your rounds were higher, half lower.',
     computed: [
       'Line up all your scores from lowest to highest and take the one in the middle (the average of the middle two when there is an even number).',
       'The round-type filter applies.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   'hero-best': {
     what: 'Your highest single-round score out of 50, for the round types picked in the filter.',
     computed: [
       'The top score across every round you have shot. The round-type filter applies.',
       'The date it was first reached is in Personal bests.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   'win-rounds': {
     what: 'How many rounds you shot inside the time window, for the round types picked in the filter.',
     computed: [
       'Every round on a Sunday between the window’s first and last date, including second rounds on the same day.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   'win-average': {
     what: 'Your typical score out of 50 inside the time window.',
@@ -191,15 +210,19 @@ export const explainers = {
     computed: [
       'The scores of your rounds in the window added up, divided by how many rounds that is.',
       'The round-type filter applies.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   'win-best': {
     what: 'Your highest single-round score inside the time window.',
-    computed: ['The top score among your rounds in the window. The round-type filter applies.'],
+    computed: [
+      'The top score among your rounds in the window. The round-type filter applies.',
+      THROWN_OUT_ROUNDS,
+    ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   odometer: {
     what: 'Lifetime totals for everything you have ever shot. The round-type filter does not change these.',
@@ -208,12 +231,13 @@ export const explainers = {
       'Streaks count Sundays in a row you showed up.',
     ],
     computed: [
-      'Clays thrown = rounds × 50. Clays broken = all your scores added up. Hit rate = broken ÷ thrown.',
+      `Clays thrown = rounds × 50. Clays broken = all your scores added up. ${THROWN_OUT_COUNTS}`,
+      `Hit rate = broken ÷ thrown. ${THROWN_OUT_ROUNDS}`,
       'Streaks count only Sundays with complete results; other Sundays neither add to nor break one. The current streak counts back from the latest (0 if you missed it).',
       'Favorite month = the month (any year) you have shot most often; ties go to the earlier month.',
     ],
     scope: 'all-time',
-    terms: ['clays-thrown', 'round-types', 'streak'],
+    terms: ['clays-thrown', 'round-types', 'streak', 'thrown-out-station'],
   },
   'floor-ceiling': {
     what: 'The low and high end of your normal recent scoring: a bad-but-normal day and a good-but-normal day.',
@@ -223,9 +247,9 @@ export const explainers = {
     ],
     computed: [
       'Line up your last 20 rounds (fewer if you have not shot 20) from lowest to highest. Low end = the score a tenth of the way up; high end = nine-tenths of the way up. Landing between two scores gives decimals like 36.4.',
-      'Every round counts. Needs at least 8 rounds. The round-type filter does not apply.',
+      `Needs at least 8 rounds. The round-type filter does not apply. ${THROWN_OUT_ROUNDS}`,
     ],
-    terms: ['round-types', 'streak'],
+    terms: ['round-types', 'streak', 'thrown-out-station'],
   },
   'bad-day': {
     what: 'How often you shoot a round well below what we expected of you that day.',
@@ -237,9 +261,10 @@ export const explainers = {
       'Expected score = your rating going into the day, moved up or down by how everyone else did that day (a tough day lowers it).',
       'A bad round is 6 or more targets under expected. Rate = bad rounds ÷ all your rounds on Sundays with complete results, over your whole career.',
       'The round-type filter does not apply.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   form: {
     what: 'Whether you have been beating or missing your expected score lately.',
@@ -250,8 +275,9 @@ export const explainers = {
     computed: [
       'For each round: your score minus your expected score (see Bad-day rate). Form = the average of that over your last 5 rounds on Sundays with complete results. A second round the same day counts as a round.',
       'Hot is +3 or more; Cold is −3 or less. The round-type filter does not apply.',
+      THROWN_OUT_ROUNDS,
     ],
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   wins: {
     what: 'How many Sundays you finished first, and how many in the top three.',
@@ -260,9 +286,10 @@ export const explainers = {
       'Each Sunday only your best round counts, ranked against everyone else’s best round. A win is 1st; a podium is 1st to 3rd. Ties share the place.',
       'Every Sunday counts, including small turnouts and Sundays with incomplete results.',
       'The round-type filter does not apply.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   'field-beaten': {
     what: 'On a typical Sunday, the share of the other shooters you beat.',
@@ -272,9 +299,10 @@ export const explainers = {
     computed: [
       'Each Sunday with complete results: your best round against everyone else’s best round. That day’s number = shooters you beat ÷ other shooters there, with a tie counting as half. Beat 6 of 9 and tied 1: (6 + 0.5) ÷ 9 = 72%. Alone that day counts as 100%.',
       'Then those daily numbers are averaged. The round-type filter does not apply.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   peak: {
     what: 'The highest your rating has ever been, and when.',
@@ -285,9 +313,10 @@ export const explainers = {
     computed: [
       'The highest point on your Rating line; if tied, the earliest date.',
       'Every point counts, including your first few Sundays when the estimate is still rough. The round-type filter does not apply.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   rust: {
     what: 'Whether you shoot worse than usual on your first Sunday back after a break.',
@@ -299,9 +328,10 @@ export const explainers = {
       'A break is 28 or more days between two Sundays you shot (3 Sundays skipped).',
       'Rust = your average (score minus expected score) on your first Sunday back, minus the same on all your other rounds. Only Sundays with complete results count.',
       'Club = the same over everyone’s rounds together. The round-type filter does not apply.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   milestone: {
     what: 'Your next Sunday-count milestone (10, 25, 50, 100, 150, 200 or 250) and roughly when you will reach it.',
@@ -324,8 +354,9 @@ export const explainers = {
     computed: [
       'The highest score among all your rounds (or that year’s rounds). If you shot it more than once, the earliest date is shown.',
       'A best is early when you had fewer than 5 rounds on earlier days. The round-type filter applies.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'all-time',
-    terms: ['personal-best', 'round-types'],
+    terms: ['personal-best', 'round-types', 'thrown-out-station'],
   },
 } satisfies Record<string, Explainer>;

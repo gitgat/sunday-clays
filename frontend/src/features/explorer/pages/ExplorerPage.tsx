@@ -246,7 +246,7 @@ export function ExplorerPage() {
           height={420}
           rowHref={link?.href}
           rowHrefKey={link?.key}
-          explainer={explorerExplainer(spec.metric, scope)}
+          explainer={explorerExplainer(spec.metric, scope, spec.agg)}
           hlLabels={spec.group_by[0] === 'shooter' ? shooterLabels('shooter') : undefined}
           controls={
             state.compare === null || compareData === undefined ? undefined : (

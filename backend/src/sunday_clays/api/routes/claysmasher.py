@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from sunday_clays.analytics import frames
 from sunday_clays.api.errors import error_body
 from sunday_clays.api.routes._claysmasher import (
     ExportRound,
@@ -28,6 +29,7 @@ from sunday_clays.db import SessionDep
 from sunday_clays.domain.errors import NotFoundError
 from sunday_clays.domain.identity import merge_map
 from sunday_clays.domain.round_type import RoundType
+from sunday_clays.domain.thrown_out import thrown_out_phrase
 
 router = APIRouter()
 
@@ -87,6 +89,7 @@ def _rounds(session: Session, shooter_id: int) -> list[ExportRound]:
     orders = {day: station_orders(day_labels) for day, day_labels in labels.items()}
     numbers = day_ordinals((r.event_date, r.name_key, r.ordinal) for r in rounds)
 
+    phrases = {d: thrown_out_phrase(items) for d, items in frames.load_thrown_out(session).items()}
     out: list[ExportRound] = []
     for r in rounds:
         order = orders.get(r.event_date, {})
@@ -98,6 +101,7 @@ def _rounds(session: Session, shooter_id: int) -> list[ExportRound]:
                 round_type=RoundType(str(r.round_type)),
                 score=int(r.score),
                 gauge_class=r.gauge_class,
+                thrown_out=phrases.get(r.event_date),
                 stations=tuple(
                     ExportStation(label, targets, value) for label, value, targets in stations
                 ),

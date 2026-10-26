@@ -42,6 +42,7 @@ def build_rounds(specs: Sequence[RoundSpec], **defaults: object) -> pd.DataFrame
         merged.setdefault("shooter_status", merged["status"])
         merged.setdefault("gauge_class", None)
         merged.setdefault("is_best_round", False)
+        merged.setdefault("stats_excluded", False)
         merged["_pos"] = i
         rows.append(merged)
     df = pd.DataFrame(rows)
@@ -80,6 +81,7 @@ def build_events(specs: Sequence[date | Mapping[str, object]]) -> pd.DataFrame:
         row.setdefault("round_type_source", "none")
         row.setdefault("n_rounds", 0)
         row.setdefault("n_shooters", 0)
+        row.setdefault("stats_excluded", False)
         rows.append(row)
     df = pd.DataFrame(rows)
     for column in frames.EVENT_COLUMNS:

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { THROWN_OUT_COUNTS, THROWN_OUT_ROUNDS } from '../../components/charts/thrownOutCopy';
 import { explainers, recordsExplainer } from './explainers';
 
 const sources = import.meta.glob<string>(['./**/*.tsx', '!./**/*.test.tsx'], {
@@ -67,5 +68,16 @@ describe('records explainers', () => {
       ),
     ).not.toContain('start date counts');
     expect(JSON.stringify(streaks)).not.toMatch(NEUTRAL);
+  });
+
+  it('says which records count thrown-out Sundays', () => {
+    const range = { since: '2024-01-07', asOf: '2024-12-29' };
+    expect(recordsExplainer('rec-events', range).computed).toContain(THROWN_OUT_COUNTS);
+    expect(recordsExplainer('rec-streaks', range).computed).toContain(THROWN_OUT_COUNTS);
+    const highest = recordsExplainer('rec-highest', range);
+    expect(highest.computed).toContain(THROWN_OUT_ROUNDS);
+    expect(highest.computed.join(' ')).not.toContain('Every round counts');
+    for (const key of ['rec-events', 'rec-streaks', 'rec-highest'])
+      expect(recordsExplainer(key, range).terms, key).toContain('thrown-out-station');
   });
 });

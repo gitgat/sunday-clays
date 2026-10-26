@@ -604,7 +604,7 @@ function ToughDaysChart({ shooterId }: { shooterId: number }) {
         <QueryChart
           title={TOUGH_TITLE}
           query={difficulty}
-          isEmpty={({ result }) => toughDaysModel(every, result.rows).rows.length === 0}
+          isEmpty={({ result }) => toughDaysModel(every, result.rows).points === 0}
           emptyText="No Sundays with field results yet"
         >
           {({ result }) => {
@@ -612,7 +612,7 @@ function ToughDaysChart({ shooterId }: { shooterId: number }) {
             // The card shows the time window; fullscreen and the CSV keep every Sunday.
             const mine = shown === null ? every : filterRowsByWindow(every, 'event_date', shown);
             const m = toughDaysModel(mine, result.rows);
-            if (m.rows.length === 0) {
+            if (m.points === 0) {
               return (
                 <Card title={TOUGH_TITLE}>
                   <EmptyState

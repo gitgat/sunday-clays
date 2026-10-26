@@ -236,3 +236,23 @@ def test_duplicate_index_labels_raise_clearly(
 
     with pytest.raises(ValueError, match="rounds must have a unique index"):
         compute(doubled)
+
+
+def test_thrown_out_event_keeps_median_rank_and_percentile_but_not_adjusted(
+    make_rounds: Callable[..., pd.DataFrame],
+) -> None:
+    m = _by_id(compute_round_metrics(make_rounds([(D0, 1, 40), (D0, 2, 30)], stats_excluded=True)))
+    assert [m[1]["field_median"], m[2]["field_median"]] == [35.0, 35.0]
+    assert [m[1]["event_rank"], m[2]["event_rank"]] == [1.0, 2.0]
+    assert [m[1]["percentile"], m[2]["percentile"]] == [1.0, 0.0]
+    assert [m[1]["is_best_round"], m[2]["is_best_round"]] == [True, True]
+    assert math.isnan(m[1]["adjusted"])
+    assert math.isnan(m[2]["adjusted"])
+
+
+def test_round_metrics_without_the_flag_column_count_every_round(  # guard
+    make_rounds: Callable[..., pd.DataFrame],
+) -> None:
+    rounds = make_rounds([(D0, 1, 40), (D0, 2, 30)]).drop(columns="stats_excluded")
+    m = _by_id(compute_round_metrics(rounds))
+    assert [m[1]["adjusted"], m[2]["adjusted"]] == [5.0, -5.0]

@@ -22,6 +22,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Dec1,
     Int,
     Pct,
@@ -230,7 +231,7 @@ def _difficulty_split(
     outside: list[float] = []
     for s in sundays:
         value = getattr(s, band_of)
-        if s.difficulty is None or value is None:
+        if s.difficulty is None or value is None or s.stats_excluded:
             continue
         (inside if value == band else outside).append(s.difficulty)
     return inside, outside
@@ -316,6 +317,7 @@ register(
                         "twice its noise counts as no change."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(RAIN_SCORES_LABEL,),
@@ -450,6 +452,7 @@ register(
                         "noise, with 8 Sundays on each side."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(SCOREBOARD_LABEL,),

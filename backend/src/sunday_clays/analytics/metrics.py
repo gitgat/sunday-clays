@@ -61,8 +61,9 @@ def compute_round_metrics(rounds: pd.DataFrame) -> pd.DataFrame:
     Input columns: round_id, event_date, shooter_id, name_key, ordinal, score, held. The
     index must be unique (see best_round_mask), else ValueError.
     Output columns: ROUND_METRIC_COLUMNS, one row per input round (same order, RangeIndex).
-    - field_median/adjusted: median of all rounds that day / score - median; NaN when
-      the event is not held.
+    - field_median/adjusted: median of all rounds that day / score - median. field_median
+      is NaN when the event is not held; adjusted is NaN when not held or stats_excluded
+      (field_median, ranks and percentile are kept on a thrown-out Sunday).
     - is_best_round: first round per (event_date, shooter_id) by score desc, name_key,
       ordinal.
     - event_rank: min-rank of best rounds by score (ties share); NaN for other rounds.
@@ -72,6 +73,11 @@ def compute_round_metrics(rounds: pd.DataFrame) -> pd.DataFrame:
     if rounds.empty:
         return pd.DataFrame({c: pd.Series(dtype="float64") for c in ROUND_METRIC_COLUMNS})
     held = rounds["held"].astype(bool)
+    excluded = (
+        rounds["stats_excluded"].eq(True)
+        if "stats_excluded" in rounds.columns
+        else pd.Series(False, index=rounds.index)
+    )
     median = rounds.groupby("event_date")["score"].transform("median").astype("float64")
     best = best_round_mask(rounds)
     best_scores = rounds.loc[best, ["event_date", "score"]]
@@ -86,7 +92,7 @@ def compute_round_metrics(rounds: pd.DataFrame) -> pd.DataFrame:
         {
             "round_id": rounds["round_id"],
             "field_median": median.where(held),
-            "adjusted": (rounds["score"] - median).where(held),
+            "adjusted": (rounds["score"] - median).where(held & ~excluded),
             "event_rank": rank_min.reindex(rounds.index),
             "is_best_round": best,
             "percentile": percentile.reindex(rounds.index),

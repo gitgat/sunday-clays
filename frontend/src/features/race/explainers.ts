@@ -1,5 +1,7 @@
+import { thrownOutLineFor } from '../../components/charts/thrownOutCopy';
 import type { Explainer } from '../../components/charts/types';
 import { mergeTerms } from '../glossary/terms';
+import type { LeaderboardMetric } from './api';
 import type { RaceMode } from './labels';
 
 /**
@@ -47,12 +49,16 @@ const MODE_COMPUTED: Record<RaceMode, string> = {
 };
 
 /** A race chart's explainer for the chosen points rule; both charts follow the time window. */
-export function raceExplainer(key: 'race-bars' | 'race-bump', mode: RaceMode): Explainer {
+export function raceExplainer(
+  key: 'race-bars' | 'race-bump',
+  mode: RaceMode,
+  metric: LeaderboardMetric,
+): Explainer {
   const base = explainers[key] as Explainer;
   return {
     ...base,
-    computed: [...base.computed, MODE_COMPUTED[mode]],
-    terms: mergeTerms(base.terms, 'time-window'),
+    computed: [...base.computed, thrownOutLineFor(metric), MODE_COMPUTED[mode]],
+    terms: mergeTerms(base.terms, 'time-window', 'thrown-out-station'),
     scope: 'windowed',
   };
 }

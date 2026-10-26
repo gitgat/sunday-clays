@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { colors } from '../../theme/tokens';
 import type { StationMatrix } from './api';
 import { stationLongData, stationMatrixModel } from './charts';
 
 // Cells are matched by label, not position: Hadley's first cell list is out of layout order on purpose.
 const matrix: StationMatrix = {
   layout: [
-    { label: '4', station_no: 4, target_count: 7 },
-    { label: '10', station_no: 10, target_count: 8 },
+    { dropped: false, label: '4', station_no: 4, target_count: 7 },
+    { dropped: false, label: '10', station_no: 10, target_count: 8 },
   ],
   entries: [
     {
@@ -109,9 +110,9 @@ describe('stationLongData', () => {
 describe('a lettered station', () => {
   const lettered: StationMatrix = {
     layout: [
-      { label: '7', station_no: 7, target_count: 8 },
-      { label: '7A', station_no: 7, target_count: 6 },
-      { label: '8', station_no: 8, target_count: 7 },
+      { dropped: false, label: '7', station_no: 7, target_count: 8 },
+      { dropped: false, label: '7A', station_no: 7, target_count: 6 },
+      { dropped: false, label: '8', station_no: 8, target_count: 7 },
     ],
     entries: [
       {
@@ -146,4 +147,46 @@ describe('a lettered station', () => {
     const option = model.option as { xAxis: { data: string[] } };
     expect(option.xAxis.data).toEqual(['Stn 7', 'Stn 7A', 'Stn 8']);
   });
+});
+
+describe('a thrown-out station', () => {
+  const dropped: StationMatrix = {
+    ...matrix,
+    layout: [
+      { label: '4', station_no: 4, target_count: 7, dropped: false },
+      { label: '10', station_no: 10, target_count: 8, dropped: true },
+    ],
+  };
+  it('stars the column, reads "credited" in every cell and greys the heatmap column', () => {
+    const model = stationMatrixModel(dropped, results);
+    expect(model.columns[2]).toEqual({ key: 's10', label: 'Stn 10 * (8)', type: 'string' });
+    expect(model.rows.map((r) => r.s10)).toEqual(['credited', 'credited', 'credited', 'credited']);
+    const option = model.option as {
+      xAxis: { data: string[] };
+      series: { markArea?: unknown }[];
+    };
+    expect(option.xAxis.data).toEqual(['Stn 4', 'Stn 10 *']);
+    expect(option.series[0]?.markArea).toEqual({
+      silent: true,
+      itemStyle: { color: colors.outlineVariant },
+      data: [[{ xAxis: 'Stn 10 *' }, { xAxis: 'Stn 10 *' }]],
+    });
+    expect(
+      stationLongData(dropped)
+        .rows.filter((r) => r.station === 'Stn 10 *')
+        .map((r) => r.hits),
+    ).toEqual([null, null, null, null]);
+  });
+  it('keeps a lettered thrown-out label', () => {
+    const lettered: StationMatrix = {
+      ...matrix,
+      layout: [{ label: '7A', station_no: 7, target_count: 6, dropped: true }],
+    };
+    expect(stationMatrixModel(lettered, results).columns[1]?.label).toBe('Stn 7A * (6)');
+  });
+  it('a normal layout has no grey column', () =>
+    expect(
+      (stationMatrixModel(matrix, results).option as { series: { markArea?: unknown }[] }).series[0]
+        ?.markArea,
+    ).toBeUndefined());
 });

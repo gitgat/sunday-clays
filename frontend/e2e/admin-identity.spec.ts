@@ -38,7 +38,7 @@ test('identity page lists possible duplicates, the rule list and the typed rule 
   ).toBeVisible();
   if (rules.length === 0) await expect(page.getByText('No rules yet.')).toBeVisible();
   else await expect(page.getByRole('table', { name: 'Rules' })).toBeVisible();
-  await expect(page.getByLabel('Rule type').locator('option')).toHaveCount(8);
+  await expect(page.getByLabel('Rule type').locator('option')).toHaveCount(9);
 });
 
 test('a merge preview shows the shared-date check and can be cancelled', async ({ page }) => {

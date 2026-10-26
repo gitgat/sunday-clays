@@ -22,6 +22,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Count,
     Dec1,
     Int,
@@ -342,7 +343,7 @@ def _club_one_shooter(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     start = scope.as_of - ACTIVE_WINDOW + timedelta(days=1)
     scores: dict[int, list[float]] = {}
     for s in held_to(fr, scope.as_of):
-        if s.date < start:
+        if s.date < start or s.stats_excluded:
             continue
         for r in s.results:
             scores.setdefault(r.shooter_id, []).append(float(r.score))
@@ -408,6 +409,7 @@ register(
                         "placed among the shooters with 5 or more of those rounds."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(ONE_LABEL,),

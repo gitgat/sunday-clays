@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics import frames
+from sunday_clays.analytics.cache import clear_cache
 
 # event_date: (temp_f, gust_mph, precip_in, cloud_pct, condition)
 WEATHER: dict[date, tuple[float, float, float, float, str]] = {
@@ -224,3 +225,18 @@ def test_date_window_limits_bands_and_turnout_but_not_the_model(
     assert sum(t["n_events"] for t in _bands(open_start, "temp_band").values()) == 1
     open_end = fx_viewer_client.get("/api/weather/turnout", params={"from": "2026-09-27"}).json()
     assert sum(t["n_events"] for t in _bands(open_end, "temp_band").values()) == 1
+
+
+def test_weather_events_flag_a_thrown_out_sunday(
+    fx_session: Session, fx_viewer_client: TestClient
+) -> None:
+    _add_seven(fx_session)
+    fx_session.execute(
+        text("UPDATE events SET stats_excluded = true WHERE event_date = '2026-09-13'")
+    )
+    clear_cache()
+    by_date = {r["event_date"]: r for r in fx_viewer_client.get("/api/weather/events").json()}
+    assert (by_date["2026-09-13"]["stats_excluded"], by_date["2026-09-27"]["stats_excluded"]) == (
+        True,
+        False,
+    )

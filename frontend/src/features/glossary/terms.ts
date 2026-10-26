@@ -13,6 +13,7 @@ export type GlossaryTermId =
   | 'round-types'
   | 'special-shoot'
   | 'streak'
+  | 'thrown-out-station'
   | 'time-window'
   | 'trophy-tiers';
 
@@ -99,6 +100,12 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     term: 'Streak',
     definition:
       'Sundays in a row you came to, counting Sundays with full results. A special shoot adds one if you came, and never breaks a run if you did not.',
+  },
+  {
+    id: 'thrown-out-station',
+    term: 'Thrown-out station',
+    definition:
+      'A station the club threw out on the day, with every shooter usually given full credit on it. That Sunday’s results, standings, race points, Sundays shot and clays broken still count, marked *. Its scores stay out of averages, personal bests, records and trends, and the station stays out of station stats.',
   },
   {
     id: 'time-window',

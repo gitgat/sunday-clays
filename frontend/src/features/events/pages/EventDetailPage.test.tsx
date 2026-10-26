@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import { Route, Routes } from 'react-router';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +10,13 @@ import { server } from '../../../test/msw/server';
 import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { renderWithProviders } from '../../../test/render';
 import type { EventDetail, Notable, StationMatrix } from '../api';
-import { attendanceOnlyDetail, eventDetail, eventSummaries, specialDetail } from '../mocks';
+import {
+  attendanceOnlyDetail,
+  eventDetail,
+  eventSummaries,
+  specialDetail,
+  thrownOutDetail,
+} from '../mocks';
 import type { EventSection } from '../sections';
 import { EventDetailPage } from './EventDetailPage';
 
@@ -423,9 +429,18 @@ describe('EventDetailPage', () => {
   });
 
   it('shows no Sunday buttons when there is no other Sunday with scores', async () => {
-    server.use(http.get('*/api/events', () => HttpResponse.json([])));
-    renderEvent(eventDetail);
+    let served = 0;
+    server.use(
+      http.get('*/api/events', () => {
+        served += 1;
+        return HttpResponse.json([]);
+      }),
+    );
+    const { queryClient } = renderEvent(eventDetail);
     await screen.findByRole('heading', { level: 1 });
+    await waitFor(() => expect(served).toBeGreaterThan(0));
+    // The empty list has landed once nothing is fetching.
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(screen.queryByRole('navigation', { name: 'Other Sundays' })).not.toBeInTheDocument();
   });
 
@@ -533,5 +548,31 @@ describe('EventDetailPage', () => {
       );
       expect(screen.queryByText('Station hits')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('a Sunday with a station thrown out', () => {
+  const phrase = 'Station 10 was thrown out; everyone was credited 8/8';
+  it('shows the banner, starred official numbers and no difficulty or comparison', async () => {
+    renderEvent(thrownOutDetail);
+    const results = await screen.findByRole('table', { name: 'Results' });
+    expect(screen.getByRole('note')).toHaveTextContent(
+      `${phrase}. Today's results and standings count, marked *. These scores are left out of averages, PBs and station stats.`,
+    );
+    expect(screen.getAllByTitle(phrase).length).toBeGreaterThanOrEqual(
+      2 + thrownOutDetail.results.length,
+    );
+    expect(screen.queryByText('Difficulty')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'vs previous Sunday' })).toBeNull();
+    const row = within(results).getAllByRole('row')[1] as HTMLElement;
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[2]).toHaveTextContent(`* ${phrase}`);
+    expect(cells[3]).toHaveTextContent('—');
+    expect(cells.at(-1)).toHaveTextContent('—');
+  });
+  it('a normal Sunday has no thrown-out note', async () => {
+    renderEvent(eventDetail);
+    await screen.findByRole('table', { name: 'Results' });
+    expect(screen.queryByTitle(/thrown out/)).toBeNull();
   });
 });

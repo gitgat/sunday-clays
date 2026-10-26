@@ -33,6 +33,7 @@ from sunday_clays.domain.schemas import (
     finding_out,
 )
 from sunday_clays.domain.station_link import LinkRound, StationEntry, link_station_entries
+from sunday_clays.domain.thrown_out import detect_thrown_out
 from sunday_clays.ingest import parse_upload
 from sunday_clays.ingest.names import clean_display_name, identity_key, name_key
 from sunday_clays.ingest.types import (
@@ -62,7 +63,12 @@ from sunday_clays.models import (
 )
 
 PREVIEW_STATION_CODES = frozenset(
-    {"station_score_mismatch", "station_name_unmatched", "station_round_ambiguous"}
+    {
+        "station_score_mismatch",
+        "station_name_unmatched",
+        "station_round_ambiguous",
+        "station_dropped",
+    }
 )
 
 # (event_date, entry_row) -> station tab name, used to label preview station findings
@@ -586,10 +592,18 @@ def _preview_stations(
     resolve = identity_resolver(session)
     entries: list[StationEntry] = []
     tabs: dict[tuple[date | None, int | None], str] = {}
+    entry_hits: dict[tuple[date, str], list[int]] = defaultdict(list)
+    targets: dict[tuple[date, str], int] = {}
+    tab_of: dict[date, str] = {}
     for sheet in parsed.sheets:
         if sheet.event_date in specials:
             continue
+        tab_of[sheet.event_date] = sheet.sheet_name
+        for layout in sheet.layout:
+            targets[(sheet.event_date, layout.label)] = layout.target_count
         for row in sheet.rows:
+            for label, value in row.hits:
+                entry_hits[(sheet.event_date, label)].append(value)
             key = identity_key(name_key(row.raw_name), sheet.event_date)
             entries.append(
                 StationEntry(
@@ -606,7 +620,20 @@ def _preview_stations(
         LinkRound(r.id, r.event_date, r.shooter_id, r.ordinal, r.score)
         for r in session.scalars(select(Round).where(Round.event_date.in_(list(staged))))
     ]
-    return diff, [*ignored, *_station_findings(entries, rounds, tabs)]
+    dropped = [
+        Finding(
+            "station_dropped",
+            Severity.INFO,
+            f"Station {item.station_label} on {d.isoformat()} looks thrown out"
+            " (every shooter perfect). It will be marked * and left out of stats."
+            " Override in Rules if that's wrong.",
+            sheet=tab_of[d],
+            event_date=d,
+        )
+        for d, items in detect_thrown_out(entry_hits, targets, {}, specials.keys()).items()
+        for item in items
+    ]
+    return diff, [*ignored, *dropped, *_station_findings(entries, rounds, tabs)]
 
 
 def _placed_findings(parsed: ScoresParse | StationsParse | SpecialParse) -> list[Finding]:

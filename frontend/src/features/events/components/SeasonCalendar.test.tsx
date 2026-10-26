@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
 import type { EventSummary } from '../api';
-import { eventSummaries, specialSummary } from '../mocks';
+import { eventSummaries, specialSummary, thrownOutSummary } from '../mocks';
 import { cellLabel, SeasonCalendar, sundaysOfYear } from './SeasonCalendar';
 
 describe('sundaysOfYear', () => {
@@ -21,6 +21,8 @@ describe('sundaysOfYear', () => {
 // Every Plan 06 EventSummaryOut field is required; these dates have no scores, so no metrics and no winners.
 function unscored(event_date: string, head_count: number | null): EventSummary {
   return {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -136,4 +138,13 @@ describe('SeasonCalendar', () => {
       'Sep 20, 2026 — special shoot, 5 shooters',
     );
   });
+});
+
+it('labels and titles a Sunday with a station thrown out, with a visible *', () => {
+  const label = `Oct 25, 2026 — ${thrownOutSummary.n_shooters} shooters · Station 10 was thrown out; everyone was credited 8/8`;
+  expect(cellLabel(thrownOutSummary)).toBe(label);
+  renderWithProviders(<SeasonCalendar year={2026} events={[thrownOutSummary]} />);
+  const cell = screen.getByRole('link', { name: label });
+  expect(cell).toHaveAttribute('title', label);
+  expect(cell).toHaveTextContent('25*');
 });

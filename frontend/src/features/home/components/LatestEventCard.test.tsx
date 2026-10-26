@@ -228,4 +228,22 @@ describe('LatestEventCard', () => {
     renderWithProviders(<LatestEventCard />);
     expect(await screen.findByText("Couldn't load the latest Sunday")).toBeInTheDocument();
   });
+
+  it('stars the winner score, median and top score of a Sunday with a station thrown out', async () => {
+    server.use(
+      http.get('*/api/meta', () => HttpResponse.json(homeMeta)),
+      http.get('*/api/events/:date', () =>
+        HttpResponse.json({
+          ...latestEvent,
+          stats_excluded: true,
+          thrown_out: [{ station_label: '11', target_count: 7, credited: true }],
+        }),
+      ),
+    );
+    renderWithProviders(<LatestEventCard />);
+    await screen.findByText(/^Winner/);
+    expect(
+      screen.getAllByTitle('Station 11 was thrown out; everyone was credited 7/7'),
+    ).toHaveLength(3);
+  });
 });

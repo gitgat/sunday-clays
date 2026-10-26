@@ -19,6 +19,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Dec1,
     Int,
     NameList,
@@ -152,6 +153,7 @@ register(
                         "the last 8 weeks. All round types count."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(VS_FIELD_LABEL,),
@@ -268,8 +270,12 @@ register(
                     named("Shown at 5 or more over, with 20 or more earlier rounds."),
                     you=named("Shown at 5 or more over, once you have 20 earlier rounds."),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
-            ROLLUP: (T(named("Each shot 5 or more over their usual for a day like this.")),),
+            ROLLUP: (
+                T(named("Each shot 5 or more over their usual for a day like this.")),
+                THROWN_OUT_ROUNDS_HOW,
+            ),
         },
         labels=(USUAL_LABEL, RESULTS_LABEL),
         chart=_own_usual_chart,
@@ -294,7 +300,7 @@ TREND_LABEL = T(
 
 
 def _up_on_usual(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    for sid, days in evergreen_days(fr, scope):
+    for sid, days in evergreen_days(fr, scope, scored=True):
         if len(days) < UP_RECENT + UP_BEFORE or not shot_recently(days, scope.as_of):
             continue
         recent = [float(d.score) for d in days[-UP_RECENT:]]
@@ -387,6 +393,7 @@ register(
                         "what chance alone gives, with a round in the last 8 weeks."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(TREND_LABEL,),
@@ -414,7 +421,7 @@ def _year_split(days: tuple[Day, ...], year: int) -> tuple[list[float], list[flo
 
 def _year_up(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     this_year = scope.as_of.year
-    for sid, days in evergreen_days(fr, scope):
+    for sid, days in evergreen_days(fr, scope, scored=True):
         now, now_field = _year_split(days, this_year)
         then, then_field = _year_split(days, this_year - 1)
         if min(len(now), len(then)) < YEAR_MIN_ROUNDS or not now_field or not then_field:
@@ -514,6 +521,7 @@ register(
                         "the field's middle score as well."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(YEAR_LABEL,),
@@ -530,7 +538,7 @@ RUN_RISE, RUN_TOTAL = 0.5, 1.5
 
 
 def _years_up_run(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    for sid, days in evergreen_days(fr, scope):
+    for sid, days in evergreen_days(fr, scope, scored=True):
         latest = scope.as_of.year
         if len([d for d in days if d.date.year == latest]) < YEAR_MIN_ROUNDS:
             latest -= 1
@@ -630,6 +638,7 @@ register(
                         "more in all."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(YEAR_LABEL,),
@@ -759,6 +768,7 @@ register(
                     ),
                 ),
                 _GAIN_HOW_LIMIT,
+                THROWN_OUT_ROUNDS_HOW,
             ),
             "career": (
                 T(
@@ -772,6 +782,7 @@ register(
                     ),
                 ),
                 _GAIN_HOW_LIMIT,
+                THROWN_OUT_ROUNDS_HOW,
             ),
         },
         labels=(GAIN_LABEL,),

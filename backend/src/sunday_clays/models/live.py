@@ -52,6 +52,10 @@ class Event(Base):
     target_total: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default=text("50")
     )
+    # a station was thrown out: the Sunday's results count, its scores stay out of statistics
+    stats_excluded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
 
 class Round(Base):
@@ -96,6 +100,12 @@ class ShooterProfile(Base):
 
 class StationLayout(Base):
     __tablename__ = "station_layouts"
+    __table_args__ = (
+        CheckConstraint(
+            "dropped_source IN ('auto', 'override')",
+            name=conv("ck_station_layouts_dropped_source"),
+        ),
+    )
 
     event_date: Mapped[date] = mapped_column(Date, primary_key=True)
     station_label: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -103,6 +113,8 @@ class StationLayout(Base):
     station_no: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     target_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     source_import_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    dropped: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    dropped_source: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class StationHit(Base):

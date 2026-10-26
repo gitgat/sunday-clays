@@ -12,6 +12,7 @@ import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { server } from '../../../test/msw/server';
 import { createTestQueryClient, renderWithProviders } from '../../../test/render';
 import { windowRange } from '../../../lib/timeWindow';
+import type { EventSummary } from '../api';
 import { seasonEvents } from '../mocks';
 import { TurnoutChart, turnoutModel } from './TurnoutChart';
 
@@ -20,9 +21,9 @@ const threeMonths = windowRange('3m', '2026-09-27');
 describe('turnoutModel', () => {
   it('charts turnout per scored Sunday in date order', () => {
     expect(turnoutModel(seasonEvents).rows).toEqual([
-      { event_date: '2026-09-06', shooters: 24 },
-      { event_date: '2026-09-13', shooters: 13 },
-      { event_date: '2026-09-27', shooters: 23 },
+      { event_date: '2026-09-06', shooters: 24, thrown_out: '' },
+      { event_date: '2026-09-13', shooters: 13, thrown_out: '' },
+      { event_date: '2026-09-27', shooters: 23, thrown_out: '' },
     ]);
   });
 
@@ -64,6 +65,17 @@ describe('TurnoutChart', () => {
     },
     LAZY_TEST_TIMEOUT,
   );
+});
+
+describe('turnoutModel thrown-out column', () => {
+  it('exports a thrown_out column', () => {
+    const m = turnoutModel([
+      ...seasonEvents,
+      { ...(seasonEvents[0] as EventSummary), event_date: '2026-09-20', stats_excluded: true },
+    ]);
+    expect(m.columns.at(-1)?.key).toBe('thrown_out');
+    expect(m.rows.find((r) => r.event_date === '2026-09-20')?.thrown_out).toBe('yes');
+  });
 });
 
 describe('TurnoutChart full data', () => {

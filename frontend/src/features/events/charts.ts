@@ -1,4 +1,5 @@
 import type { EChartsOption } from 'echarts';
+import { colors } from '../../theme/tokens';
 import { heatmapOption } from '../../components/charts/builders/heatmap';
 import type { TabularData } from '../../components/charts/types';
 import type { EventResult, StationMatrix } from './api';
@@ -25,6 +26,13 @@ function hitsAt(entry: Entry, label: string): number | null {
   return entry.hits.find((cell) => cell.label === label)?.hits ?? null;
 }
 
+type Layout = StationMatrix['layout'][number];
+
+/** A station thrown out carries a `*` in its heatmap name. */
+function stationName(s: Layout): string {
+  return s.dropped ? `Stn ${s.label} *` : `Stn ${s.label}`;
+}
+
 export function stationLongData(matrix: StationMatrix): TabularData {
   return {
     columns: [
@@ -35,8 +43,8 @@ export function stationLongData(matrix: StationMatrix): TabularData {
     rows: labelled(matrix.entries).flatMap(({ entry, label }) =>
       matrix.layout.map((s) => ({
         shooter: label,
-        station: `Stn ${s.label}`,
-        hits: hitsAt(entry, s.label),
+        station: stationName(s),
+        hits: s.dropped ? null : hitsAt(entry, s.label),
       })),
     ),
   };
@@ -51,23 +59,39 @@ export function stationMatrixModel(
     { key: 'shooter', label: 'Shooter', type: 'string' },
     ...matrix.layout.map((s) => ({
       key: `s${s.label}`,
-      label: `Stn ${s.label} (${s.target_count})`,
-      type: 'int' as const,
+      label: s.dropped
+        ? `Stn ${s.label} * (${s.target_count})`
+        : `Stn ${s.label} (${s.target_count})`,
+      type: s.dropped ? ('string' as const) : ('int' as const),
     })),
     { key: 'total', label: 'Station total', type: 'int' },
     { key: 'score', label: 'Score', type: 'int' },
   ];
   const rows = labelled(matrix.entries).map(({ entry, label }) => {
     const row: TabularData['rows'][number] = { shooter: label };
-    for (const s of matrix.layout) row[`s${s.label}`] = hitsAt(entry, s.label);
+    for (const s of matrix.layout)
+      row[`s${s.label}`] = s.dropped ? 'credited' : hitsAt(entry, s.label);
     row.total = entry.total;
     row.score =
       results.find((r) => entry.round_id !== null && r.round_id === entry.round_id)?.score ?? null;
     return row;
   });
-  return {
-    columns,
-    rows,
-    option: heatmapOption(stationLongData(matrix), { x: 'station', y: 'shooter', value: 'hits' }),
-  };
+  const option = heatmapOption(stationLongData(matrix), {
+    x: 'station',
+    y: 'shooter',
+    value: 'hits',
+  });
+  const dropped = matrix.layout.filter((s) => s.dropped).map(stationName);
+  if (dropped.length > 0 && Array.isArray(option.series)) {
+    // The thrown-out columns have no hits to colour: grey them instead of reading as zero.
+    option.series = option.series.map((series) => ({
+      ...series,
+      markArea: {
+        silent: true,
+        itemStyle: { color: colors.outlineVariant },
+        data: dropped.map((l) => [{ xAxis: l }, { xAxis: l }]),
+      },
+    })) as typeof option.series;
+  }
+  return { columns, rows, option };
 }

@@ -988,6 +988,23 @@ describe('ExplorerPage fullscreen and CSV', () => {
     expect(within(dialog).queryByText(/Showing the first/)).toBeNull();
   });
 
+  it('opens fullscreen on a table when the full history has no rows to draw', async () => {
+    server.use(
+      http.post('/api/explore', async ({ request }) => {
+        const spec = (await request.json()) as QuerySpec;
+        const base = fakeExploreResult(spec);
+        return HttpResponse.json(spec.limit === 5000 ? { ...base, rows: [] } : base);
+      }),
+    );
+    const { user } = renderPage('/explorer?v=table');
+    const region = await screen.findByRole('region', { name: 'Value by Sunday' });
+    const dialog = await openFullscreen(user, region, 'Value by Sunday');
+    expect(
+      await within(dialog).findByText('Every Sunday on record, not just the time window.'),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).queryAllByRole('row')).toHaveLength(1));
+  });
+
   it('says when even the full result was cut off', async () => {
     const seen: QuerySpec[] = [];
     serveByLimit(seen, true);

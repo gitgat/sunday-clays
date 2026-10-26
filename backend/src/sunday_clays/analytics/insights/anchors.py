@@ -16,6 +16,7 @@ from datetime import date
 
 import pandas as pd
 
+from sunday_clays.analytics import frames
 from sunday_clays.analytics.cohorts import cohort_returns, first_round_scores
 from sunday_clays.analytics.insights.context import Day, InsightFrames, mean
 from sunday_clays.analytics.insights.types import ChartLink
@@ -56,18 +57,33 @@ def _in_window(days: tuple[Day, ...], link: ChartLink) -> list[Day]:
 def trend_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
     """Score history: best round each Sunday plus the trend chart's optional lines."""
     days = fr.histories.get(_route_id(link), ())
-    rows = []
+    rows: list[dict[str, object]] = []
     for i, d in enumerate(days):
-        scores = [x.score for x in days[: i + 1]]
+        if d.stats_excluded:
+            rows.append(
+                {
+                    "event": d.date.isoformat(),
+                    "score": None,
+                    "adjusted": None,
+                    "pb": None,
+                    "so_far": None,
+                    "roll10": None,
+                    "roll20": None,
+                    "thrown_out": True,
+                }
+            )
+            continue
+        scores = [x.score for x in days[: i + 1] if not x.stats_excluded]
         rows.append(
             {
                 "event": d.date.isoformat(),
                 "score": d.score,
                 "adjusted": d.adjusted,
                 "pb": max(scores),
-                "so_far": d.prior_mean,
+                "so_far": d.prior_mean_s,
                 "roll10": mean([float(s) for s in scores[-10:]]) if len(scores) >= 10 else None,
                 "roll20": mean([float(s) for s in scores[-20:]]) if len(scores) >= 20 else None,
+                "thrown_out": False,
             }
         )
     frame = pd.DataFrame(rows)
@@ -165,6 +181,7 @@ def results_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
 
 def highest_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
     """The records page's highest rounds (48 and up), with the date and the shooter."""
+    rounds = frames.stat_rounds(fr.rounds)
     rows = [
         {
             "event": d.isoformat(),
@@ -174,7 +191,7 @@ def highest_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
             "high": int(score) if score >= 49 else None,
         }
         for d, sid, score in zip(
-            fr.rounds["event_date"], fr.rounds["shooter_id"], fr.rounds["score"], strict=True
+            rounds["event_date"], rounds["shooter_id"], rounds["score"], strict=True
         )
         if score >= 48 and link.window.start <= d <= link.window.end
     ]
@@ -254,7 +271,7 @@ def movers_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
 
 def station_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
     """The stations page hit-rate chart: hit % per station over the window."""
-    s = fr.stations
+    s = frames.live_station_hits(fr.stations)
     frame = s.loc[[link.window.start <= d <= link.window.end for d in s["event_date"]]]
     rows = []
     labels = {

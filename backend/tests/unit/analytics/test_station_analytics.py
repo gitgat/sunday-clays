@@ -10,10 +10,12 @@ import pytest
 
 from sunday_clays.analytics.frames import wind_band
 from sunday_clays.analytics.stations import (
+    STATION_FRAME_COLUMNS,
     add_sheet_totals,
     assign_eras,
     current_eras,
     hit_stats,
+    load_station_frame,
     per_event_station_pct,
     shooter_station_deltas,
     shooter_station_matrix,
@@ -472,3 +474,48 @@ def test_station_wind_lists_lettered_stations_in_order():
     weather = pd.DataFrame({"event_date": [sun(0), sun(1)], "gust_mph": [5.0, 5.0]})
     wind = station_wind(df, weather, "all")
     assert list(wind["label"]) == ["7", "7A", "8"]
+
+
+class _Rows:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def execute(self, _sql):
+        return self
+
+    def mappings(self):
+        return self._rows
+
+
+def _row(entry_row, label, hits, dropped):
+    return {
+        "event_date": D0,
+        "station_no": int(label),
+        "station_label": label,
+        "target_count": 7,
+        "sheet_id": 1,
+        "entry_row": entry_row,
+        "shooter_id": entry_row,
+        "round_id": None,
+        "hits": hits,
+        "round_type": "sporting",
+        "display_name": f"Shooter {entry_row}",
+        "dropped": dropped,
+    }
+
+
+def test_load_station_frame_leaves_a_dropped_station_out_before_sheet_totals():
+    got = load_station_frame(
+        _Rows(
+            [
+                _row(1, "4", 5, False),
+                _row(1, "11", 7, True),
+                _row(2, "4", 3, False),
+                _row(2, "11", 7, True),
+            ]
+        )
+    )
+    assert list(got["station_label"]) == ["4", "4"]
+    assert list(got["sheet_total"]) == [5, 3]
+    assert str(got["dropped"].dtype) == "bool"
+    assert STATION_FRAME_COLUMNS[-1] == "dropped"

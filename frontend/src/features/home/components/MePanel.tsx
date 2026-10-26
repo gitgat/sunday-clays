@@ -5,9 +5,11 @@ import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Skeleton } from '../../../components/ui/Skeleton';
+import { ThrownOutMark } from '../../../components/ui/ThrownOutMark';
 import { clearMe } from '../../../lib/me';
 import { useRoundTypeLink } from '../../../lib/roundTypes';
 import { About } from '../../events/components/About';
+import { SUNDAY_THROWN_OUT } from '../../events/thrownOut';
 import { useShooterDetail, useShooterRounds } from '../api';
 import type { ShooterDetail, ShooterRound } from '../api';
 import { homeExplainers } from '../explainers';
@@ -20,6 +22,7 @@ export type LastResult = {
   score: number;
   rank: number | null;
   ratingMove: number | null;
+  thrownOut: boolean;
 };
 
 /** The best round on the latest attended date (the top score when metrics are not computed yet). */
@@ -31,11 +34,21 @@ export function lastResult(rounds: ShooterRound[]): LastResult | null {
     day.find((r) => r.is_best_round) ?? day.reduce((a, b) => (b.score > a.score ? b : a));
   // A partial-results Sunday is not rated (ratings do not move): its rounds carry no field median,
   // so that is the signal for a dash rather than a 0.0.
+  // A Sunday with a station thrown out is not rated either.
   const ratingMove =
-    best.field_median === null || best.mu_before === null || best.mu_after === null
+    best.stats_excluded ||
+    best.field_median === null ||
+    best.mu_before === null ||
+    best.mu_after === null
       ? null
       : round1(best.mu_after - best.mu_before);
-  return { date, score: best.score, rank: best.event_rank, ratingMove };
+  return {
+    date,
+    score: best.score,
+    rank: best.event_rank,
+    ratingMove,
+    thrownOut: best.stats_excluded,
+  };
 }
 
 function LastResultView({ result }: { result: LastResult }) {
@@ -54,7 +67,11 @@ function LastResultView({ result }: { result: LastResult }) {
       </div>
       <div>
         <dt className="text-xs text-text-muted">Score · finish</dt>
-        <dd className="flex min-h-11 items-center tabular-nums">{`${result.score} · ${result.rank === null ? '—' : ordinal(result.rank)}`}</dd>
+        <dd className="flex min-h-11 items-center tabular-nums">
+          {result.score}
+          {result.thrownOut && <ThrownOutMark phrase={SUNDAY_THROWN_OUT} />}
+          {` · ${result.rank === null ? '—' : ordinal(result.rank)}`}
+        </dd>
       </div>
       <div>
         <dt className="text-xs text-text-muted">Rating move</dt>

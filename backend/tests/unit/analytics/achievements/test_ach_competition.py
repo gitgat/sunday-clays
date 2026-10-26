@@ -25,8 +25,10 @@ def field(builder, day, scores, first_sid=1):
     return builder
 
 
-def win_ctx(b):
+def win_ctx(b, excluded: tuple[date, ...] = ()):
     builder = b()
+    for d in excluded:
+        builder.event(d, stats_excluded=True)
     field(builder, sun(0), [45, 45, 40, 35, 30])  # shooters 1-5, a tie for first
     field(builder, sun(1), [44, 43, 42, 41])  # only 4 shooters
     # shooter 1 wins again; shooters 2-3 already have podiums
@@ -41,6 +43,12 @@ def test_first_win_ties_count(ctx_builder):
         (2, "first_win", sun(0)),
         (5, "first_win", sun(3)),
     ]
+
+
+def test_first_win_still_awards_on_an_excluded_sunday(ctx_builder):
+    plain = awards("first_win", win_ctx(ctx_builder))
+    assert plain
+    assert awards("first_win", win_ctx(ctx_builder, excluded=(sun(0), sun(3)))) == plain
 
 
 def test_podium_needs_top_three_in_a_field_of_five(ctx_builder):
