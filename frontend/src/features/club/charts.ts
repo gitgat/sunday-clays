@@ -344,7 +344,7 @@ export function firstRoundsModel(data: FirstRounds): ChartModel {
   const rows = data.counts.slice(low, high + 1).map((n, i) => ({
     score: String(low + i),
     n,
-    share_pct: data.n === 0 ? 0 : round1((100 * n) / data.n),
+    share_pct: round1((100 * n) / data.n),
   }));
   return { columns, rows, option: barOption({ columns, rows }, { x: 'score', y: ['n'] }) };
 }

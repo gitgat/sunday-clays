@@ -70,7 +70,7 @@ function LatestEventBody({
     <ThrownOutMark phrase={thrownOutPhrase(event.thrown_out)} />
   ) : null;
   const eventLink = useRoundTypeLink(`/events/${event.event_date}`);
-  const fullLink = useRoundTypeLink(`/events/${lastFull ?? event.event_date}`);
+  const fullLink = useRoundTypeLink(`/events/${String(lastFull)}`); // only rendered when lastFull is set
   return (
     <div className="flex flex-col gap-3">
       <Link
@@ -157,7 +157,7 @@ export function LatestEventCard() {
       return (
         <EmptyState title="Couldn't load the latest Sunday" description={event.error.message} />
       );
-    return <LatestEventBody event={event.data} lastFull={meta.data?.last_score_date ?? null} />;
+    return <LatestEventBody event={event.data} lastFull={meta.data.last_score_date} />;
   }
 
   return (

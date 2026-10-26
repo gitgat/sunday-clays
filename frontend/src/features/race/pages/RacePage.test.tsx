@@ -458,6 +458,38 @@ describe('RacePage', () => {
       expect(topOf(seen, 50)).toHaveLength(1);
     });
 
+    it('race bars: a full history without the shown Sunday adds nothing to fullscreen', async () => {
+      const seen: URL[] = [];
+      serveRanked(seen);
+      server.use(
+        http.get('*/api/leaderboards/history', ({ request }) => {
+          const url = new URL(request.url);
+          seen.push(url);
+          const full = url.searchParams.get('top') === '50';
+          return HttpResponse.json({
+            ...historyFixture,
+            frames: DATES.map((event_date) => ({
+              event_date: full ? `${event_date}0` : event_date,
+              rows: [
+                {
+                  shooter_id: 100,
+                  display_name: 'Shooter 01',
+                  status: 'member',
+                  value: 9,
+                  rank: 1,
+                },
+              ],
+            })),
+          });
+        }),
+      );
+      const { user } = renderRace('/race?rt=sporting&race-bars=table');
+      const card = await screen.findByRole('region', { name: 'Points' });
+      const dialog = await openFullscreen(user, card, 'Points');
+      await waitFor(() => expect(topOf(seen, 50)).toHaveLength(1));
+      expect(within(dialog).queryByText('The top 50 ranked that Sunday.')).toBeNull();
+    });
+
     it('rank over time: the table and CSV hold every ranked shooter on every Sunday, and both charts share one fetch', async () => {
       const seen: URL[] = [];
       serveRanked(seen);

@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import { Route, Routes } from 'react-router';
 import { describe, expect, it } from 'vitest';
@@ -429,9 +429,20 @@ describe('EventDetailPage', () => {
   });
 
   it('shows no Sunday buttons when there is no other Sunday with scores', async () => {
-    server.use(http.get('*/api/events', () => HttpResponse.json([])));
+    let served = 0;
+    server.use(
+      http.get('*/api/events', () => {
+        served += 1;
+        return HttpResponse.json([]);
+      }),
+    );
     renderEvent(eventDetail);
     await screen.findByRole('heading', { level: 1 });
+    await waitFor(() => expect(served).toBeGreaterThan(0));
+    // Let the empty list land and render before asserting the nav stays hidden.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
     expect(screen.queryByRole('navigation', { name: 'Other Sundays' })).not.toBeInTheDocument();
   });
 

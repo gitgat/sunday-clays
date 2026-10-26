@@ -173,7 +173,7 @@ export function RaceView({ frames, metric, mode, query }: RaceViewProps) {
           >
             <span className="min-w-0 break-words">
               <span className="mr-2 tabular-nums text-text-muted">{row.rank}</span>
-              {names.get(row.shooter_id) ?? row.display_name}
+              {names.get(row.shooter_id)}
             </span>
             <span className="tabular-nums">{formatValue(metric, row.value)}</span>
           </li>

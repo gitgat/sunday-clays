@@ -58,10 +58,7 @@ function SpecialShareCard({ event }: { event: EventDetail }) {
   const total = targetsOf(event);
   const top = event.results
     .filter((r) => r.is_best_round)
-    .sort(
-      (a, b) =>
-        b.score - a.score || a.display_name.localeCompare(b.display_name) || a.ordinal - b.ordinal,
-    )
+    .sort((a, b) => b.score - a.score || a.display_name.localeCompare(b.display_name))
     .slice(0, TOP_RESULTS);
   return (
     <article className="flex flex-col gap-2 rounded-card bg-surface p-4 text-text">

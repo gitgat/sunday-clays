@@ -78,3 +78,19 @@ it('stars the tooltip header of a thrown-out date, on category and time axes', (
     ]),
   ).toBe('Oct 25 *<br/>Middle score: 34');
 });
+
+it('leaves an option without a series array untouched', () => {
+  expect(hollowSeries({}, ['A'], [true])).toEqual({ series: [] });
+  expect(hollowSeries({ series: { name: 'A', data: [1] } }, ['A'], [true]).series).toEqual([]);
+});
+
+it('returns an empty tooltip when there are no axis params', () => {
+  expect(thrownOutAxisTooltip(new Set(['2026-10-25']))([])).toBe('');
+});
+
+it('omits the marker when ECharts supplies none', () => {
+  const f = thrownOutAxisTooltip(new Set<string>());
+  expect(
+    f([{ axisValue: '2026-10-04', axisValueLabel: '2026-10-04', seriesName: 'Score', value: 40 }]),
+  ).toBe('2026-10-04<br/>Score: 40');
+});
