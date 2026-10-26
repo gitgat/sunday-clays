@@ -1143,3 +1143,13 @@ def test_improvement_skips_and_forgets_a_thrown_out_round(make_world: Any) -> No
     assert texts(fr, wk(FIRST, 121), "improvement") == [
         "Ike Hadley's average over the last 20 rounds is up 4.0 targets compared with a year ago."
     ]
+
+
+def test_scores_context_says_nothing_on_a_thrown_out_sunday(make_world: Any) -> None:
+    fr = weekly(
+        make_world,
+        30,
+        score=lambda i: {29: 45}.get(i, 40),
+        event=lambda i: {"stats_excluded": True} if i == 29 else {},
+    ).frames()
+    assert texts(fr, wk(FIRST, 29), "scores_context") == []
