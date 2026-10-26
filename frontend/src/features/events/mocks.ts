@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import type { EventDetail, EventSummary, Meta, StationMatrix } from './api';
+import type { ThrownOut } from './thrownOut';
 
 export const meta: Meta = {
   app_version: 'test',
@@ -478,6 +479,38 @@ export const specialDetail: EventDetail = {
   kind: 'special',
   label: '3-Bird Shoot',
   target_total: 60,
+};
+
+export const THROWN_OUT_10: ThrownOut = { station_label: '10', target_count: 8, credited: true };
+
+/** A Sunday with Station 10 thrown out; kept out of `eventSummaries` so existing lists are unchanged. */
+export const thrownOutDetail: EventDetail = {
+  ...eventDetail,
+  event_date: '2026-10-25',
+  stats_excluded: true,
+  thrown_out: [THROWN_OUT_10],
+  difficulty: null,
+  vs_prev: null,
+  results: eventDetail.results.map((r) => ({
+    ...r,
+    stats_excluded: true,
+    adjusted: null,
+    rating_delta: null,
+  })),
+  stations: {
+    entries: [],
+    ...eventDetail.stations,
+    layout: (eventDetail.stations?.layout ?? []).map((s) => ({ ...s, dropped: s.label === '10' })),
+  },
+};
+
+const SUMMARY_BASE = eventSummaries[1] as EventSummary;
+
+export const thrownOutSummary: EventSummary = {
+  ...SUMMARY_BASE,
+  event_date: '2026-10-25',
+  stats_excluded: true,
+  thrown_out: [THROWN_OUT_10],
 };
 
 // Default handlers are branch-free (every line runs in routes.test.tsx); tests needing other data use server.use.
