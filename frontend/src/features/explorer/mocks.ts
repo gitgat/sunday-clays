@@ -27,7 +27,7 @@ export function fakeExploreResult(spec: QuerySpec): QueryResult {
     first === undefined
       ? [{ value: 35, n: 10 }]
       : [row(first, 'A', 3, 36, 6), row(first, 'B', 4, 34, 4)];
-  return { columns, rows, n_rounds: 10, truncated: false };
+  return { columns, rows, n_rounds: 10, truncated: false, thrown_out_dates: [] };
 }
 
 export const handlers = [

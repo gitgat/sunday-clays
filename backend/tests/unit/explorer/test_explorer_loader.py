@@ -24,6 +24,7 @@ def stubbed_loaders(monkeypatch: pytest.MonkeyPatch) -> None:
             "event_date": [D1, D1, D2],
             "shooter_id": [10, 11, 10],
             "score": [40, 30, 42],
+            "stats_excluded": [False] * 3,
             "temp_f": [38.0, 38.0, NAN],
             "gust_mph": [22.0, 22.0, NAN],
             "precip_in": [0.0, 0.0, NAN],
@@ -35,6 +36,7 @@ def stubbed_loaders(monkeypatch: pytest.MonkeyPatch) -> None:
             "round_type": ["sporting", "super_sporting"],
             "head_count": [2.0, 1.0],
             "difficulty": [1.25, NAN],
+            "stats_excluded": [False] * 2,
             "n_rounds": [2, 1],
             "temp_f": [38.0, NAN],
             "gust_mph": [22.0, NAN],
@@ -50,6 +52,7 @@ def stubbed_loaders(monkeypatch: pytest.MonkeyPatch) -> None:
             "target_count": [7],
             "round_id": [3],
             "hits": [5],
+            "dropped": [False],
         }
     )
     monkeypatch.setattr(fr, "load_rounds", lambda session: rounds)
@@ -70,6 +73,7 @@ def test_loader_adds_weather_bands_and_keeps_missing_weather_missing(
         "round_type",
         "head_count",
         "difficulty",
+        "stats_excluded",
         *engine.WEATHER_COLUMNS,
         "temp_band",
         "wind_band",

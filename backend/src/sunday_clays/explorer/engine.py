@@ -144,6 +144,10 @@ EVENT_METRICS: Final = frozenset({Metric.ATTENDANCE, Metric.DIFFICULTY})
 ROUND_METRICS_FOR_MIN_SCORE: Final = frozenset(
     {Metric.SCORE, Metric.ADJUSTED, Metric.RESIDUAL, Metric.ROUNDS, Metric.SHOOTERS, Metric.WINS}
 )
+# Score statistics leave out Sundays with a station thrown out (spec D8); counts keep them.
+STAT_METRICS: Final = frozenset(
+    {Metric.SCORE, Metric.ADJUSTED, Metric.RESIDUAL, Metric.RATING, Metric.DIFFICULTY}
+)
 
 
 def _invalid(message: str) -> DomainError:
@@ -277,13 +281,19 @@ def _units(
     """One row per counted unit (round, shooter-event, station entry or event) with a 'value'."""
     metric = spec.metric
     if metric in EVENT_METRICS:
-        events = _filter_events(frames.events, spec.filters)
+        source = frames.events
+        if metric in STAT_METRICS:
+            source = fr.stat_events(source)
+        events = _filter_events(source, spec.filters)
         units, key_cols, sort_cols = _keys(events, spec.group_by)
         units["value"] = events[AGGREGATED[metric]].astype(float)
         return units, key_cols, sort_cols, 0
-    rounds = _filter_rounds(frames.rounds, spec.filters)
+    source_rounds = frames.rounds
+    if metric in STAT_METRICS:
+        source_rounds = fr.stat_rounds(source_rounds)
+    rounds = _filter_rounds(source_rounds, spec.filters)
     if metric is Metric.HIT_PCT:
-        hits = frames.station_hits
+        hits = fr.live_station_hits(frames.station_hits)
         hits = hits[hits["round_id"].notna()].astype({"round_id": "int64"})
         joined = hits[["round_id", "station_no", "station_label", "hits", "target_count"]].merge(
             rounds, on="round_id", how="inner"
@@ -360,7 +370,23 @@ def run_query(frames: ExplorerFrames, spec: QuerySpec) -> QueryResult:
         {k: _cell(v) for k, v in zip(keys, record, strict=True)}
         for record in grouped[keys].itertuples(index=False, name=None)
     ]
-    return QueryResult(columns=columns, rows=rows, n_rounds=n_rounds, truncated=truncated)
+    thrown_out_dates: list[str] = []
+    if (
+        spec.metric not in STAT_METRICS
+        and spec.metric is not Metric.HIT_PCT
+        and Dim.EVENT in spec.group_by
+    ):
+        events = frames.events
+        flagged = events[events["stats_excluded"].eq(True)]["event_date"]
+        excluded = {d.isoformat() for d in flagged}
+        thrown_out_dates = sorted({str(r["event"]) for r in rows} & excluded)
+    return QueryResult(
+        columns=columns,
+        rows=rows,
+        n_rounds=n_rounds,
+        truncated=truncated,
+        thrown_out_dates=thrown_out_dates,
+    )
 
 
 def _add_bands(df: pd.DataFrame) -> pd.DataFrame:
@@ -376,7 +402,14 @@ def load_explorer_frames(session: Session) -> ExplorerFrames:
     """Plan 06 frames plus weather bands (rounds and events)."""
     rounds = _add_bands(fr.load_rounds(session))
     events = fr.load_events(session)[
-        ["event_date", "round_type", "head_count", "difficulty", *WEATHER_COLUMNS]
+        [
+            "event_date",
+            "round_type",
+            "head_count",
+            "difficulty",
+            "stats_excluded",
+            *WEATHER_COLUMNS,
+        ]
     ]
     return ExplorerFrames(
         rounds=rounds, station_hits=fr.load_station_hits(session), events=_add_bands(events)

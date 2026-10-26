@@ -78,6 +78,7 @@ def make_frames() -> ExplorerFrames:
                 "event_rank": rank,
                 "is_best_round": best,
                 "percentile": NAN,
+                "stats_excluded": False,
                 "expected": NAN,
                 "residual": residual,
                 "mu_before": NAN,
@@ -127,7 +128,9 @@ def make_frames() -> ExplorerFrames:
     station_hits = pd.DataFrame(
         STATION_HITS, columns=["event_date", "station_no", "round_id", "hits", "target_count"]
     )
+    events.insert(4, "stats_excluded", False)
     station_hits.insert(2, "station_label", station_hits["station_no"].astype(str))
+    station_hits["dropped"] = False
     return ExplorerFrames(rounds=rounds, station_hits=station_hits, events=events)
 
 
