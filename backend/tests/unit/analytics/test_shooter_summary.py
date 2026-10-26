@@ -17,13 +17,18 @@ def sunday(i: int) -> date:
 
 
 def frames_for(
-    scores: dict[int, list[int]], special: tuple[int, ...] = (), held_extra: tuple[int, ...] = ()
+    scores: dict[int, list[int]],
+    special: tuple[int, ...] = (),
+    held_extra: tuple[int, ...] = (),
+    excluded: tuple[int, ...] = (),
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """scores: Sunday index -> this shooter's regular scores that day."""
     rounds = pd.DataFrame(
         [(sunday(i), ME, s) for i, ss in scores.items() for s in ss],
         columns=["event_date", "shooter_id", "score"],
     )
+    thrown_out_days = {sunday(i) for i in excluded}
+    rounds["stats_excluded"] = [d in thrown_out_days for d in rounds["event_date"]]
     days = sorted({*scores, *special, *held_extra})
     appearances = pd.DataFrame(
         [(sunday(i), ME) for i in sorted({*scores, *special})], columns=["event_date", "shooter_id"]
@@ -43,8 +48,9 @@ def run(
     special: tuple[int, ...] = (),
     held_extra: tuple[int, ...] = (),
     awards: tuple[tuple[str, date], ...] = (),
+    excluded: tuple[int, ...] = (),
 ) -> summary.ShooterSummary:
-    rounds, appearances, calendar = frames_for(scores, special, held_extra)
+    rounds, appearances, calendar = frames_for(scores, special, held_extra, excluded)
     return summary.compute_summary(
         ME, "Hadley, Ike", rounds, appearances, calendar, list(awards), date_from, date_to
     )
@@ -170,3 +176,18 @@ def test_nothing_after_the_window_end_leaks_in() -> None:
         awards=(*base_awards, ("doubleheader", sunday(3))),
     )
     assert later == early
+
+
+def test_a_thrown_out_sunday_counts_as_rounds_but_not_in_average_best_or_pbs() -> None:
+    history = {0: [40], 1: [40], 2: [40], 3: [40], 4: [40], 5: [50], 6: [45], 7: [47]}
+    result = run(history, None, sunday(7), excluded=(5,))
+    assert (result.sundays, result.rounds) == (8, 8)
+    assert result.average == 41.7
+    assert result.best == summary.BestRound(47, sunday(7))
+    assert result.pbs_set == 2
+
+
+def test_both_doubleheader_rounds_on_a_thrown_out_sunday_count_toward_the_pb_gate() -> None:
+    history = {0: [40], 1: [40], 2: [40], 3: [50, 49], 4: [45]}
+    result = run(history, None, sunday(4), excluded=(3,))
+    assert (result.sundays, result.rounds, result.pbs_set) == (5, 6, 1)

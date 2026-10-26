@@ -44,6 +44,9 @@ describe('glossary trigger lint', () => {
     const bare: Explainer = { what: 'Your percentile on the day.', computed: ['x'] };
     expect(missingTerms(bare)).toEqual(['percentile']);
     expect(missingTerms({ ...bare, terms: ['percentile'] })).toEqual([]);
+    expect(missingTerms({ what: 'Station 9 was thrown out.', computed: ['x'] })).toEqual([
+      'thrown-out-station',
+    ]);
   });
 
   it('every explainer lists the glossary terms its text uses', () => {
@@ -90,7 +93,9 @@ describe('glossary trigger lint', () => {
     }
     for (const key of ['race-bars', 'race-bump'] as const) {
       for (const mode of ['rolling_12', 'season', 'ytd'] as const) {
-        built.push([`${key} ${mode}`, raceExplainer(key, mode)]);
+        for (const metric of boardMetrics) {
+          built.push([`${key} ${mode} ${metric}`, raceExplainer(key, mode, metric)]);
+        }
       }
     }
     const problems = built.flatMap(([name, explainer]) =>

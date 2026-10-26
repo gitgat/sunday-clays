@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router';
 
 import { barOption } from '../../../components/charts/builders/bar';
 import { ChartFrame } from '../../../components/charts/ChartFrame';
+import { THROWN_OUT_ROUNDS } from '../../../components/charts/thrownOutCopy';
 import {
   rowTargeted,
   shooterLabels,
@@ -332,7 +333,7 @@ export function BiggestAdjusted({
   return (
     <RecordTable
       title="Biggest day vs the field"
-      subtitle={`${period} · Round score minus that Sunday’s middle score, on Sundays with complete results.`}
+      subtitle={`${period} · Round score minus that Sunday’s middle score, on Sundays with complete results. ${THROWN_OUT_ROUNDS}`}
       valueLabel="Above middle score"
       rows={roundRows(rows, formatSigned)}
       size={size}
@@ -352,7 +353,7 @@ export function BiggestJumps({
   return (
     <RecordTable
       title="Biggest jump from one Sunday to the next"
-      subtitle={`${period} · Best round on one Sunday to the best round on the next Sunday shot. The date is the later Sunday. Both Sundays of a jump must be inside these dates.`}
+      subtitle={`${period} · Best round on one Sunday to the best round on the next Sunday shot. The date is the later Sunday. Both Sundays of a jump must be inside these dates. ${THROWN_OUT_ROUNDS}`}
       valueLabel="Jump"
       rows={jumpRows(rows)}
       size={size}
@@ -372,7 +373,7 @@ export function HighestRatings({
   return (
     <RecordTable
       title="Highest rating in these dates"
-      subtitle={`${period} · All round types · needs 5 or more rounds. Peaks on Sundays inside these dates; the 5-round rule still counts every round before them.`}
+      subtitle={`${period} · All round types · needs 5 or more rounds. Peaks on Sundays inside these dates; the 5-round rule still counts every round before them. ${THROWN_OUT_ROUNDS}`}
       valueLabel="Rating"
       rows={roundRows(rows, formatRating)}
       size={size}
@@ -394,7 +395,7 @@ export function PerfectRounds({
     roundRows(all.perfect_rounds, String),
   );
   const cut = size.total > rows.length;
-  const subtitle = `${period} · Every 50 out of 50, newest first${cut && !more.open ? `. The latest ${String(rows.length)} of ${String(size.total)}.` : '.'}`;
+  const subtitle = `${period} · Every 50 out of 50, newest first${cut && !more.open ? `. The latest ${String(rows.length)} of ${String(size.total)}.` : '.'} ${THROWN_OUT_ROUNDS}`;
   return (
     <Card title="Perfect 50s" subtitle={subtitle} className="min-w-0">
       {rows.length === 0 ? (

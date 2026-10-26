@@ -21,6 +21,7 @@ export const GLOSSARY_TRIGGERS: Record<GlossaryTermId, RegExp> = {
   'round-types': /\bsuper sporting\b|\bround[- ]type/i,
   'special-shoot': /\bspecial shoot/i,
   streak: /\bstreak/i,
+  'thrown-out-station': /\bthrown[- ]out\b/i,
   'time-window': /\btime window\b/i,
   'trophy-tiers': /\b(bronze|silver|platinum|diamond)\b/i,
 };

@@ -45,6 +45,7 @@ EVENT_COLUMNS = (
     "has_scores",
     "has_stations",
     "results_complete",
+    "stats_excluded",
 )
 
 
@@ -157,7 +158,7 @@ def test_fixtures_rebuild_matches_golden_events_snapshot(
     snap = json.loads((GOLDEN / "rebuild_events.json").read_text())
     canonical = json.dumps(snap, separators=(",", ":"), sort_keys=True).encode()
     assert hashlib.sha256(canonical).hexdigest() == (
-        "c4e5f1ce06847aceee5feabbe0cf4ea269ef24b5489066450f5a1182f30fbe1b"
+        "4b290f8566e2e6857e1b902a1b0cea21c17b9822ea16507459670489355dd88a"
     )
     mark_committed(session, stage_import(session, scores_bytes, "scores.xlsx").import_id)
     mark_committed(session, stage_import(session, stations_bytes, "stations.xlsx").import_id)

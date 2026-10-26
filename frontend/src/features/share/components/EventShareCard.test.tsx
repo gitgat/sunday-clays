@@ -1,6 +1,11 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { attendanceOnlyDetail, eventDetail, specialDetail } from '../../events/mocks';
+import {
+  attendanceOnlyDetail,
+  eventDetail,
+  specialDetail,
+  thrownOutDetail,
+} from '../../events/mocks';
 import type { EventDetail } from '../../events/api';
 import { EventShareCard } from './EventShareCard';
 
@@ -96,5 +101,14 @@ describe('EventShareCard', () => {
   it('a special Sunday without a name reads Special · N targets', () => {
     render(<EventShareCard event={{ ...specialDetail, label: null, target_total: 75 }} />);
     expect(screen.getByText('Special · 75 targets · 3 shooters')).toBeInTheDocument();
+  });
+
+  it('stars the median and scores and footnotes a station thrown out', () => {
+    render(<EventShareCard event={thrownOutDetail} />);
+    expect(screen.getByText(/median 34\*/)).toBeInTheDocument();
+    expect(screen.getByText('42*')).toBeInTheDocument();
+    expect(
+      screen.getByText('* Station 10 was thrown out; everyone was credited 8/8.'),
+    ).toBeInTheDocument();
   });
 });

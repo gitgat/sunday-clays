@@ -1,3 +1,4 @@
+import { thrownOutPhrase } from '../events/thrownOut';
 import type { Recap } from './api';
 
 const LONG = new Intl.DateTimeFormat('en-US', {
@@ -63,6 +64,10 @@ export function formatRecap(r: Recap): { text: string; markdown: string } {
     const who = r.head_count === null ? shooters(r.shooters) : `${String(r.head_count)} came out`;
     intro.push(`Turnout: ${who} and ${rounds(r.rounds)} shot.`);
   }
+  if (r.thrown_out.length > 0)
+    intro.unshift(
+      `${thrownOutPhrase(r.thrown_out)}, so this week's scores aren't used in averages, PBs or station stats.`,
+    );
   if (r.insights.length > 0) sections.push({ heading: 'This week', lines: [...r.insights] });
   if (r.milestones.length > 0) sections.push({ heading: 'Milestones', lines: [...r.milestones] });
   const title = `Sunday Clays · ${longDay(r.event_date)}`;

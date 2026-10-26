@@ -267,6 +267,8 @@ def test_upgrade_downgrade_roundtrip(scratch_engine: Engine) -> None:
     _alembic(scratch_engine, "upgrade", "head")
     assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
     assert _round_id_index(scratch_engine) == ROUND_ID_INDEX_DEF
+    _alembic(scratch_engine, "downgrade", "0009")  # 0010 drops only its three columns
+    assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0008")  # 0009 drops only the response cache
     assert _tables(scratch_engine) == (C4_TABLES - TABLES_0009) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0007")  # 0008 drops its table and the event kind
@@ -694,6 +696,52 @@ def test_0008_downgrade_removes_special_imports_and_special_sundays(
                 " VALUES ('special', 's.xlsx', 'def', 'x')"
             )
         )
+
+
+ZERO_EVENT = "('%s', 'sporting', 'none', 0, 0, false, false, false)"
+
+
+def test_0010_defaults_the_flags_off_and_checks_dropped_source(scratch_engine: Engine) -> None:
+    _alembic(scratch_engine, "upgrade", "0009")
+    with scratch_engine.begin() as conn:
+        conn.execute(text(f"{EVENT_INSERT}) VALUES {ZERO_EVENT % '2026-10-18'}"))
+        conn.execute(
+            text(
+                "INSERT INTO station_layouts (event_date, station_label, station_no, target_count,"
+                " source_import_id) VALUES ('2026-10-18', '11', 11, 7, 1)"
+            )
+        )
+    _alembic(scratch_engine, "upgrade", "head")
+    with scratch_engine.begin() as conn:  # the previous release writes no flags
+        conn.execute(text(f"{EVENT_INSERT}) VALUES {ZERO_EVENT % '2026-10-25'}"))
+        events = conn.execute(
+            text("SELECT event_date::text, stats_excluded FROM events ORDER BY 1")
+        ).all()
+        layouts = conn.execute(text("SELECT dropped, dropped_source FROM station_layouts")).all()
+    assert [tuple(r) for r in events] == [("2026-10-18", False), ("2026-10-25", False)]
+    assert [tuple(r) for r in layouts] == [(False, None)]
+    with (
+        pytest.raises(IntegrityError, match="ck_station_layouts_dropped_source"),
+        scratch_engine.begin() as conn,
+    ):
+        conn.execute(text("UPDATE station_layouts SET dropped_source = 'manual'"))
+
+
+def test_0010_downgrade_removes_the_flags(scratch_engine: Engine) -> None:
+    flags = text(
+        "SELECT column_name FROM information_schema.columns WHERE column_name IN"
+        " ('stats_excluded', 'dropped', 'dropped_source')"
+    )
+    _alembic(scratch_engine, "upgrade", "head")
+    with scratch_engine.connect() as conn:
+        assert {r[0] for r in conn.execute(flags)} == {
+            "stats_excluded",
+            "dropped",
+            "dropped_source",
+        }
+    _alembic(scratch_engine, "downgrade", "0009")
+    with scratch_engine.connect() as conn:
+        assert conn.execute(flags).all() == []
 
 
 def test_import_kind_check_accepts_a_special_import(session: Session) -> None:

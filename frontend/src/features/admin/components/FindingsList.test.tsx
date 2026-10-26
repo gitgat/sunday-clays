@@ -5,6 +5,14 @@ import { stalePreview } from '../mocks';
 import { FindingsList, findingLocation, groupFindings } from './FindingsList';
 
 describe('groupFindings', () => {
+  it('puts a thrown-out station finding under Station vs score', () => {
+    const groups = groupFindings([
+      { code: 'station_dropped', severity: 'info', message: 'Station 4 looks thrown out' },
+    ]);
+    expect(groups.station.map((f) => f.code)).toEqual(['station_dropped']);
+    expect(groups.other).toEqual([]);
+  });
+
   it('separates excluded rows, station mismatches and the rest grouped by code, warnings first', () => {
     const groups = groupFindings(stalePreview.findings);
     expect(groups.excluded.map((f) => f.code)).toEqual(['score_missing']);

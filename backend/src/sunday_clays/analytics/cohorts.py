@@ -109,6 +109,8 @@ def first_round_scores(rounds: pd.DataFrame, start: date | None, end: date | Non
         return []
     first = rounds.groupby("shooter_id")["event_date"].transform("min")
     firsts = rounds.loc[rounds["event_date"] == first]
+    # The first date comes from all rounds; a thrown-out first Sunday has no scored first round.
+    firsts = firsts.loc[~firsts["stats_excluded"].eq(True)]
     best = firsts.groupby("shooter_id").agg(day=("event_date", "first"), score=("score", "max"))
     return sorted(
         int(score)

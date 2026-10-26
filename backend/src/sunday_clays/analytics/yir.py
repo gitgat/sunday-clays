@@ -22,7 +22,7 @@ ON_THIS_DAY_YEARS: Final[tuple[int, ...]] = (1, 2, 3)
 ON_THIS_DAY_WINDOW_DAYS: Final = 3
 _EVENTS_SQL: Final = """
 SELECT e.event_date, e.round_type, e.has_scores, e.results_complete, e.head_count, e.n_shooters,
-       m.median, m.top_score, m.difficulty, e.kind
+       m.median, m.top_score, m.difficulty, e.stats_excluded, e.kind
 FROM events AS e
 LEFT JOIN event_metrics AS m ON m.event_date = e.event_date
 ORDER BY e.event_date
@@ -37,6 +37,7 @@ _EVENT_COLUMNS: Final = (
     "median",
     "top_score",
     "difficulty",
+    "stats_excluded",
     "kind",
 )
 
@@ -72,6 +73,7 @@ class YearTotals:
     clays_thrown: int
     clays_broken: int
     avg_score: float | None
+    n_excluded: int
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ class TopRound:
     display_name: str
     event_date: date
     score: int
+    stats_excluded: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,6 +124,7 @@ class ShooterTotals:
     clays_thrown: int
     clays_broken: int
     avg_score: float | None
+    n_excluded: int
 
 
 @dataclass(frozen=True)
@@ -174,6 +178,7 @@ class OnThisDayItem:
     top_score: int | None
     median: float | None
     winners: tuple[Winner, ...]
+    stats_excluded: bool
 
 
 def _opt_float(value: object) -> float | None:
@@ -199,6 +204,7 @@ def year_totals(data: YirFrames, year: int) -> YearTotals:
     rounds = data.rounds[_in_year(data.rounds["event_date"], year)]
     events = data.events[_in_year(data.events["event_date"], year)]
     seen = data.sundays_shot[_in_year(data.sundays_shot["event_date"], year)]
+    scored = frames.stat_rounds(rounds)
     return YearTotals(
         year=year,
         scored_events=int(_regular(events)["has_scores"].sum()),
@@ -207,7 +213,8 @@ def year_totals(data: YirFrames, year: int) -> YearTotals:
         shooters=int(seen["shooter_id"].nunique()),
         clays_thrown=TARGETS_PER_ROUND * len(rounds),
         clays_broken=int(rounds["score"].sum()),
-        avg_score=_mean(rounds["score"]),
+        avg_score=_mean(scored["score"]),
+        n_excluded=len(rounds) - len(scored),
     )
 
 
@@ -234,17 +241,18 @@ def club_year(data: YirFrames, year: int) -> ClubYear:
     seen_months = _months(data.sundays_shot[_in_year(data.sundays_shot["event_date"], year)])
     censored = set(data.profiles.loc[data.profiles["left_censored"], "shooter_id"])
     newcomers = [s for s, d in firsts.items() if d.year == year and s not in censored]
-    top = rounds[rounds["score"] == rounds["score"].max()].sort_values(
+    scored = frames.stat_rounds(rounds)
+    top = scored[scored["score"] == scored["score"].max()].sort_values(
         ["event_date", "display_name"]
     )
-    held = events[events["results_complete"].astype(bool)]
+    held = frames.stat_events(events[events["results_complete"].astype(bool)])
     trophies = data.trophies[_in_year(data.trophies["event_date"], year)]
     months = tuple(
         MonthStat(
             month=m,
             events=int(seen_months[m]["event_date"].nunique()),
             rounds=len(group),
-            avg_score=_mean(group["score"]),
+            avg_score=_mean(frames.stat_rounds(group)["score"]),
         )
         for m, group in _months(rounds).items()
     )
@@ -254,7 +262,7 @@ def club_year(data: YirFrames, year: int) -> ClubYear:
         totals=year_totals(data, year),
         events=len(events),
         newcomers=len(newcomers),
-        perfect_rounds=int((rounds["score"] == TARGETS_PER_ROUND).sum()),
+        perfect_rounds=int((scored["score"] == TARGETS_PER_ROUND).sum()),
         top_rounds=tuple(
             TopRound(int(r["shooter_id"]), str(r["display_name"]), r["event_date"], int(r["score"]))
             for r in top.to_dict("records")
@@ -274,7 +282,11 @@ def pb_days(rounds: pd.DataFrame) -> tuple[PbDay, ...]:
     out: list[PbDay] = []
     earlier_best, earlier_count = -1, 0
     for _, group in rounds.sort_values("event_date").groupby("event_date", sort=True):
-        best = int(group["score"].max())
+        scored = frames.stat_rounds(group)
+        if scored.empty:  # a thrown-out Sunday: its rounds count as earlier, never as a PB
+            earlier_count += len(group)
+            continue
+        best = int(scored["score"].max())
         if earlier_count >= PB_MIN_EARLIER_ROUNDS and best > earlier_best:
             out.append(PbDay(event_date=group["event_date"].iloc[0], score=best))
         earlier_best, earlier_count = max(earlier_best, best), earlier_count + len(group)
@@ -286,13 +298,15 @@ def _shooter_totals(
 ) -> ShooterTotals:
     mine = rounds[_in_year(rounds["event_date"], year)]
     seen = mine if sundays is None else sundays[_in_year(sundays["event_date"], year)]
+    scored = frames.stat_rounds(mine)
     return ShooterTotals(
         year=year,
         events=int(seen["event_date"].nunique()),
         rounds=len(mine),
         clays_thrown=TARGETS_PER_ROUND * len(mine),
         clays_broken=int(mine["score"].sum()),
-        avg_score=_mean(mine["score"]),
+        avg_score=_mean(scored["score"]),
+        n_excluded=len(mine) - len(scored),
     )
 
 
@@ -307,7 +321,7 @@ def shooter_year(data: YirFrames, shooter_id: int, year: int) -> ShooterYear:
     year_rounds = data.rounds[_in_year(data.rounds["event_date"], year)]
     mine = all_mine[_in_year(all_mine["event_date"], year)]
     best_rounds = mine[mine["is_best_round"]]
-    top = mine.sort_values(["score", "event_date"], ascending=[False, True])
+    top = frames.stat_rounds(mine).sort_values(["score", "event_date"], ascending=[False, True])
     seen = data.sundays_shot
     my_sundays = seen[seen["shooter_id"] == shooter_id]
     year_seen = seen[_in_year(seen["event_date"], year)]
@@ -343,8 +357,8 @@ def shooter_year(data: YirFrames, shooter_id: int, year: int) -> ShooterYear:
             ShooterMonth(
                 month=m,
                 rounds=len(my_months[m]),
-                avg_score=_mean(my_months[m]["score"]),
-                club_avg_score=_mean(club_months[m]["score"]),
+                avg_score=_mean(frames.stat_rounds(my_months[m])["score"]),
+                club_avg_score=_mean(frames.stat_rounds(club_months[m])["score"]),
             )
             for m in range(1, 13)
         ),
@@ -389,6 +403,7 @@ def on_this_day(data: YirFrames, on: date) -> tuple[OnThisDayItem, ...]:
                     Winner(int(w["shooter_id"]), str(w["display_name"]), int(w["score"]))
                     for w in winners.to_dict("records")
                 ),
+                stats_excluded=bool(event.get("stats_excluded", False)),
             )
         )
     return tuple(items)
@@ -440,10 +455,12 @@ def load_yir_frames(session: Session) -> YirFrames:
             "score",
             "is_best_round",
             "event_rank",
+            "stats_excluded",
         ]
     ].copy()
     rounds["event_date"] = _as_dates(rounds["event_date"])
     rounds["is_best_round"] = rounds["is_best_round"].astype("boolean").fillna(False).astype(bool)
+    rounds["stats_excluded"] = rounds["stats_excluded"].eq(True)
     rounds["event_rank"] = pd.to_numeric(rounds["event_rank"], errors="coerce").astype(float)
     appearances = frames.load_appearances(session)[
         ["event_date", "round_type", "shooter_id"]
@@ -455,6 +472,7 @@ def load_yir_frames(session: Session) -> YirFrames:
         events[name] = pd.to_numeric(events[name], errors="coerce").astype(float)
     events["has_scores"] = events["has_scores"].astype(bool)
     events["results_complete"] = events["results_complete"].astype(bool)
+    events["stats_excluded"] = events["stats_excluded"].eq(True)
     profiles = _frame(
         session,
         "SELECT shooter_id, display_name, left_censored FROM shooter_profiles",

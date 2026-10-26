@@ -71,8 +71,9 @@ def _round(
     round_type: RoundType = SPORTING,
     gauge_class: str | None = None,
     stations: tuple[ExportStation, ...] = (),
+    thrown_out: str | None = None,
 ) -> ExportRound:
-    return ExportRound(day, number, round_type, score, gauge_class, stations)
+    return ExportRound(day, number, round_type, score, gauge_class, stations, thrown_out)
 
 
 def _rows(text: str) -> list[list[str]]:
@@ -260,3 +261,15 @@ def test_zip_files_holds_each_csv_as_utf8() -> None:
 )
 def test_shooter_slug_is_ascii_for_the_download_filename(name: str, slug: str) -> None:
     assert shooter_slug(name, 7) == slug
+
+
+def test_notes_name_a_thrown_out_station_before_the_gauge_class() -> None:
+    phrase = "Station 11 was thrown out; everyone was credited 7/7"
+    (record,) = _records(
+        render_csv([_round(gauge_class="20 Gauge", thrown_out=phrase)], SPORTING, "Ace, Amy")
+    )
+    assert record["Notes"] == (
+        "Imported from Sunday Clays; Station 11 was thrown out; everyone was credited 7/7;"
+        " class: 20 Gauge"
+    )
+    assert record["Total Hits"] == "41"

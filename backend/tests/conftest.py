@@ -6,10 +6,11 @@ change these.
 
 import os
 import socket
+import statistics
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -525,5 +526,175 @@ def fx_special_admin_client(
 ) -> Iterator[TestClient]:
     """Plan 19 T8: an admin over the special-Sunday world."""
     logged_in = _logged_in(_use_env_settings(fx_special_client), "admin")
+    yield logged_in
+    logged_in.close()
+
+
+# --- Thrown-out stations T2a: a synthetic world with one thrown-out Sunday --------------------
+THROWN_OUT_SUNDAY = date(2026, 10, 25)
+THROWN_OUT_LABEL = "11"
+THROWN_OUT_DATES: tuple[date, ...] = tuple(
+    date(2026, 8, 23) + timedelta(weeks=j) for j in range(10)
+)
+THROWN_OUT_NAMES: tuple[str, ...] = (
+    "Hadley, Ike",
+    "Kaplan, Noel",
+    "Devlin, Sid",
+    "Abernathy, Preston",
+    "Kim, Pat",
+    "Ace, Amy",
+    "Birch, Lou",
+    "Crane, Dot",
+    "Ellis, Fay",
+)
+THROWN_OUT_STATIONS: tuple[int, ...] = (5, 6, 7, 8, 9, 10, 11)
+THROWN_OUT_TARGETS: tuple[int, ...] = (7, 7, 7, 7, 7, 8, 7)
+
+
+def thrown_out_hits(i: int, j: int) -> tuple[int, ...]:
+    """Shooter i's hits on Sunday j; Station 11 on THROWN_OUT_SUNDAY is credited in full."""
+    return tuple(
+        t
+        if THROWN_OUT_DATES[j] == THROWN_OUT_SUNDAY and s == 11
+        else max(0, t - (i * 3 + j * 5 + k * 7) % 4 - i % 3)
+        for k, (s, t) in enumerate(zip(THROWN_OUT_STATIONS, THROWN_OUT_TARGETS, strict=True))
+    )
+
+
+def _thrown_out_uploads() -> list[tuple[str, bytes]]:
+    """A scores workbook and a stations workbook for the ten Sundays of the thrown-out world."""
+    import io
+
+    import openpyxl
+
+    totals = {
+        (i, j): sum(thrown_out_hits(i, j))
+        for j in range(len(THROWN_OUT_DATES))
+        for i in range(len(THROWN_OUT_NAMES))
+    }
+
+    scores = openpyxl.Workbook()
+    detail = scores.active
+    assert detail is not None
+    detail.title = "ALL SCORE DETAIL"
+    detail.append(["Name", "Score Shot", "Event", "Status", "Class"])
+    attendance = scores.create_sheet("Attendance History")
+    attendance.append(["Date", "Count", "Median"])
+    for j, d in enumerate(THROWN_OUT_DATES):
+        day = [totals[(i, j)] for i in range(len(THROWN_OUT_NAMES))]
+        for i, name in enumerate(THROWN_OUT_NAMES):
+            detail.append([name, day[i], d, "Member", None])
+        attendance.append([d, len(day), statistics.median(day)])
+    scores_out = io.BytesIO()
+    scores.save(scores_out)
+
+    stations = openpyxl.Workbook()
+    first = True
+    for j, d in enumerate(THROWN_OUT_DATES):
+        tab = stations.active if first else stations.create_sheet()
+        assert tab is not None
+        first = False
+        tab.title = f"{d.month} {d.day} {d:%y}"
+        tab.append(["Event Date"])
+        tab.append([d])
+        tab.append([])
+        tab.append(["STATION #", *THROWN_OUT_STATIONS, "Total"])
+        tab.append(["TARGET COUNT", *THROWN_OUT_TARGETS, "=SUM(B5:H5)"])
+        tab.append([])
+        tab.append(["Median Hits"])
+        tab.append([])
+        tab.append(["Name", "Station Hits"])
+        for i, name in enumerate(THROWN_OUT_NAMES):
+            tab.append([name, *thrown_out_hits(i, j)])
+    stations_out = io.BytesIO()
+    stations.save(stations_out)
+    return [
+        ("scores_2026-10-25.xlsx", scores_out.getvalue()),
+        ("stations_2026-10-25.xlsx", stations_out.getvalue()),
+    ]
+
+
+def _shift_weather(session: Session, source: date, targets: Sequence[date]) -> None:
+    """Copy the committed weather rows of ``source`` onto each target date."""
+    import json
+    from datetime import datetime
+
+    from sqlalchemy import insert
+
+    from sunday_clays.models import WeatherHourly
+
+    fetched = datetime.fromisoformat(WEATHER_FETCHED_AT)
+    rows = [
+        r
+        for r in json.loads(WEATHER_FIXTURE.read_text())
+        if r["ts_local"].startswith(source.isoformat())
+    ]
+    for target in targets:
+        session.execute(
+            insert(WeatherHourly),
+            [
+                {
+                    **row,
+                    "ts_local": datetime.fromisoformat(row["ts_local"]).replace(
+                        year=target.year, month=target.month, day=target.day
+                    ),
+                    "fetched_at": fetched,
+                }
+                for row in rows
+            ],
+        )
+
+
+@pytest.fixture(scope="session")
+def fx_thrown_out_engine(engine: Engine) -> Iterator[Engine]:
+    """Ten Sundays, nine shooters, Station 11 of 2026-10-25 perfect for all (thrown out)."""
+    from sunday_clays.analytics.pipeline import run_pipeline
+
+    with _build_world(engine, "fx_thrown_out", _thrown_out_uploads()) as world:
+        with Session(world) as setup:
+            _shift_weather(
+                setup,
+                date(2026, 9, 27),
+                [
+                    date(2026, 9, 20),
+                    date(2026, 10, 4),
+                    date(2026, 10, 11),
+                    date(2026, 10, 18),
+                    THROWN_OUT_SUNDAY,
+                ],
+            )
+            run_pipeline(setup)
+            setup.commit()
+        yield world
+
+
+@pytest.fixture
+def fx_thrown_out_session(fx_thrown_out_engine: Engine) -> Iterator[Session]:
+    """Like ``fx_session``, on the thrown-out world."""
+    yield from _rolled_back_session(fx_thrown_out_engine)
+
+
+@pytest.fixture
+def fx_thrown_out_client(
+    fx_thrown_out_session: Session, test_settings: Settings
+) -> Iterator[TestClient]:
+    """Like ``fx_client``, bound to ``fx_thrown_out_session``."""
+    yield from _client_for(fx_thrown_out_session)
+
+
+@pytest.fixture
+def fx_thrown_out_viewer_client(
+    fx_thrown_out_client: TestClient, auth_env: Settings
+) -> Iterator[TestClient]:
+    logged_in = _logged_in(_use_env_settings(fx_thrown_out_client), "viewer")
+    yield logged_in
+    logged_in.close()
+
+
+@pytest.fixture
+def fx_thrown_out_admin_client(
+    fx_thrown_out_client: TestClient, auth_env: Settings
+) -> Iterator[TestClient]:
+    logged_in = _logged_in(_use_env_settings(fx_thrown_out_client), "admin")
     yield logged_in
     logged_in.close()

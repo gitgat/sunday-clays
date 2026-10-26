@@ -9,6 +9,7 @@ from sunday_clays.analytics.insights.context import InsightFrames, evergreen_day
 from sunday_clays.analytics.insights.milestones import is_pb
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_RECAP_HOW,
     Count,
     Int,
     NameList,
@@ -196,7 +197,7 @@ def _sunday_recap(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         if sunday.temp_band is not None and sunday.wind_band is not None:
             flags += "w"
             params |= {"temp": sunday.temp_band, "wind": sunday.wind_band}
-        if sunday.difficulty is not None:
+        if sunday.difficulty is not None and not sunday.stats_excluded:
             flags += "p"
             params["played"] = played_word(sunday.difficulty)
         if len(winners) > 1:
@@ -210,6 +211,8 @@ def _sunday_recap(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         slots = 2 + sum(flag in flags for flag in "wpbf")  # crowd and top score always
         if slots < RECAP_MIN_SLOTS:
             continue
+        if sunday.stats_excluded:
+            flags += "x"  # same headline; the how says a station was thrown out
         yield Fact(
             subject_id=sunday.date.isoformat(),
             anchor_date=sunday.date,
@@ -253,6 +256,21 @@ def _all_flags() -> list[str]:
 
 RECAP_LABEL = T(named("Results for ", SundayDate("day")))
 
+_RECAP_HOW = (
+    T(
+        named(
+            "The latest Sunday in one line: the crowd and the morning's weather, how "
+            "it played, the top score, personal bests and first-timers."
+        )
+    ),
+    T(
+        named(
+            "How it played comes from the skill model; a little = 1 to 2.5 targets "
+            "from a typical Sunday."
+        )
+    ),
+)
+
 register(
     Kind(
         id="home.sunday-recap",
@@ -267,23 +285,10 @@ register(
         params=frozenset(
             {"day", "n", "top", "s", "names", "temp", "wind", "played", "pbs", "firsts"}
         ),
-        templates={flags: (_recap_template(flags),) for flags in _all_flags()},
-        how={
-            "": (
-                T(
-                    named(
-                        "The latest Sunday in one line: the crowd and the morning's weather, how "
-                        "it played, the top score, personal bests and first-timers."
-                    )
-                ),
-                T(
-                    named(
-                        "How it played comes from the skill model; a little = 1 to 2.5 targets "
-                        "from a typical Sunday."
-                    )
-                ),
-            )
-        },
+        templates={flags: (_recap_template(flags),) for flags in _all_flags()}
+        | {flags + "x": (_recap_template(flags),) for flags in _all_flags()},
+        how={"": _RECAP_HOW}
+        | {flags + "x": (*_RECAP_HOW, THROWN_OUT_RECAP_HOW) for flags in _all_flags()},
         labels=(RECAP_LABEL,),
         chart=lambda fact: charts.results_chart(
             p_date(fact.params, "day"), p_ids(fact.params, "names"), label=RECAP_LABEL

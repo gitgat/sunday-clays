@@ -12,10 +12,19 @@ from datetime import date
 
 import pandas as pd
 
+from sunday_clays.analytics import frames
 from sunday_clays.analytics.insights import charts
 from sunday_clays.analytics.insights.context import InsightFrames, evergreen_days
 from sunday_clays.analytics.insights.registry import Kind, register
-from sunday_clays.analytics.insights.templates import Pct, Shooter, Station, T, field_, named
+from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_STATION_HOW,
+    Pct,
+    Shooter,
+    Station,
+    T,
+    field_,
+    named,
+)
 from sunday_clays.analytics.insights.types import (
     ChartLink,
     Fact,
@@ -44,7 +53,7 @@ SPREAD_UNIT = 10.0
 
 
 def entries_to(fr: InsightFrames, day: date) -> pd.DataFrame:
-    s = fr.stations
+    s = frames.live_station_hits(fr.stations)
     return s.loc[[d <= day for d in s["event_date"]]] if len(s) else s
 
 
@@ -129,6 +138,7 @@ register(
                         "sheet on record. Needs 8 Sundays and 30 entries per station."
                     )
                 ),
+                THROWN_OUT_STATION_HOW,
             )
         },
         labels=(STATIONS_LABEL,),
@@ -261,6 +271,7 @@ register(
                         "4 Sundays at that station and a gap of 8 points or more."
                     ),
                 ),
+                THROWN_OUT_STATION_HOW,
             )
         },
         labels=(STATION_BEST_LABEL,),

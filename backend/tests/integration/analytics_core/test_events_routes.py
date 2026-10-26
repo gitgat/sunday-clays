@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import date, timedelta
 from typing import Any
 
@@ -306,18 +307,26 @@ def _station_sheet(
     d: date,
     targets: dict[int | str, int],
     entries: list[tuple[int, str, int | None, int | None, tuple[int, ...]]],
+    dropped: Collection[int | str] = (),
 ) -> None:
     """station_layouts + station_hits rows for one sheet; `entries` = (row, key, sid, rid, hits).
 
-    `targets` keys are station labels: 1, 2 or "7A"."""
+    `targets` keys are station labels: 1, 2 or "7A"; `dropped` lists the labels thrown out."""
+    thrown = {str(parse_label(s)) for s in dropped}
     for station, target_count in targets.items():
         label = str(parse_label(station))
         session.execute(
             text(
                 "INSERT INTO station_layouts (event_date, station_no, station_label,"
-                " target_count, source_import_id) VALUES (:d, :s, :l, :t, 1)"
+                " target_count, source_import_id, dropped) VALUES (:d, :s, :l, :t, 1, :x)"
             ),
-            {"d": d, "s": label_number(label), "l": label, "t": target_count},
+            {
+                "d": d,
+                "s": label_number(label),
+                "l": label,
+                "t": target_count,
+                "x": label in thrown,
+            },
         )
     for entry_row, name_key, shooter_id, round_id, hits in entries:
         for station, n in zip(targets, hits, strict=True):
@@ -358,8 +367,8 @@ def test_station_matrix_keeps_unlinked_entries(seed: Any, viewer_client: TestCli
     stations = viewer_client.get(f"/api/events/{D3}").json()["stations"]
 
     assert stations["layout"] == [
-        {"label": "1", "station_no": 1, "target_count": 7},
-        {"label": "2", "station_no": 2, "target_count": 8},
+        {"label": "1", "station_no": 1, "target_count": 7, "dropped": False},
+        {"label": "2", "station_no": 2, "target_count": 8, "dropped": False},
     ]
     assert stations["entries"] == [
         {
@@ -438,3 +447,87 @@ def test_station_event_on_committed_fixtures(fx_viewer_client: TestClient) -> No
     assert body["vs_prev"]["prev_date"] == "2026-09-06"
     assert body["vs_prev"]["head_count_delta"] == -11
     assert body["vs_prev"]["top_score_delta"] == -6
+
+
+def test_a_thrown_out_sunday_counts_with_its_station_named(
+    seed: Any, viewer_client: TestClient
+) -> None:
+    ike, amy = seed.shooter("Hadley, Ike"), seed.shooter("Ace, Amy")
+    seed.event(D2, stats_excluded=True, has_stations=True)
+    ids = {
+        d: (seed.round(d, ike, a), seed.round(d, amy, b))
+        for d, a, b in ((D1, 40, 30), (D2, 45, 41), (D3, 44, 38))
+    }
+    _station_sheet(
+        seed.session,
+        D2,
+        {10: 8, 11: 7},
+        [
+            (1, "hadley ike", ike, ids[D2][0], (6, 7)),
+            (2, "ace amy", amy, ids[D2][1], (5, 7)),
+        ],
+        dropped=(11,),
+    )
+    seed.finish()
+    seed.analyze()
+    listed = {e["event_date"]: e for e in viewer_client.get("/api/events").json()}
+    out = listed["2026-09-06"]
+    assert (out["stats_excluded"], out["top_score"]) == (True, 45)
+    assert out["thrown_out"] == [{"station_label": "11", "target_count": 7, "credited": True}]
+    assert [(w["display_name"], w["stats_excluded"]) for w in out["winners"]] == [
+        ("Hadley, Ike", True)
+    ]
+    assert (listed["2026-08-30"]["stats_excluded"], listed["2026-08-30"]["thrown_out"]) == (
+        False,
+        [],
+    )
+    assert listed["2026-08-30"]["winners"][0]["stats_excluded"] is False
+    detail = viewer_client.get(f"/api/events/{D2}").json()
+    assert (detail["stats_excluded"], detail["vs_prev"]) == (True, None)
+    assert detail["thrown_out"] == out["thrown_out"]
+    assert [(r["score"], r["event_rank"], r["stats_excluded"]) for r in detail["results"]] == [
+        (45, 1, True),
+        (41, 2, True),
+    ]
+    assert [(s["label"], s["dropped"]) for s in detail["stations"]["layout"]] == [
+        ("10", False),
+        ("11", True),
+    ]
+    after = viewer_client.get(f"/api/events/{D3}").json()["vs_prev"]
+    assert (after["prev_date"], after["top_score_delta"], after["median_delta"]) == (
+        "2026-08-30",
+        4,
+        6.0,
+    )
+
+
+def test_a_sunday_level_rule_marks_the_sunday_without_a_station(
+    seed: Any, viewer_client: TestClient
+) -> None:
+    ike = seed.shooter("Hadley, Ike")
+    seed.event(D2, stats_excluded=True)
+    seed.round(D2, ike, 44)
+    seed.finish()
+    seed.analyze()
+    (out,) = viewer_client.get("/api/events").json()
+    assert out["thrown_out"] == [{"station_label": None, "target_count": None, "credited": False}]
+    (day,) = viewer_client.get("/api/club/attendance").json()
+    assert day["stats_excluded"] is True
+
+
+def test_notables_skip_a_thrown_out_sunday(seed: Any, viewer_client: TestClient) -> None:
+    # guard: route-level check of the event_notables change
+    ike = seed.shooter("Hadley, Ike")
+    later = D3 + timedelta(days=7)
+    seed.event(D2, stats_excluded=True)
+    seed.event(later, stats_excluded=True)
+    for week, score in zip(range(1, 6), (48, 39, 38, 37, 36), strict=True):  # week 1 = D2
+        seed.round(D3 - timedelta(days=7 * week), ike, score)
+    seed.round(D3, ike, 45)
+    seed.round(later, ike, 50)
+    seed.finish()
+    seed.analyze()
+    assert [
+        (n["kind"], n["detail"]) for n in viewer_client.get(f"/api/events/{D3}").json()["notables"]
+    ] == [("pb", "New personal best 45 (was 39)")]
+    assert viewer_client.get(f"/api/events/{later}").json()["notables"] == []

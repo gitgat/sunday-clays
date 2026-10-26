@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import replace
-from datetime import date
+from dataclasses import asdict, replace
+from datetime import date, timedelta
 
 import pandas as pd
 import pytest
@@ -26,6 +26,7 @@ from sunday_clays.analytics.yir import (
     scored_years,
     shooter_year,
 )
+from sunday_clays.api.routes.yir import OnThisDayItemOut, YirClubOut, YirShooterOut
 from sunday_clays.domain.round_type import RoundType
 
 A1, A2 = date(2024, 11, 3), date(2024, 12, 1)
@@ -48,6 +49,7 @@ def _world(
     trophies: tuple[tuple[int, str, date], ...] = (),
     history: tuple[tuple[int, date, float], ...] = (),
     super_days: frozenset[date] = frozenset(),
+    thrown_out: frozenset[date] = frozenset(),
 ) -> YirFrames:
     """rounds: (date, shooter, score, is_best, rank).
 
@@ -57,6 +59,7 @@ def _world(
         rounds, columns=["event_date", "shooter_id", "score", "is_best_round", "event_rank"]
     )
     r["display_name"] = r["shooter_id"].map(NAMES)
+    r["stats_excluded"] = [d in thrown_out for d in r["event_date"]]
     r["round_type"] = ["super_sporting" if d in super_days else "sporting" for d in r["event_date"]]
     counts = r.groupby("event_date")["shooter_id"].nunique()
     tops = r.groupby("event_date")["score"].max()
@@ -71,6 +74,7 @@ def _world(
             "difficulty",
         ],
     )
+    e["stats_excluded"] = [d in thrown_out for d in e["event_date"]]
     e["round_type"] = ["super_sporting" if d in super_days else "sporting" for d in e["event_date"]]
     e["n_shooters"] = [float(counts.get(d, 0)) for d in e["event_date"]]
     e["top_score"] = [float(tops.get(d, NAN)) for d in e["event_date"]]
@@ -133,7 +137,7 @@ WORLD = _world(ROUNDS, EVENTS, censored=frozenset({3}), trophies=TROPHIES, histo
 def test_club_year_totals_and_highlights() -> None:
     year = club_year(WORLD, 2025)
     # 9 rounds: 44+45 + 46+41+46+30 + 50 + 39+39 = 380
-    assert year.totals == YearTotals(2025, 4, 3, 9, 3, 450, 380, pytest.approx(380 / 9))
+    assert year.totals == YearTotals(2025, 4, 3, 9, 3, 450, 380, pytest.approx(380 / 9), 0)
     assert (year.events, year.perfect_rounds, year.trophies) == (5, 1, 4)
     assert year.top_rounds == (TopRound(1, "Able, Al", B4, 50),)
     assert year.mean_head_count == 21.0  # (20 + 25 + 9 + 30) / 4
@@ -143,7 +147,7 @@ def test_club_year_totals_and_highlights() -> None:
     assert year.months[0] == MonthStat(1, 2, 6, 42.0)
     assert year.months[1] == MonthStat(2, 0, 0, None)
     assert (year.months[2], year.months[8]) == (MonthStat(3, 1, 1, 50.0), MonthStat(9, 1, 2, 39.0))
-    assert year.previous == YearTotals(2024, 2, 2, 4, 2, 200, 147, 36.75)
+    assert year.previous == YearTotals(2024, 2, 2, 4, 2, 200, 147, 36.75, 0)
 
 
 def test_club_year_counts_newcomers_but_not_left_censored() -> None:
@@ -160,7 +164,7 @@ def test_club_year_without_data_before_it_has_no_previous() -> None:
 
 def test_club_year_without_events_is_empty() -> None:
     year = club_year(WORLD, 2023)
-    assert year.totals == YearTotals(2023, 0, 0, 0, 0, 0, 0, None)
+    assert year.totals == YearTotals(2023, 0, 0, 0, 0, 0, 0, None, 0)
     assert (year.events, year.newcomers, year.perfect_rounds, year.top_rounds) == (0, 0, 0, ())
     assert (year.mean_head_count, year.busiest, year.hardest, year.easiest) == (
         None,
@@ -201,7 +205,7 @@ def test_pb_days_once_per_day_after_five_rounds() -> None:
 
 def test_shooter_year_summary() -> None:
     year = shooter_year(WORLD, 1, 2025)
-    assert year.totals == ShooterTotals(2025, 3, 4, 200, 181, 45.25)
+    assert year.totals == ShooterTotals(2025, 3, 4, 200, 181, 45.25, 0)
     assert year.best == TopRound(1, "Able, Al", B4, 50)
     assert (year.wins, year.podiums, year.best_finish) == (2, 3, 1)
     assert year.pbs == (PbDay(B4, 50),)
@@ -210,7 +214,7 @@ def test_shooter_year_summary() -> None:
     assert (year.attendance_rank, year.n_shooters) == (1, 3)  # 3 events, tied with Baker
     assert year.months[0] == ShooterMonth(1, 3, pytest.approx(131 / 3), 42.0)
     assert year.months[8] == ShooterMonth(9, 0, None, 39.0)
-    assert year.previous == ShooterTotals(2024, 2, 2, 100, 82, 41.0)
+    assert year.previous == ShooterTotals(2024, 2, 2, 100, 82, 41.0, 0)
 
 
 def test_shooter_year_attendance_rank_is_min_rank() -> None:
@@ -219,7 +223,7 @@ def test_shooter_year_attendance_rank_is_min_rank() -> None:
 
 def test_shooter_year_without_rounds_that_year() -> None:
     year = shooter_year(WORLD, 4, 2025)
-    assert year.totals == ShooterTotals(2025, 0, 0, 0, 0, None)
+    assert year.totals == ShooterTotals(2025, 0, 0, 0, 0, None, 0)
     assert (year.best, year.wins, year.podiums, year.best_finish, year.pbs, year.trophies) == (
         None,
         0,
@@ -230,7 +234,7 @@ def test_shooter_year_without_rounds_that_year() -> None:
     )
     assert (year.rating_start, year.rating_end, year.attendance_rank) == (28.5, 28.5, None)
     assert year.months[0] == ShooterMonth(1, 0, None, 42.0)
-    assert year.previous == ShooterTotals(2024, 2, 2, 100, 65, 32.5)
+    assert year.previous == ShooterTotals(2024, 2, 2, 100, 65, 32.5, 0)
 
 
 def test_shooter_year_no_leak() -> None:
@@ -456,3 +460,84 @@ def test_filter_round_types_narrows_the_appearances_too() -> None:
     assert only.appearances is not None
     assert set(only.appearances["round_type"]) == {RoundType.SUPER_SPORTING.value}
     assert set(only.appearances["event_date"]) == {B1, date(2025, 2, 16)}
+
+
+TO = _world(
+    [
+        (B1, 1, 40, True, 1.0),
+        (B1, 2, 30, True, 2.0),
+        (B2, 1, 50, True, 1.0),
+        (B2, 2, 49, True, 2.0),
+        (B4, 1, 44, True, 2.0),
+        (B4, 2, 45, True, 1.0),
+    ],
+    [
+        (B1, True, True, 10.0, 35.0, 1.0),
+        (B2, True, True, 12.0, 49.5, NAN),
+        (B4, True, True, 14.0, 44.5, -1.0),
+    ],
+    thrown_out=frozenset({B2}),
+)
+
+
+def test_club_year_counts_a_thrown_out_sunday_but_leaves_its_scores_out() -> None:
+    year = club_year(TO, 2025)
+    assert year.totals == YearTotals(2025, 3, 3, 6, 2, 300, 258, 39.75, 2)
+    assert year.perfect_rounds == 0
+    assert year.top_rounds == (TopRound(2, "Baker, Bo", B4, 45),)
+    assert year.months[0] == MonthStat(month=1, events=2, rounds=4, avg_score=35.0)
+    assert (year.hardest, year.easiest) == (EventStat(B1, 1.0), EventStat(B4, -1.0))
+    out = YirClubOut.model_validate({**asdict(year), "years": [2025]})
+    assert (out.totals.n_excluded, out.top_rounds[0].stats_excluded) == (2, False)
+
+
+def test_shooter_year_counts_wins_but_leaves_out_the_score() -> None:
+    year = shooter_year(TO, 1, 2025)
+    assert year.totals == ShooterTotals(2025, 3, 3, 150, 134, 42.0, 1)
+    assert year.best == TopRound(1, "Able, Al", B4, 44)
+    assert (year.wins, year.podiums) == (2, 3)
+    assert year.months[0] == ShooterMonth(month=1, rounds=2, avg_score=40.0, club_avg_score=35.0)
+    assert YirShooterOut.model_validate(asdict(year)).totals.n_excluded == 1
+
+
+def test_a_shooter_whose_only_round_was_thrown_out_has_no_average() -> None:
+    only = _world(
+        [(B1, 1, 40, True, 1.0), (B2, 3, 45, True, 2.0)],
+        [(B1, True, True, 10.0, 40.0, 1.0), (B2, True, True, 12.0, 45.0, NAN)],
+        thrown_out=frozenset({B2}),
+    )
+    totals = shooter_year(only, 3, 2025).totals
+    assert (totals.rounds, totals.n_excluded, totals.avg_score) == (1, 1, None)
+
+
+def test_pb_days_count_thrown_out_rounds_as_earlier_but_never_as_a_pb() -> None:
+    days = [date(2025, 1, 5) + timedelta(weeks=i) for i in range(8)]
+    rounds = pd.DataFrame(
+        {
+            "event_date": days,
+            "score": [40, 40, 40, 40, 40, 50, 45, 47],
+            "stats_excluded": [False] * 5 + [True, False, False],
+        }
+    )
+    assert pb_days(rounds) == (PbDay(days[6], 45), PbDay(days[7], 47))
+
+
+def test_pb_days_count_both_doubleheader_rounds_of_a_thrown_out_sunday() -> None:
+    d = [date(2025, 1, 5) + timedelta(weeks=i) for i in range(5)]
+    rounds = pd.DataFrame(
+        {
+            "event_date": [d[0], d[1], d[2], d[3], d[3], d[4]],
+            "score": [40, 40, 40, 50, 49, 45],
+            "stats_excluded": [False, False, False, True, True, False],
+        }
+    )
+    assert pb_days(rounds) == (PbDay(d[4], 45),)
+
+
+def test_on_this_day_flags_a_thrown_out_sunday_with_its_official_numbers() -> None:
+    items = on_this_day(TO, date(2026, 1, 19))
+    assert [
+        (i.years_ago, i.event_date, i.stats_excluded, i.top_score, i.median) for i in items
+    ] == [(1, B2, True, 50, 49.5)]
+    assert items[0].winners == (Winner(1, "Able, Al", 50),)
+    assert OnThisDayItemOut.model_validate(asdict(items[0])).stats_excluded is True

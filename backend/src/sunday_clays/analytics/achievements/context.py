@@ -26,6 +26,7 @@ STATION_COLUMNS: tuple[str, ...] = (
     "shooter_id",
     "round_id",
     "hits",
+    "dropped",
 )
 _STATION_INTS: tuple[str, ...] = ("station_no", "target_count", "sheet_id", "entry_row", "hits")
 _STATION_NULLABLE_INTS: tuple[str, ...] = ("shooter_id", "round_id")
@@ -38,6 +39,7 @@ _DAY_DTYPES: dict[str, str] = {
     "shooter_id": "int64",
     "event_ts": _TS_DTYPE,
     "event_date": "object",
+    "stats_excluded": "bool",
     "n_rounds": "int64",
     "day_best": "int64",
     "day_sum": "int64",
@@ -46,10 +48,11 @@ _DAY_DTYPES: dict[str, str] = {
     "cum_rounds": "int64",
     "cum_sum": "int64",
     "prior_rounds": "int64",
-    "prior_sum": "int64",
-    "prior_best": "float64",
+    "prior_n_s": "int64",
+    "prior_sum_s": "int64",
+    "prior_best_s": "float64",
     "prev_ts": _TS_DTYPE,
-    "prev_day_best": "float64",
+    "prev_day_best_s": "float64",
 }
 _VALUE_DTYPES: dict[str, str] = {
     "shooter_id": "int64",
@@ -69,7 +72,7 @@ _ATTENDANCE_DTYPES: dict[str, str] = {
 _STATION_SQL = text(
     """
     SELECT h.event_date, h.station_no, h.station_label, l.target_count, h.sheet_id, h.entry_row,
-           h.shooter_id, h.round_id, h.hits
+           h.shooter_id, h.round_id, h.hits, l.dropped
     FROM station_hits h
     JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
     JOIN events e ON e.event_date = h.event_date
@@ -113,6 +116,7 @@ def _shooter_days(rounds: pd.DataFrame) -> pd.DataFrame:
             day_best=("score", "max"),
             day_sum=("score", "sum"),
             best_round_id=("round_id", "first"),
+            stats_excluded=("stats_excluded", "any"),
         )
         .reset_index()
     )
@@ -122,10 +126,17 @@ def _shooter_days(rounds: pd.DataFrame) -> pd.DataFrame:
     days["cum_rounds"] = by_shooter["n_rounds"].cumsum()
     days["cum_sum"] = by_shooter["day_sum"].cumsum()
     days["prior_rounds"] = days["cum_rounds"] - days["n_rounds"]
-    days["prior_sum"] = days["cum_sum"] - days["day_sum"]
-    days["prior_best"] = by_shooter["day_best"].transform(lambda s: s.cummax().shift(1))
+    # Score-only prefixes: a Sunday with a station thrown out adds nothing to them.
+    scored = ~days["stats_excluded"]
+    n_s = days["n_rounds"].where(scored, 0)
+    sum_s = days["day_sum"].where(scored, 0)
+    best_s = days["day_best"].where(scored).astype(float)
+    days["prior_n_s"] = n_s.groupby(days["shooter_id"]).cumsum() - n_s
+    days["prior_sum_s"] = sum_s.groupby(days["shooter_id"]).cumsum() - sum_s
+    best_by_shooter = best_s.groupby(days["shooter_id"], sort=False)
+    days["prior_best_s"] = best_by_shooter.transform(lambda s: s.cummax().ffill().shift(1))
     days["prev_ts"] = by_shooter["event_ts"].shift(1)
-    days["prev_day_best"] = by_shooter["day_best"].shift(1).astype(float)
+    days["prev_day_best_s"] = best_by_shooter.transform(lambda s: s.ffill().shift(1))
     return days[list(_DAY_DTYPES)]
 
 
@@ -157,6 +168,7 @@ class AchContext:
     """Frames as frames.load_* return them, each with an extra `event_ts` (datetime64) column.
 
     `rounds`, `events` and `station_hits` are regular Sundays only (score trophies read them);
+    `station_hits` leaves out stations thrown out on the day;
     `appearances` and `calendar` include special Sundays (attendance trophies, Plan 17).
     """
 
@@ -185,7 +197,7 @@ class AchContext:
         return cls(
             rounds=_with_ts(rounds),
             events=_with_ts(events),
-            station_hits=_with_ts(station_hits),
+            station_hits=_with_ts(frames.live_station_hits(station_hits)),
             rating_history=_with_ts(rating_history),
             appearances=_with_ts(
                 frames.appearances_from_rounds(rounds) if appearances is None else appearances
@@ -268,6 +280,7 @@ def station_frame(rows: Iterable[Mapping[Any, Any]]) -> pd.DataFrame:
     for column in _STATION_NULLABLE_INTS:
         frame[column] = frame[column].astype("Int64")
     frame["station_label"] = frame["station_label"].astype(str)
+    frame["dropped"] = frame["dropped"].eq(True)
     return frame
 
 

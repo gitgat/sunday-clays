@@ -22,6 +22,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Dec1,
     Int,
     NameList,
@@ -96,7 +97,7 @@ COUNT_STRENGTH = {10: 1.0, 25: 1.25, 50: 1.5, 100: 2.0, 150: 2.0, 200: 2.0}
 
 def _high_round_count(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     running: dict[tuple[int, int], list[int]] = {}
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         upto = days[: i + 1]
         tier = own_tier(upto)
         if tier is None:
@@ -179,8 +180,12 @@ register(
                     named("Shown when the count reaches 10, 25, 50, 100, 150 or 200."),
                     you=named("Shown when your count reaches 10, 25, 50, 100, 150 or 200."),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
-            ROLLUP: (T(named("Each reached 10, 25, 50, 100, 150 or 200 rounds at their mark.")),),
+            ROLLUP: (
+                T(named("Each reached 10, 25, 50, 100, 150 or 200 rounds at their mark.")),
+                THROWN_OUT_ROUNDS_HOW,
+            ),
         },
         labels=(HIGH_LABEL, RESULTS_LABEL),
         chart=_high_count_chart,
@@ -226,7 +231,7 @@ def _more_high_rounds(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     def through(days: tuple[Day, ...], tier: int, year: int) -> list[int]:
         return running.setdefault((id(days), tier, year), _running_high_rounds(days, tier, year))
 
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         upto = days[: i + 1]
         tier = own_tier(upto)
         if tier is None:
@@ -237,7 +242,7 @@ def _more_high_rounds(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         fact = _more_fact(upto, tier, variant="", pages=frozenset({P.SUNDAY, P.HOME}))
         if fact is not None:
             yield fact
-    for _sid, days in evergreen_days(fr, scope):
+    for _sid, days in evergreen_days(fr, scope, scored=True):
         tier = own_tier(days)
         if tier is None or days[-1].date.year != scope.as_of.year:
             continue
@@ -314,8 +319,12 @@ register(
                     ),
                     you=named("Needs 8 such rounds last year; the Sunday page shows the day."),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
-            ROLLUP: (T(named("Each passed last year's full count today.")),),
+            ROLLUP: (
+                T(named("Each passed last year's full count today.")),
+                THROWN_OUT_ROUNDS_HOW,
+            ),
         },
         labels=(HIGH_LABEL, RESULTS_LABEL),
         chart=_more_chart,
@@ -341,7 +350,7 @@ LOW_LABEL = T(
 
 def _low_end_rising(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     year = scope.as_of.year
-    for sid, days in evergreen_days(fr, scope):
+    for sid, days in evergreen_days(fr, scope, scored=True):
         this = [float(d.score) for d in days if d.date.year == year]
         last = [float(d.score) for d in days if d.date.year == year - 1]
         if min(len(this), len(last)) < LOW_MIN_ROUNDS:
@@ -441,6 +450,7 @@ register(
                         "well clear of chance."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(LOW_LABEL,),

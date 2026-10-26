@@ -1,4 +1,9 @@
 import type { Explainer } from '../../components/charts/types';
+import {
+  THROWN_OUT_COUNTS,
+  THROWN_OUT_HOLLOW,
+  THROWN_OUT_ROUNDS,
+} from '../../components/charts/thrownOutCopy';
 
 /**
  * Plain-language copy per ChartFrame/ChartCard `urlKey` and per stat id
@@ -114,9 +119,10 @@ export const explainers: Record<string, Explainer> = {
       'Every round that year (doubleheaders count twice) for the chosen round types, smoothed into a curve.',
       'Table: rounds, average, middle score, and the low end and high end (1 in 10 rounds score below or above them) and the lower and upper middle (1 in 4).',
       'Each year is its own hill, so the time window does not apply.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
     // Says the time window does not apply here, so it is not offered as a word to look up.
     noTerms: ['time-window'],
   },
@@ -125,14 +131,16 @@ export const explainers: Record<string, Explainer> = {
     read: [
       'Middle score: half the rounds that Sunday were higher, half lower. Top score: the best single round.',
       'The 8-Sunday average smooths week-to-week noise. A rising line means scores are climbing.',
+      THROWN_OUT_HOLLOW,
     ],
     computed: [
-      'Sundays with full results, up to today. Every round counts, second rounds and both round types included.',
+      'Sundays with full results, up to today. Second rounds and both round types count.',
       '8-Sunday average = the average of that Sunday and the 7 before it (fewer at the start).',
       'The round-type filter does not apply. The chart opens on the time window. Fullscreen shows every Sunday, and the CSV download has them all.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['held-sunday', 'round-types', 'time-window'],
+    terms: ['held-sunday', 'round-types', 'time-window', 'thrown-out-station'],
   },
   diff: {
     what: 'How hard each Sunday was, in targets, against a typical Sunday of the past year.',
@@ -145,9 +153,10 @@ export const explainers: Record<string, Explainer> = {
       'For each shooter: score that Sunday (averaged if they shot twice) minus their rating going in. Average those gaps across the field, pulled toward zero when few shot.',
       'Subtract the average gap of the past 364 days, then flip the sign so that plus means harder.',
       'Sundays with full results only. The round-type filter does not apply. The chart opens on the time window. Fullscreen shows every Sunday, and the CSV download has them all.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['held-sunday', 'round-types', 'time-window'],
+    terms: ['held-sunday', 'round-types', 'time-window', 'thrown-out-station'],
   },
   new: {
     what: 'How many people shot here for the first time each year, and how many of them ever came back.',
@@ -218,9 +227,10 @@ export const explainers: Record<string, Explainer> = {
       'The winner is the top score that Sunday (best rounds only); ties all win. Every scored Sunday counts.',
       'Top-3 share = wins by the year’s 3 biggest winners ÷ all wins.',
       'Favorite = highest rating going in; Sundays with a tie for top rating are skipped. The round-type filter does not apply.',
+      `Wins: ${THROWN_OUT_COUNTS}`,
     ],
     scope: 'all-time',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
 
   // Header stats
@@ -265,9 +275,10 @@ export const explainers: Record<string, Explainer> = {
     computed: [
       'The sum of every round’s score on a Sunday inside the window.',
       'The round-type filter applies.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   'stat-first': {
     what: 'The first Sunday inside the time window that we have scores for.',
@@ -313,8 +324,9 @@ export const explainers: Record<string, Explainer> = {
       'First round = the best round on the first Sunday a shooter appears on the score sheets.',
       'Only shooters whose first Sunday falls inside the time window are counted, each once, out of 50. Pick All to include everyone.',
       'The round-type filter does not apply.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
 };

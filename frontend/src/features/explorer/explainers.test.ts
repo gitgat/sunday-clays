@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { METRICS } from '../../components/charts/explore';
+import { METRICS, type Metric } from '../../components/charts/explore';
+import {
+  THROWN_OUT_COUNTS,
+  THROWN_OUT_ROUNDS,
+  THROWN_OUT_STATION,
+} from '../../components/charts/thrownOutCopy';
 import { CHOICES_EXPLAINER, METRIC_COPY, explainers, explorerExplainer } from './explainers';
 
 const sources = import.meta.glob<string>(['./**/*.tsx', '!./**/*.test.tsx'], {
@@ -54,5 +59,31 @@ describe('explorer explainers', () => {
     expect(text).not.toMatch(/\bclass(es)?\b/i);
     expect(text).not.toMatch(/\b(he|she|his|her|hers)\b/i);
     expect(text).not.toMatch(/residual/i);
+  });
+
+  const LINE: Record<Metric, string> = {
+    score: THROWN_OUT_ROUNDS,
+    adjusted: THROWN_OUT_ROUNDS,
+    residual: THROWN_OUT_ROUNDS,
+    rating: THROWN_OUT_ROUNDS,
+    difficulty: THROWN_OUT_ROUNDS,
+    hit_pct: THROWN_OUT_STATION,
+    rounds: THROWN_OUT_COUNTS,
+    shooters: THROWN_OUT_COUNTS,
+    attendance: THROWN_OUT_COUNTS,
+    wins: THROWN_OUT_COUNTS,
+  };
+  it.each(METRICS)('%s says how thrown-out stations are handled', (metric) => {
+    for (const scope of ['windowed', 'all-time', undefined] as const) {
+      const entry = explorerExplainer(metric, scope);
+      expect(entry.computed).toContain(LINE[metric]);
+      expect(entry.terms).toContain('thrown-out-station');
+    }
+  });
+  it('treats score with the total aggregate as a count', () => {
+    const entry = explorerExplainer('score', 'windowed', 'sum');
+    expect(entry.computed).toContain(THROWN_OUT_COUNTS);
+    expect(entry.computed).not.toContain(THROWN_OUT_ROUNDS);
+    expect(explorerExplainer('score', 'windowed', 'avg').computed).toContain(THROWN_OUT_ROUNDS);
   });
 });

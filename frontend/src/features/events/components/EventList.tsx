@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 import { useRoundTypeHref } from '../../../lib/roundTypes';
+import { ThrownOutMark } from '../../../components/ui/ThrownOutMark';
 import type { EventSummary } from '../api';
 import {
   formatDay,
@@ -9,6 +10,7 @@ import {
   specialName,
   specialTag,
 } from '../format';
+import { thrownOutPhrase } from '../thrownOut';
 
 export function summaryLine(e: EventSummary): string {
   if (isSpecial(e)) {
@@ -45,6 +47,7 @@ export function EventList({ year, events }: { year: number; events: EventSummary
           >
             <span className="font-medium">{formatDay(e.event_date)}</span>
             <span className="text-sm text-text-muted">{summaryLine(e)}</span>
+            {e.stats_excluded && <ThrownOutMark phrase={thrownOutPhrase(e.thrown_out)} />}
           </Link>
         </li>
       ))}

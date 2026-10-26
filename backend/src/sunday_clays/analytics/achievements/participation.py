@@ -105,7 +105,9 @@ def personal_bests_value(ctx: AchContext) -> pd.DataFrame:
     At most one per day, however many rounds the shooter shot that day."""
     days = ctx.shooter_days
     new_pb = (
-        (days["prior_rounds"] >= PB_MIN_PRIOR_ROUNDS) & (days["day_best"] > days["prior_best"])
+        ~days["stats_excluded"]
+        & (days["prior_rounds"] >= PB_MIN_PRIOR_ROUNDS)
+        & (days["day_best"] > days["prior_best_s"])
     ).astype(int)
     return _series(days, new_pb.groupby(days["shooter_id"]).cumsum())
 

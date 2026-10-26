@@ -3,7 +3,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
+from sunday_clays.analytics.cache import clear_cache
 from sunday_clays.api.routes import _filters
 
 TODAY = date(2026, 9, 27)
@@ -187,3 +190,18 @@ def test_parity_on_committed_fixtures(fx_viewer_client: TestClient) -> None:
         [27 / 45, 25 / 59, 23 / 54, 25 / 60, 26 / 66, 23 / 59, 17 / 44]
     )
     assert all(0.0 <= p["favorite_win_rate"] <= 1.0 for p in parity)
+
+
+def test_trends_keep_a_thrown_out_sunday_flagged(
+    fx_session: Session, fx_viewer_client: TestClient
+) -> None:
+    fx_session.execute(
+        text("UPDATE events SET stats_excluded = true WHERE event_date = '2026-09-13'")
+    )
+    clear_cache()
+    events = {e["event_date"]: e for e in fx_viewer_client.get("/api/club/trends").json()["events"]}
+    assert (events["2026-09-13"]["stats_excluded"], events["2026-09-27"]["stats_excluded"]) == (
+        True,
+        False,
+    )
+    assert events["2026-09-13"]["median_rolling8"] is None

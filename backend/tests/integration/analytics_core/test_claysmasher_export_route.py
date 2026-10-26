@@ -237,6 +237,28 @@ def test_station_data_is_exported_as_recorded(
     assert (record["Total Hits"], record["Total Targets"]) == ("40", "48")
 
 
+def test_a_thrown_out_sunday_is_exported_as_recorded_with_a_note(
+    seed: Any, session: Session, viewer_client: TestClient
+) -> None:
+    amy = seed.shooter("Ace, Amy")
+    seed.event(D1, stats_excluded=True, has_stations=True)
+    rid = seed.round(D1, amy, 43)
+    _station_entry(session, D1, rid, amy, "ace amy", SPORTING, (6, 7, 5, 6, 5, 8, 6))
+    session.execute(
+        text(
+            "UPDATE station_layouts SET dropped = true, dropped_source = 'auto'"
+            " WHERE event_date = :d AND station_label = '10'"
+        ),
+        {"d": D1},
+    )
+    seed.finish()
+    (record,) = _records(_export(viewer_client, amy)[SPORTING_CSV])
+    assert (record["Total Hits"], record["Total Targets"]) == ("43", "50")
+    assert record["Notes"] == (
+        "Imported from Sunday Clays; Station 10 was thrown out; everyone was credited 6/6"
+    )
+
+
 def test_merged_same_day_rounds_are_numbered_by_day_ordinal(
     seed: Any, viewer_client: TestClient
 ) -> None:
@@ -314,6 +336,7 @@ def test_query_count_does_not_grow_with_rounds(
         _station_entry(session, d, rid, many, "roe rick", SPORTING, SPORTING_HITS, entry_row=2)
     seed.finish()
 
+    _export(viewer_client, one)  # warm the data-version cache (load_thrown_out) for both runs
     with _statements(session) as small:
         _export(viewer_client, one)
     with _statements(session) as big:

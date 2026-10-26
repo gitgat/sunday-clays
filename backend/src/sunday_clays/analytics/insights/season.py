@@ -22,6 +22,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Count,
     Dec1,
     NameList,
@@ -481,6 +482,7 @@ register(
                         "your rating last went up."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(BOARD_LABEL,),
@@ -577,6 +579,7 @@ register(
                     named("Shown at a gain of 2.0 rating points or more."),
                     you=named("Shown at a gain of 2.0 rating points or more."),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(MOVERS_LABEL,),
@@ -682,6 +685,7 @@ register(
                         "months, placed among shooters with 10 or more such rounds."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(TOP_LABEL,),

@@ -375,3 +375,23 @@ def render(
 
 def plain(segments: Sequence[Segment]) -> str:
     return "".join(seg["v"] for seg in segments)
+
+
+THROWN_OUT_ROUNDS_HOW = T(
+    named("Sundays with a station thrown out (marked *) are left out."),
+    you=named("Sundays with a station thrown out (marked *) are left out."),
+)
+THROWN_OUT_STATION_HOW = T(
+    named("A station thrown out on the day is left out."),
+    you=named("A station thrown out on the day is left out."),
+)
+THROWN_OUT_RECAP_HOW = T(
+    named(
+        "A station was thrown out this Sunday. Its results count; its scores stay out of"
+        " averages and PBs."
+    ),
+    you=named(
+        "A station was thrown out this Sunday. Its results count; its scores stay out of"
+        " averages and PBs."
+    ),
+)

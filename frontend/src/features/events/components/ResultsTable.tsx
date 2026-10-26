@@ -1,7 +1,9 @@
 import { Link } from 'react-router';
 import { useRoundTypeHref } from '../../../lib/roundTypes';
+import { ThrownOutMark } from '../../../components/ui/ThrownOutMark';
 import type { EventResult } from '../api';
 import { formatSigned } from '../format';
+import { SUNDAY_THROWN_OUT } from '../thrownOut';
 
 /** Rank label per round: min-rank on best rounds ('T<n>' when shared), '—' on every other round (D8). */
 export function rankLabels(results: EventResult[]): Map<number, string> {
@@ -39,12 +41,15 @@ export function ResultsTable({
   results,
   complete = true,
   highlight,
+  phrase = SUNDAY_THROWN_OUT,
 }: {
   results: EventResult[];
   /** The Sunday's results are complete; when false the rating change is not shown. */
   complete?: boolean;
   /** Shooters an insight points to: their rows are marked (Plan 12). */
   highlight?: ReadonlySet<number>;
+  /** What a `*` on a score means: the Sunday's thrown-out phrase. */
+  phrase?: string;
 }) {
   // Profile links keep the global round-type filter (C10).
   const href = useRoundTypeHref();
@@ -104,7 +109,10 @@ export function ResultsTable({
                   </span>
                 )}
               </td>
-              <td className="py-2 pr-2 text-right tabular-nums">{r.score}</td>
+              <td className="py-2 pr-2 text-right tabular-nums">
+                {r.score}
+                {r.stats_excluded && <ThrownOutMark phrase={phrase} />}
+              </td>
               <td className="py-2 pr-2 text-right tabular-nums">{formatSigned(r.adjusted)}</td>
               <td className="py-2 text-right tabular-nums">{ratingDelta(r, complete)}</td>
             </tr>

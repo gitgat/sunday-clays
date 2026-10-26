@@ -1,3 +1,4 @@
+import { THROWN_OUT_COUNTS, THROWN_OUT_ROUNDS } from '../../components/charts/thrownOutCopy';
 import type { Explainer } from '../../components/charts/types';
 import { mergeTerms } from '../glossary/terms';
 import { formatEventDate } from './format';
@@ -24,9 +25,10 @@ export const explainers: Record<string, Explainer> = {
       'For each shooter, the number of different Sundays with at least one round of theirs.',
       'Every Sunday with scores counts, whether or not its results are complete.',
       'The round-type filter applies: Super Sporting counts only Super Sporting Sundays.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'windowed',
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   'rec-streaks': {
     what: 'The most Sundays in a row that someone has shot without missing one.',
@@ -39,19 +41,21 @@ export const explainers: Record<string, Explainer> = {
       'Only Sundays with complete results count, in date order. Each one you shot adds 1; missing one starts the count again.',
       'Sundays without complete results are skipped: they neither add to a run nor break it.',
       'The round-type filter applies, so a Super Sporting streak only looks at Super Sporting Sundays.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'streak'],
+    terms: ['round-types', 'streak', 'thrown-out-station'],
   },
   'rec-highest': {
     what: 'The highest single-round scores in the time window.',
     read: ['50 is a perfect round. Ties share a place.'],
     computed: [
-      'Every round counts, second rounds on doubleheader Sundays too.',
+      'Second rounds on doubleheader Sundays count too.',
       'The round-type filter applies.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
 };
 

@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics.achievements.context import (
+    STATION_COLUMNS,
     AchContext,
     empty_value_frame,
     load_station_entries,
@@ -62,13 +63,36 @@ def test_shooter_days_prior_columns_use_earlier_dates_only(ctx_builder):
     assert list(days["n_events"]) == [1, 2, 3]
     assert list(days["cum_rounds"]) == [2, 3, 4]
     assert list(days["prior_rounds"]) == [0, 2, 3]
-    assert list(days["prior_sum"]) == [0, 84, 114]
-    assert pd.isna(days["prior_best"].iloc[0])
-    assert list(days["prior_best"].iloc[1:]) == [44.0, 44.0]
-    assert pd.isna(days["prev_day_best"].iloc[0])
-    assert list(days["prev_day_best"].iloc[1:]) == [44.0, 30.0]
+    assert list(days["prior_n_s"]) == [0, 2, 3]
+    assert list(days["prior_sum_s"]) == [0, 84, 114]
+    assert list(days["stats_excluded"]) == [False] * 3
+    assert pd.isna(days["prior_best_s"].iloc[0])
+    assert list(days["prior_best_s"].iloc[1:]) == [44.0, 44.0]
+    assert pd.isna(days["prev_day_best_s"].iloc[0])
+    assert list(days["prev_day_best_s"].iloc[1:]) == [44.0, 30.0]
     assert pd.isna(days["prev_ts"].iloc[0])
     assert days["prev_ts"].iloc[2] == pd.Timestamp(sun(1))
+
+
+def test_shooter_days_score_prefixes_skip_an_excluded_sunday(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .event(sun(1), stats_excluded=True)
+        .round(1, sun(0), 40)
+        .round(1, sun(1), 50)
+        .round(1, sun(2), 35)
+        .round(1, sun(3), 45)
+        .build()
+    )
+    d = ctx.shooter_days
+    assert list(d["stats_excluded"]) == [False, True, False, False]
+    assert list(d["prior_rounds"]) == [0, 1, 2, 3]
+    assert list(d["cum_sum"]) == [40, 90, 125, 170]
+    assert list(d["prior_n_s"]) == [0, 1, 1, 2]
+    assert list(d["prior_sum_s"]) == [0, 40, 40, 75]
+    assert list(d["prior_best_s"].iloc[1:]) == [40.0, 40.0, 40.0]
+    assert list(d["prev_day_best_s"].iloc[1:]) == [40.0, 40.0, 35.0]
+    assert not {"prior_sum", "prior_best", "prev_day_best"} & set(d.columns)
 
 
 def test_best_round_id_prefers_higher_score_then_lower_ordinal(ctx_builder):
@@ -139,6 +163,7 @@ DAY_DTYPES = {
     "shooter_id": "int64",
     "event_ts": "datetime64[ns]",
     "event_date": "object",
+    "stats_excluded": "bool",
     "n_rounds": "int64",
     "day_best": "int64",
     "day_sum": "int64",
@@ -147,10 +172,11 @@ DAY_DTYPES = {
     "cum_rounds": "int64",
     "cum_sum": "int64",
     "prior_rounds": "int64",
-    "prior_sum": "int64",
-    "prior_best": "float64",
+    "prior_n_s": "int64",
+    "prior_sum_s": "int64",
+    "prior_best_s": "float64",
     "prev_ts": "datetime64[ns]",
-    "prev_day_best": "float64",
+    "prev_day_best_s": "float64",
 }
 
 
@@ -190,6 +216,7 @@ STATION_DTYPES = {
     "shooter_id": "Int64",
     "round_id": "Int64",
     "hits": "int64",
+    "dropped": "bool",
     "event_ts": "datetime64[ns]",
 }
 
@@ -225,6 +252,7 @@ def test_builder_station_frame_mirrors_load_station_entries(ctx_builder, empty):
                 "shooter_id": shooter_id,
                 "round_id": None,
                 "hits": hits,
+                "dropped": False,
             }
             for shooter_id, station_no, hits, entry_row in ((1, 4, 7, 10), (None, 5, 3, 11))
         ]
@@ -232,6 +260,17 @@ def test_builder_station_frame_mirrors_load_station_entries(ctx_builder, empty):
     assert dtypes(built) == STATION_DTYPES
     production = load_station_entries(cast(Session, _RowsSession(rows)))
     pd.testing.assert_frame_equal(built.drop(columns=["event_ts"]), production)
+
+
+def test_from_frames_leaves_dropped_station_entries_out(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .station(1, sun(0), 4, 5, entry_row=10)
+        .station(1, sun(0), 11, 7, entry_row=10, dropped=True)
+        .build()
+    )
+    assert list(ctx.station_hits["station_label"]) == ["4"]
+    assert STATION_COLUMNS[-1] == "dropped"
 
 
 def test_shooter_days_is_computed_once_per_context(ctx_builder):

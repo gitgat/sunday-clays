@@ -1,6 +1,7 @@
 import { useParams } from 'react-router';
 import { ChartFrame } from '../../../components/charts/ChartFrame';
 import { getMe } from '../../../lib/me';
+import { excludedNote } from '../../events/thrownOut';
 import { useYirClub, type YirClub } from '../api';
 import { clubMonthChart } from '../charts';
 import { LeaderList } from '../components/LeaderList';
@@ -35,6 +36,9 @@ function AtAGlance({ data }: { data: YirClub }) {
           value={`${formatAvg(totals.avg_score)}${versus(totals.avg_score, previous?.avg_score ?? null, prevYear, 2)}`}
         />
       </dl>
+      {excludedNote(totals.n_excluded) !== null && (
+        <p className="text-sm text-text-muted">{excludedNote(totals.n_excluded)}</p>
+      )}
     </YirCard>
   );
 }

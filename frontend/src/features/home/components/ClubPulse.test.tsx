@@ -54,6 +54,16 @@ describe('pulseStats', () => {
     });
   });
 
+  it('leaves a Sunday with a station thrown out out of the high score, but counts it as scored', () => {
+    const week = seasonEvents[0] as EventSummary;
+    expect(
+      pulseStats([
+        ...seasonEvents,
+        { ...week, event_date: '2026-09-20', top_score: 50, stats_excluded: true },
+      ]),
+    ).toMatchObject({ scored: 4, seasonHigh: 49 });
+  });
+
   it('has no averages without scored events', () => {
     expect(pulseStats(seasonEvents.slice(3))).toEqual({
       held: 0,

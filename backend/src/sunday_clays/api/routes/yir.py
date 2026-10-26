@@ -32,6 +32,7 @@ class YirTotalsOut(BaseModel):
     clays_thrown: int
     clays_broken: int
     avg_score: float | None
+    n_excluded: int
 
 
 class YirTopRoundOut(BaseModel):
@@ -39,6 +40,7 @@ class YirTopRoundOut(BaseModel):
     display_name: str
     event_date: date
     score: int
+    stats_excluded: bool
 
 
 class YirEventStatOut(BaseModel):
@@ -77,6 +79,7 @@ class YirShooterTotalsOut(BaseModel):
     clays_thrown: int
     clays_broken: int
     avg_score: float | None
+    n_excluded: int
 
 
 class YirPbOut(BaseModel):
@@ -125,6 +128,7 @@ class OnThisDayItemOut(BaseModel):
     top_score: int | None
     median: float | None
     winners: list[OnThisDayWinnerOut]
+    stats_excluded: bool
 
 
 class OnThisDayOut(BaseModel):

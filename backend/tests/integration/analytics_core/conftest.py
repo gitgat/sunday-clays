@@ -45,14 +45,15 @@ class LiveSeed:
         round_type: str | None = None,
         has_scores: bool = True,
         has_stations: bool = False,
+        stats_excluded: bool = False,
     ) -> None:
         source = "none" if round_type is None else "override"
         self.session.execute(
             text(
                 "INSERT INTO events (event_date, round_type, round_type_source,"
                 " head_count, n_rounds, n_shooters, has_scores, has_stations,"
-                " results_complete)"
-                " VALUES (:d, :rt, :src, :hc, 0, 0, :hs, :hst, :rc)"
+                " results_complete, stats_excluded)"
+                " VALUES (:d, :rt, :src, :hc, 0, 0, :hs, :hst, :rc, :se)"
             ),
             {
                 "d": d,
@@ -62,6 +63,7 @@ class LiveSeed:
                 "hs": has_scores,
                 "hst": has_stations,
                 "rc": held,
+                "se": stats_excluded,
             },
         )
         self._events.add(d)

@@ -25,12 +25,19 @@ export const YIR_2025: YirClub = {
     clays_thrown: 63350,
     clays_broken: 44683,
     avg_score: 35.2668,
+    n_excluded: 0,
   },
   events: 50,
   newcomers: 57,
   perfect_rounds: 1,
   top_rounds: [
-    { shooter_id: 307, display_name: 'Grimsby, Gregor', event_date: '2025-08-03', score: 50 },
+    {
+      shooter_id: 307,
+      display_name: 'Grimsby, Gregor',
+      event_date: '2025-08-03',
+      score: 50,
+      stats_excluded: false,
+    },
   ],
   mean_head_count: 25.92,
   busiest: { event_date: '2025-08-17', value: 40 },
@@ -47,6 +54,7 @@ export const YIR_2025: YirClub = {
     clays_thrown: 59650,
     clays_broken: 41088,
     avg_score: 34.4409,
+    n_excluded: 0,
   },
 };
 
@@ -62,8 +70,15 @@ export const YIR_GRIMSBY_2025: YirShooter = {
     clays_thrown: 1350,
     clays_broken: 1169,
     avg_score: 43.2963,
+    n_excluded: 0,
   },
-  best: { shooter_id: 307, display_name: 'Grimsby, Gregor', event_date: '2025-08-03', score: 50 },
+  best: {
+    shooter_id: 307,
+    display_name: 'Grimsby, Gregor',
+    event_date: '2025-08-03',
+    score: 50,
+    stats_excluded: false,
+  },
   wins: 7,
   podiums: 13,
   best_finish: 1,
@@ -92,6 +107,7 @@ export const YIR_GRIMSBY_2025: YirShooter = {
     clays_thrown: 1150,
     clays_broken: 966,
     avg_score: 42,
+    n_excluded: 0,
   },
 };
 
@@ -106,6 +122,7 @@ export const ON_THIS_DAY: OnThisDay = {
       n_shooters: 23,
       top_score: 45,
       median: 36,
+      stats_excluded: false,
       winners: [{ shooter_id: 125, display_name: 'Rookwood, Derek', score: 45 }],
     },
     {
@@ -116,6 +133,7 @@ export const ON_THIS_DAY: OnThisDay = {
       n_shooters: 25,
       top_score: 40,
       median: 33,
+      stats_excluded: false,
       winners: [
         { shooter_id: 178, display_name: 'McMurtry, Zeb', score: 40 },
         { shooter_id: 205, display_name: 'Yoder, Gavin', score: 40 },
@@ -130,6 +148,7 @@ export const ON_THIS_DAY: OnThisDay = {
       n_shooters: 0,
       top_score: null,
       median: null,
+      stats_excluded: false,
       winners: [],
     },
   ],

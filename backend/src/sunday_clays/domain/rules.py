@@ -64,6 +64,7 @@ class RuleType(StrEnum):
     SET_STATUS = "set_status"
     STATION_RESET = "station_reset"
     ALIAS_NAME = "alias_name"
+    STATION_DROP = "station_drop"
 
 
 class _Payload(BaseModel):
@@ -142,6 +143,26 @@ class AliasNamePayload(_Payload):
     shooter_id: int
 
 
+class StationDropPayload(_Payload):
+    """Force a station (or a whole Sunday, with no label) thrown out, or a station back in."""
+
+    event_date: date
+    station_label: str | None = None
+    dropped: bool
+
+    @model_validator(mode="after")
+    def _label_or_sunday(self) -> "StationDropPayload":
+        if self.station_label is None:
+            if not self.dropped:
+                raise ValueError("A Sunday-level rule can only mark a Sunday as thrown out")
+            return self
+        label = parse_label(self.station_label)
+        if label is None:
+            raise ValueError(f"{self.station_label!r} is not a station number or label like 7A")
+        self.station_label = label
+        return self
+
+
 PAYLOAD_MODELS: dict[RuleType, type[_Payload]] = {
     RuleType.MERGE_SHOOTER: MergeShooterPayload,
     RuleType.RENAME_SHOOTER: RenameShooterPayload,
@@ -151,6 +172,7 @@ PAYLOAD_MODELS: dict[RuleType, type[_Payload]] = {
     RuleType.SET_STATUS: SetStatusPayload,
     RuleType.STATION_RESET: StationResetPayload,
     RuleType.ALIAS_NAME: AliasNamePayload,
+    RuleType.STATION_DROP: StationDropPayload,
 }
 
 
@@ -167,6 +189,7 @@ class ActiveRules:
     renames: dict[int, tuple[int, str]]
     statuses: dict[int, tuple[int, str]]
     round_types: dict[date, tuple[int, RoundType]]
+    station_drops: dict[tuple[date, str | None], tuple[int, bool]]
 
 
 def _require_shooter(session: Session, shooter_id: int) -> None:
@@ -262,7 +285,7 @@ def deactivate_rule(session: Session, rule_id: int) -> None:
 
 def load_active_rules(session: Session) -> ActiveRules:
     """Active rules in id order, so the newest rule wins wherever two target the same thing."""
-    rules = ActiveRules([], [], {}, {}, {})
+    rules = ActiveRules([], [], {}, {}, {}, {})
     for rule_id, rule_type, payload in session.execute(
         select(Rule.id, Rule.rule_type, Rule.payload).where(Rule.active.is_(True)).order_by(Rule.id)
     ):
@@ -279,4 +302,7 @@ def load_active_rules(session: Session) -> ActiveRules:
         elif rule_type == RuleType.ROUND_TYPE_OVERRIDE:
             override = RoundTypeOverridePayload.model_validate(payload)
             rules.round_types[override.event_date] = (rule_id, override.round_type)
+        elif rule_type == RuleType.STATION_DROP:
+            drop = StationDropPayload.model_validate(payload)
+            rules.station_drops[(drop.event_date, drop.station_label)] = (rule_id, drop.dropped)
     return rules

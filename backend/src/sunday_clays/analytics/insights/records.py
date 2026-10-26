@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import date, timedelta
 
+from sunday_clays.analytics import frames
 from sunday_clays.analytics.insights import charts
 from sunday_clays.analytics.insights.context import InsightFrames, Sunday
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Count,
     Int,
     NameList,
@@ -48,7 +50,7 @@ def waits(fr: InsightFrames) -> Iterator[tuple[Sunday, Sunday | None, int]]:
     for sunday in fr.sundays:
         wait = sunday.i - last.i if last is not None else sunday.i + 1
         yield sunday, last, wait
-        if sunday.top is not None and sunday.top >= DROUGHT_SCORE:
+        if sunday.top is not None and sunday.top >= DROUGHT_SCORE and not sunday.stats_excluded:
             last = sunday
 
 
@@ -74,7 +76,12 @@ def drought_chart(fact: Fact) -> ChartLink:
 
 def _drought_clock(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for sunday, last, wait in waits(fr):
-        if sunday.date not in scope.sundays or last is None or wait < DROUGHT_WAIT:
+        if (
+            sunday.date not in scope.sundays
+            or sunday.stats_excluded
+            or last is None
+            or wait < DROUGHT_WAIT
+        ):
             continue
         if sunday.top is not None and sunday.top >= DROUGHT_SCORE:
             continue
@@ -111,6 +118,7 @@ register(
                         "once the wait reaches 16, twice the usual wait of 8."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(DROUGHT_LABEL,),
@@ -126,7 +134,12 @@ register(
 
 def _drought_ended(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for sunday, last, wait in waits(fr):
-        if sunday.date not in scope.sundays or last is None or wait < DROUGHT_WAIT:
+        if (
+            sunday.date not in scope.sundays
+            or sunday.stats_excluded
+            or last is None
+            or wait < DROUGHT_WAIT
+        ):
             continue
         high = [
             r
@@ -197,6 +210,7 @@ register(
                         "anyone. Up to three names, highest first."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(DROUGHT_LABEL,),
@@ -219,9 +233,10 @@ HIGHEST_LABEL = T(named("The club's highest rounds"))
 
 
 def _perfect_rarity(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
+    scored = frames.stat_rounds(fr.rounds)
     scores = [
         int(s)
-        for s, d in zip(fr.rounds["score"], fr.rounds["event_date"], strict=True)
+        for s, d in zip(scored["score"], scored["event_date"], strict=True)
         if d <= scope.as_of
     ]
     perfect = sum(s == PERFECT for s in scores)
@@ -279,7 +294,10 @@ register(
             )
         },
         how={
-            "": (T(named("Every round on record, all round types, from the first Sunday to now.")),)
+            "": (
+                T(named("Every round on record, all round types, from the first Sunday to now.")),
+                THROWN_OUT_ROUNDS_HOW,
+            )
         },
         labels=(HIGHEST_LABEL,),
         chart=_highest_chart,

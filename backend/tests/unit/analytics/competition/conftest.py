@@ -17,11 +17,11 @@ ROUND_COLUMNS = [
     "gauge_class", "status", "shooter_status", "round_type", "field_median", "adjusted",
     "event_rank", "is_best_round", "percentile", "expected", "residual", "mu_before",
     "mu_after", "temp_f", "apparent_f", "precip_in", "wind_mph", "gust_mph", "wind_dir_deg",
-    "cloud_pct", "condition", "gauge", "held",
+    "cloud_pct", "condition", "gauge", "held", "stats_excluded",
 ]  # fmt: skip
 EVENT_COLUMNS = [
     "event_date", "round_type", "round_type_source", "head_count", "n_rounds", "n_shooters",
-    "has_scores", "has_stations", "results_complete",
+    "has_scores", "has_stations", "results_complete", "stats_excluded",
 ]  # fmt: skip
 HISTORY_COLUMNS = ["shooter_id", "event_date", "mu", "var"]
 
@@ -52,6 +52,7 @@ class FrameBuilder:
         round_type: str = "sporting",
         has_scores: bool = True,
         held: bool = True,
+        stats_excluded: bool = False,
     ) -> FrameBuilder:
         self.event_rows[event_date] = {
             "event_date": event_date,
@@ -63,6 +64,7 @@ class FrameBuilder:
             "has_scores": has_scores,
             "has_stations": round_type != "sporting",
             "results_complete": has_scores and held,
+            "stats_excluded": stats_excluded,
         }
         return self
 
@@ -119,6 +121,7 @@ class FrameBuilder:
             event = self.event_rows[raw["event_date"]]
             row["round_type"] = event["round_type"]
             row["held"] = bool(event["results_complete"])
+            row["stats_excluded"] = bool(event["stats_excluded"])
             rows.append(row)
         self._derive_event_fields(rows)
         for row, raw in zip(rows, self.round_rows, strict=True):
@@ -145,7 +148,7 @@ class FrameBuilder:
                 r["is_best_round"] = is_best
                 r["event_rank"] = 1 + sum(s > r["score"] for s in best_scores) if is_best else None
                 r["field_median"] = median if held else None
-                r["adjusted"] = r["score"] - median if held else None
+                r["adjusted"] = r["score"] - median if held and not r["stats_excluded"] else None
 
     def events(self) -> pd.DataFrame:
         return pd.DataFrame(

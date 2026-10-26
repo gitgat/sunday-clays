@@ -6,13 +6,23 @@ import pytest
 
 from sunday_clays.analytics.insights.context import (
     add_months,
+    anchor_days,
     evergreen_days,
     is_active,
     own_tier,
     quantile,
+    scored_only,
     shuffle_share,
     stable_seed,
     stderr_diff,
+)
+from sunday_clays.analytics.insights.lints import lint_clauses
+from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_RECAP_HOW,
+    THROWN_OUT_ROUNDS_HOW,
+    THROWN_OUT_STATION_HOW,
+    plain,
+    render,
 )
 from sunday_clays.analytics.insights.types import Scope
 
@@ -24,8 +34,8 @@ def test_days_carry_prefix_values_over_earlier_dates_only(make_world, sun):
     assert [d.score for d in days] == [30, 40, 35]
     assert [d.n_rounds for d in days] == [1, 2, 1]
     assert [d.prior_rounds for d in days] == [0, 1, 3]
-    assert [d.prior_best for d in days] == [None, 30, 40]
-    assert [d.prior_sum for d in days] == [0, 30, 90]
+    assert [d.prior_best_s for d in days] == [None, 30, 40]
+    assert [d.prior_sum_s for d in days] == [0, 30, 90]
     assert [d.targets for d in days] == [30, 90, 125]
     assert [d.k for d in days] == [1, 2, 3]
     assert days[2].prev_date == sun(1)
@@ -116,3 +126,69 @@ def test_shuffle_share_is_reproducible_and_high_for_a_real_gap():
 )
 def test_add_months_clamps_the_day(day, months, out):
     assert add_months(day, months) == out
+
+
+def test_score_prefixes_skip_a_thrown_out_sunday_but_gates_count_it(make_world, sun):
+    world = make_world().series(1, 0, [30, 48, 35, 36]).crowd(sun(1), [40, 40, 40])
+    days = world.sunday(sun(1), stats_excluded=True).frames().histories[1]
+    assert [d.stats_excluded for d in days] == [False, True, False, False]
+    assert [d.prior_rounds for d in days] == [0, 1, 2, 3]
+    assert [d.prior_n_s for d in days] == [0, 1, 1, 2]
+    assert [d.prior_sum_s for d in days] == [0, 30, 30, 65]
+    assert [d.prior_best_s for d in days] == [None, 30, 30, 35]
+    assert [d.prior_mean_s for d in days] == [None, 30.0, 30.0, 32.5]
+    assert [d.targets for d in days] == [30, 78, 113, 149]
+    assert [d.k for d in days] == [1, 2, 3, 4]
+    assert days[1].adjusted is None
+    assert not any(hasattr(days[0], f) for f in ("prior_best", "prior_sum", "prior_mean"))
+
+
+def test_sundays_carry_the_flag_and_scored_views_leave_them_out(make_world, sun):
+    fr = make_world().series(1, 0, [30, 48, 35]).sunday(sun(1), stats_excluded=True).frames()
+    assert [s.stats_excluded for s in fr.sundays] == [False, True, False]
+    assert [s.date for s in fr.scored_sundays] == [sun(0), sun(2)]
+    assert [d.date for d in fr.scored_histories[1]] == [sun(0), sun(2)]
+    assert [d.date for d in scored_only(fr.histories[1])] == [sun(0), sun(2)]
+    scope = Scope(sundays=frozenset(fr.held_dates()), as_of=sun(2))
+    assert [ds[i].date for i, ds in anchor_days(fr, scope)] == [sun(0), sun(1), sun(2)]
+    assert [ds[i].date for i, ds in anchor_days(fr, scope, scored=True)] == [sun(0), sun(2)]
+
+
+def test_evergreen_scored_days_keep_the_activity_gate_on_every_round(make_world, sun):
+    world = make_world().series(1, 0, [30, 31, 48, 33, 34])
+    fr = world.sunday(sun(2), stats_excluded=True).frames()
+    [(sid, days)] = list(evergreen_days(fr, Scope(sundays=frozenset(), as_of=sun(4)), scored=True))
+    assert sid == 1
+    assert [d.score for d in days] == [30, 31, 33, 34]
+    assert days[-1].rounds_through == 5
+
+
+def test_own_tier_reads_scored_rounds_only(make_world, sun):
+    assert own_tier(make_world().series(1, 0, [38] * 9 + [45]).frames().histories[1]) == 45
+    out = make_world().series(1, 0, [38] * 9 + [45]).sunday(sun(9), stats_excluded=True)
+    assert own_tier(out.frames().histories[1]) is None
+
+
+def test_world_marks_a_thrown_out_sunday(make_world, sun):
+    fr = make_world().round(1, sun(0), 40).sunday(sun(0), stats_excluded=True).frames()
+    assert fr.events["stats_excluded"].tolist() == [True]
+    assert fr.rounds["stats_excluded"].tolist() == [True]
+
+
+def test_thrown_out_how_lines_pass_the_insight_lints():
+    for t in (THROWN_OUT_ROUNDS_HOW, THROWN_OUT_STATION_HOW, THROWN_OUT_RECAP_HOW):
+        assert lint_clauses(t.third, force_named=True) == []
+        assert t.you is not None
+        assert lint_clauses(t.you, force_named=True) == []
+    assert (
+        plain(render(THROWN_OUT_ROUNDS_HOW, {}, {}))
+        == "Sundays with a station thrown out (marked *) are left out."
+    )
+    assert (
+        plain(render(THROWN_OUT_STATION_HOW, {}, {}))
+        == "A station thrown out on the day is left out."
+    )
+    assert plain(render(THROWN_OUT_RECAP_HOW, {}, {})) == (
+        "A station was thrown out this Sunday. Its results count; its scores stay out of "
+        "averages and PBs."
+    )

@@ -22,6 +22,7 @@ class WeatherEventOut(BaseModel):
     round_type: str
     head_count: int | None
     has_scores: bool
+    stats_excluded: bool
     n_rounds: int
     median: float | None
     mean: float | None

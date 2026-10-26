@@ -69,8 +69,12 @@ def _pbs_set(mine: pd.DataFrame, date_from: date | None, date_to: date) -> int:
     count = 0
     best_before: int | None = None
     n_before = 0
-    for key, scores in mine.groupby("event_date", sort=True)["score"]:
+    for key, day_rounds in mine.groupby("event_date", sort=True):
         day = cast(date, key)
+        scores = day_rounds["score"]
+        if day_rounds["stats_excluded"].eq(True).all():
+            n_before += len(scores)  # counts toward the PB gate, never tested or kept as best
+            continue
         top = int(scores.max())
         if _inside(day, date_from, date_to) and is_new_pb(top, best_before, n_before):
             count += 1
@@ -100,10 +104,11 @@ def compute_summary(
     special_days = set(cal.loc[cal["kind"].eq(frames.EVENT_KIND_SPECIAL), "event_date"])
     sundays = set(came["event_date"])
     best: BestRound | None = None
-    if not window.empty:
-        top = int(window["score"].max())
+    scored = frames.stat_rounds(window)
+    if not scored.empty:
+        top = int(scored["score"].max())
         first_day = min(
-            d for d, s in zip(window["event_date"], window["score"], strict=True) if s == top
+            d for d, s in zip(scored["event_date"], scored["score"], strict=True) if s == top
         )
         best = BestRound(top, first_day)
     streak_rows = streaks(came, cal, date_to)
@@ -125,7 +130,7 @@ def compute_summary(
         sundays=len(sundays),
         special_sundays=len(sundays & special_days),
         rounds=len(window),
-        average=None if window.empty else round(float(window["score"].mean()), 1),
+        average=None if scored.empty else round(float(scored["score"].mean()), 1),
         best=best,
         pbs_set=_pbs_set(mine, date_from, date_to),
         trophies=len(kept),

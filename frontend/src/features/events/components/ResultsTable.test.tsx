@@ -23,6 +23,7 @@ function result(over: Partial<EventResult>): EventResult {
     mu_after: null,
     rating_delta: null,
     gauge_class: null,
+    stats_excluded: false,
     ...over,
   };
 }

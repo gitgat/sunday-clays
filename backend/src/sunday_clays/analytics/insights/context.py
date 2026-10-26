@@ -47,6 +47,15 @@ def _opt_float(value: object) -> float | None:
     return None if math.isnan(number) else number
 
 
+def _flag(value: object) -> bool:
+    """A frame flag as a bool: NaN, None and NA count as unset."""
+    if value is None or value is pd.NA:
+        return False
+    if isinstance(value, float) and math.isnan(value):
+        return False
+    return bool(value)
+
+
 def _opt_int(value: object) -> int | None:
     number = _opt_float(value)
     return None if number is None else round(number)
@@ -68,10 +77,11 @@ class Day:
     rank: int | None  # min-rank among best rounds (held days only)
     field_n: int  # shooters with a round that day
     k: int  # Sundays shot through this date, special ones included (Plan 17)
-    prior_rounds: int  # rounds on earlier dates
-    prior_best: int | None  # best round on earlier dates
-    prior_sum: int  # sum of every round's score on earlier dates
-    targets: int  # sum of every round's score through this date
+    prior_rounds: int  # rounds on earlier dates (every round, thrown-out Sundays included)
+    prior_n_s: int  # rounds on earlier dates that count toward scores
+    prior_sum_s: int  # sum of those rounds' scores
+    prior_best_s: int | None  # best of those rounds
+    targets: int  # sum of every round's score through this date (a count of clays)
     prev_date: dt.date | None
     first_date: dt.date
     difficulty: float | None
@@ -79,14 +89,15 @@ class Day:
     temp_band: str | None
     wind_band: str | None
     scores: tuple[int, ...] = ()  # every round that day, highest first
+    stats_excluded: bool = False  # a station was thrown out: the scores stay out of averages
 
     @property
     def rounds_through(self) -> int:
         return self.prior_rounds + self.n_rounds
 
     @property
-    def prior_mean(self) -> float | None:
-        return self.prior_sum / self.prior_rounds if self.prior_rounds else None
+    def prior_mean_s(self) -> float | None:
+        return self.prior_sum_s / self.prior_n_s if self.prior_n_s else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +126,7 @@ class Sunday:
     temp_band: str | None
     wind_band: str | None
     results: tuple[Result, ...]
+    stats_excluded: bool = False  # a station was thrown out: scores stay out of statistics
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +237,15 @@ class InsightFrames:
     def names(self) -> dict[int, str]:
         return {sid: p.name for sid, p in self.profiles.items()}
 
+    @cached_property
+    def scored_histories(self) -> Mapping[int, tuple[Day, ...]]:
+        """Each shooter's days without those on a Sunday with a station thrown out."""
+        return {sid: scored_only(days) for sid, days in self.histories.items()}
+
+    @cached_property
+    def scored_sundays(self) -> tuple[Sunday, ...]:
+        return tuple(s for s in self.sundays if not s.stats_excluded)
+
     def sunday(self, day: date) -> Sunday | None:
         i = self.sunday_index.get(day)
         return None if i is None else self.sundays[i]
@@ -307,6 +328,7 @@ def _build_sundays(rounds: pd.DataFrame, events: pd.DataFrame) -> tuple[Sunday, 
                 temp_band=fr.temp_band(_opt_float(row["temp_f"])),
                 wind_band=fr.wind_band(_opt_float(row["gust_mph"])),
                 results=tuple(ranked),
+                stats_excluded=_flag(row.get("stats_excluded")),
             )
         )
     return tuple(out)
@@ -335,14 +357,20 @@ def _build_histories(
         days = out[sid]
         prev = days[-1] if days else None
         prior_rounds = prev.rounds_through if prev else 0
-        prior_sum = prev.targets if prev else 0
-        prior_best = (
-            None
-            if prev is None
-            else prev.score
-            if prev.prior_best is None
-            else max(prev.score, prev.prior_best)
-        )
+        if prev is None:
+            prior_n_s, prior_sum_s, prior_best_s = 0, 0, None
+        elif prev.stats_excluded:
+            prior_n_s, prior_sum_s, prior_best_s = (
+                prev.prior_n_s,
+                prev.prior_sum_s,
+                prev.prior_best_s,
+            )
+        else:
+            prior_n_s = prev.prior_n_s + prev.n_rounds
+            prior_sum_s = prev.prior_sum_s + sum(prev.scores)
+            prior_best_s = (
+                prev.score if prev.prior_best_s is None else max(prev.score, prev.prior_best_s)
+            )
         ev = weather.get(day, {})
         days.append(
             Day(
@@ -361,9 +389,11 @@ def _build_histories(
                 # Sundays shot through this date, special ones included (Plan 17)
                 k=bisect_right(dates[sid], day) if sid in dates else len(days) + 1,
                 prior_rounds=prior_rounds,
-                prior_best=prior_best,
-                prior_sum=prior_sum,
-                targets=prior_sum + sum(scores),
+                prior_n_s=prior_n_s,
+                prior_sum_s=prior_sum_s,
+                prior_best_s=prior_best_s,
+                targets=(prev.targets if prev else 0) + sum(scores),
+                stats_excluded=_flag(top.get("stats_excluded")),
                 prev_date=prev.date if prev else None,
                 first_date=days[0].date if days else day,
                 difficulty=_opt_float(ev.get("difficulty")),
@@ -401,12 +431,15 @@ def _build_ratings(rating: pd.DataFrame) -> dict[int, tuple[tuple[date, float], 
 # --- helpers shared by the kind modules ----------------------------------------------------------
 
 
-def anchor_days(fr_: InsightFrames, scope: Scope) -> Iterator[tuple[int, tuple[Day, ...]]]:
+def anchor_days(
+    fr_: InsightFrames, scope: Scope, *, scored: bool = False
+) -> Iterator[tuple[int, tuple[Day, ...]]]:
     """(i, days) for every held shooter-day anchored in scope; `days[: i + 1]` is the no-leak view.
 
-    Deceased shooters are skipped (spec §3.2 exclusions).
+    Deceased shooters are skipped (spec §3.2 exclusions). With `scored`, days on a Sunday with a
+    station thrown out are neither anchors nor part of the view.
     """
-    for sid, days in fr_.histories.items():
+    for sid, days in (fr_.scored_histories if scored else fr_.histories).items():
         if fr_.profiles.get(sid) is not None and fr_.profiles[sid].deceased:
             continue
         for i, day in enumerate(days):
@@ -414,9 +447,12 @@ def anchor_days(fr_: InsightFrames, scope: Scope) -> Iterator[tuple[int, tuple[D
                 yield i, days
 
 
-def evergreen_days(fr_: InsightFrames, scope: Scope) -> Iterator[tuple[int, tuple[Day, ...]]]:
+def evergreen_days(
+    fr_: InsightFrames, scope: Scope, *, scored: bool = False
+) -> Iterator[tuple[int, tuple[Day, ...]]]:
     """(shooter_id, days <= as_of) for every profile subject: active, not deceased, and not a
-    guest with fewer than 6 rounds (spec §4.3)."""
+    guest with fewer than 6 rounds (spec §4.3). The gates count every round; with `scored` the
+    days yielded leave out Sundays with a station thrown out (none left: skipped)."""
     for sid in fr_.histories:
         profile = fr_.profiles.get(sid)
         if profile is None or profile.deceased:
@@ -426,6 +462,10 @@ def evergreen_days(fr_: InsightFrames, scope: Scope) -> Iterator[tuple[int, tupl
             continue
         if profile.status == "guest" and days[-1].rounds_through < GUEST_MIN_ROUNDS:
             continue
+        if scored:
+            days = scored_only(days)
+            if not days:
+                continue
         yield sid, days
 
 
@@ -443,6 +483,11 @@ def shot_recently(days: Sequence[Day], as_of: date, window: timedelta = RECENT) 
 
 def held_only(days: Sequence[Day]) -> list[Day]:
     return [d for d in days if d.held]
+
+
+def scored_only(days: Sequence[Day]) -> tuple[Day, ...]:
+    """The days whose scores count: not on a Sunday with a station thrown out."""
+    return tuple(d for d in days if not d.stats_excluded)
 
 
 def split_by_rain(
@@ -489,7 +534,7 @@ def quantile(values: Sequence[float], q: float) -> float:
 def own_tier(days: Sequence[Day]) -> int | None:
     """Own tier T (spec §2.1): the highest of 45/40/35 reached on 10-60% of the last 52 rounds,
     35 only if the usual (the mean of those rounds) is <= 39."""
-    last = [d.score for d in days[-52:]]
+    last = [d.score for d in scored_only(days)[-52:]]
     if not last:
         return None
     usual = mean([float(s) for s in last])

@@ -25,6 +25,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Count,
     Int,
     NameList,
@@ -448,6 +449,9 @@ def _year_wrapped(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         in_year = [d for d in days if d.date.year == year]
         if len(in_year) < SHOOTER_WRAP_MIN:
             continue
+        scored = [d for d in in_year if not d.stats_excluded]
+        if not scored:
+            continue
         targets = sum(sum(d.scores) for d in in_year)
         finishes = [d for d in in_year if top_third(d)]
         params: dict[str, object] = {
@@ -455,7 +459,7 @@ def _year_wrapped(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
             "year": year,
             "sundays": len(in_year),
             "targets": targets,
-            "best": max(d.score for d in in_year),
+            "best": max(d.score for d in scored),
         }
         if finishes:
             params["finish"] = min(d.rank or 0 for d in finishes)
@@ -541,6 +545,7 @@ register(
                         "Your best finish shows only when it was in the top third of the field."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(WRAPPED_LABEL,),

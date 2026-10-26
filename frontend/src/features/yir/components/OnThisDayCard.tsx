@@ -1,6 +1,8 @@
 import { useId, useState } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { ExplainerPanel, ExplainerToggle } from '../../../components/ui/Explainer';
+import { ThrownOutMark } from '../../../components/ui/ThrownOutMark';
+import { SUNDAY_THROWN_OUT } from '../../events/thrownOut';
 import { useOnThisDay, type OnThisDayItem } from '../api';
 import { explainers } from '../explainers';
 import { formatFullDay, joinNames } from '../format';
@@ -52,7 +54,10 @@ export function OnThisDayCard() {
                 {item.years_ago === 1 ? '1 year ago' : `${item.years_ago} years ago`} ·{' '}
                 {formatFullDay(item.event_date)}
               </YirLink>
-              <p className="break-words text-sm text-text-muted">{describe(item)}</p>
+              <p className="break-words text-sm text-text-muted">
+                {describe(item)}
+                {item.stats_excluded && <ThrownOutMark phrase={SUNDAY_THROWN_OUT} />}
+              </p>
             </li>
           ))}
         </ul>

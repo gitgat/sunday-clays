@@ -355,3 +355,85 @@ def test_committed_fixture_shooter(fx_viewer_client: TestClient) -> None:
     assert body["pbs"][0]["event_date"] == "2021-03-28"
     active = fx_viewer_client.get("/api/shooters", params={"active": "true"}).json()
     assert len(active) == 83
+
+
+def test_a_thrown_out_sunday_counts_but_stays_out_of_shooter_stats(
+    seed: Any, viewer_client: TestClient
+) -> None:
+    ike = seed.shooter("Hadley, Ike")
+    for d in (W[7], W[1]):
+        seed.event(d, stats_excluded=True)
+    for d, score in ((W[7], 50), (W[3], 30), (W[2], 34), (W[1], 49), (W[0], 38)):
+        seed.round(d, ike, score)
+    seed.finish()
+    seed.analyze()
+    body = viewer_client.get(f"/api/shooters/{ike}").json()
+    stats = body["stats"]
+    assert (stats["n_rounds"], stats["n_events"], stats["n_excluded"]) == (5, 5, 2)
+    assert (stats["avg_score"], stats["median_score"], stats["best_score"]) == (34.0, 34.0, 38)
+    assert (stats["wins"], stats["podiums"]) == (5, 5)
+    odo = body["odometer"]
+    assert (odo["rounds"], odo["clays_thrown"], odo["clays_broken"]) == (5, 250, 201)
+    assert odo["hit_pct"] == pytest.approx(102 / 150)
+    assert [(p["scope"], p["key"], p["score"], p["event_date"]) for p in body["pbs"]] == [
+        ("overall", "all", 38, W[0].isoformat()),
+        ("year", "2026", 38, W[0].isoformat()),
+    ]
+    window = viewer_client.get(f"/api/shooters/{ike}", params={"since": W[2].isoformat()}).json()[
+        "window_stats"
+    ]
+    assert (window["n_rounds"], window["n_excluded"], window["avg_score"]) == (3, 1, 36.0)
+    flags = [r["stats_excluded"] for r in viewer_client.get(f"/api/shooters/{ike}/rounds").json()]
+    assert flags == [True, False, False, True, False]
+    months = viewer_client.get(f"/api/shooters/{ike}/splits", params={"by": "month"}).json()
+    assert [(s["key"], s["n_rounds"], s["n_excluded"], s["avg"], s["best"]) for s in months] == [
+        ("2026-09", 4, 1, 34.0, 38)
+    ]
+
+
+def test_both_doubleheader_rounds_of_a_thrown_out_sunday_count(
+    seed: Any, viewer_client: TestClient
+) -> None:
+    ike = seed.shooter("Hadley, Ike")
+    seed.event(W[1], stats_excluded=True)
+    seed.round(W[2], ike, 30)
+    seed.round(W[1], ike, 44, ordinal=1)
+    seed.round(W[1], ike, 41, ordinal=2)
+    seed.finish()
+    seed.analyze()
+    stats = viewer_client.get(f"/api/shooters/{ike}").json()["stats"]
+    assert (stats["n_rounds"], stats["n_events"], stats["n_excluded"], stats["avg_score"]) == (
+        3,
+        2,
+        2,
+        30.0,
+    )
+    (month,) = viewer_client.get(f"/api/shooters/{ike}/splits", params={"by": "month"}).json()
+    assert (month["n_rounds"], month["n_excluded"]) == (3, 2)
+
+
+def test_a_shooter_whose_only_round_was_thrown_out_has_counts_but_no_averages(
+    seed: Any, viewer_client: TestClient
+) -> None:
+    ike, amy = seed.shooter("Hadley, Ike"), seed.shooter("Ace, Amy")
+    seed.event(W[1], stats_excluded=True)
+    seed.round(W[2], ike, 30)
+    seed.round(W[1], ike, 35)
+    seed.round(W[1], amy, 44)
+    seed.finish()
+    seed.analyze()
+    body = viewer_client.get(f"/api/shooters/{amy}", params={"since": W[1].isoformat()}).json()
+    window = body["window_stats"]
+    got = (*(window[k] for k in ("n_rounds", "n_excluded")), window["avg_score"])
+    assert (*got, window["median_score"], window["best_score"]) == (1, 1, None, None, None)
+    assert body["odometer"]["hit_pct"] is None
+    assert body["pbs"] == []
+
+    def board(metric: str) -> set[int]:
+        params = {"period": "season", "metric": metric, "as_of": TODAY.isoformat()}
+        rows = viewer_client.get("/api/leaderboards", params=params).json()["rows"]
+        return {r["shooter_id"] for r in rows}
+
+    assert amy in board("rounds")
+    assert amy in board("wins")
+    assert amy not in board("avg_score")

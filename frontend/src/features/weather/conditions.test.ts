@@ -56,4 +56,14 @@ describe('conditions explorer rules', () => {
       'N',
     ]);
   });
+
+  it('leaves a Sunday with a station thrown out out of the means but counts it', () => {
+    const e = WEATHER_EVENTS[0] as WeatherEvent;
+    expect(
+      summarize([
+        { ...e, has_scores: true, median: 30, difficulty: 1 },
+        { ...e, has_scores: true, median: 50, difficulty: 9, stats_excluded: true },
+      ]),
+    ).toEqual({ events: 2, meanMedian: 30, meanDifficulty: 1 });
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { THROWN_OUT_COUNTS, THROWN_OUT_ROUNDS } from '../../components/charts/thrownOutCopy';
 import { explainers, raceExplainer, raceIntro } from './explainers';
 import type { RaceMode } from './labels';
 
@@ -28,7 +29,7 @@ describe('race explainers', () => {
     }
     for (const mode of MODES) {
       for (const key of ['race-bars', 'race-bump'] as const) {
-        const entry = raceExplainer(key, mode);
+        const entry = raceExplainer(key, mode, 'season_points');
         expect(entry.scope).toBe('windowed');
         expect(JSON.stringify(entry)).not.toMatch(NEUTRAL);
         expect(entry.computed.at(-1)).toContain('The time window at the top picks the Sundays');
@@ -38,10 +39,10 @@ describe('race explainers', () => {
 
   it('says how much fullscreen and the CSV download add', () => {
     for (const mode of MODES) {
-      expect(raceExplainer('race-bars', mode).read).toContain(
+      expect(raceExplainer('race-bars', mode, 'season_points').read).toContain(
         'Fullscreen draws the top 50; its table and the CSV download list the same top 50 ranked that Sunday.',
       );
-      const bump = raceExplainer('race-bump', mode).read ?? [];
+      const bump = raceExplainer('race-bump', mode, 'season_points').read ?? [];
       expect(bump).toContain(
         'Fullscreen follows the top 50; its table and the CSV download have the top 50 on every Sunday.',
       );
@@ -50,15 +51,26 @@ describe('race explainers', () => {
   });
 
   it('states how each mode picks the Sundays and counts each step (checked against the backend)', () => {
-    expect(raceExplainer('race-bars', 'rolling_12').computed.at(-1)).toContain(
+    expect(raceExplainer('race-bars', 'rolling_12', 'season_points').computed.at(-1)).toContain(
       'the 364 days ending on that Sunday (the last 52 Sundays)',
     );
-    expect(raceExplainer('race-bars', 'season').computed.at(-1)).toContain(
+    expect(raceExplainer('race-bars', 'season', 'season_points').computed.at(-1)).toContain(
       'last 8 Sundays (56 days)',
     );
-    expect(raceExplainer('race-bump', 'ytd').computed.at(-1)).toContain(
+    expect(raceExplainer('race-bump', 'ytd', 'season_points').computed.at(-1)).toContain(
       'from 1 January up to that Sunday',
     );
+  });
+});
+
+describe('race thrown-out disclosure', () => {
+  it('discloses thrown-out Sundays for the chosen measure, just before the mode line', () => {
+    const avg = raceExplainer('race-bars', 'rolling_12', 'avg_score');
+    expect(avg.computed.at(-2)).toBe(THROWN_OUT_ROUNDS);
+    expect(raceExplainer('race-bump', 'ytd', 'season_points').computed.at(-2)).toBe(
+      THROWN_OUT_COUNTS,
+    );
+    expect(avg.terms).toEqual(['thrown-out-station', 'time-window']);
   });
 });
 

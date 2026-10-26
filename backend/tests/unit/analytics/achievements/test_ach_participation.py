@@ -47,8 +47,11 @@ def thrown_ctx(b):
     return builder.build()
 
 
-def events_ctx(b):
-    builder = b().round(1, sun(0), 30)  # a second round on the first date is still one event
+def events_ctx(b, excluded: tuple[date, ...] = ()):
+    builder = b()
+    for d in excluded:
+        builder.event(d, stats_excluded=True)
+    builder.round(1, sun(0), 30)  # a second round on the first date is still one event
     for i in range(10):
         builder.round(1, sun(i), 31)
     return builder.build()
@@ -97,10 +100,12 @@ def pb_ctx(b):
     return builder.build()
 
 
-def doubleheader_ctx(b):
+def doubleheader_ctx(b, excluded: tuple[date, ...] = ()):
+    builder = b()
+    for d in excluded:
+        builder.event(d, stats_excluded=True)
     return (
-        b()
-        .round(1, sun(0), 30)
+        builder.round(1, sun(0), 30)
         .round(1, sun(1), 30)
         .round(1, sun(1), 31)
         .round(1, sun(2), 30)
@@ -642,3 +647,38 @@ def test_three_bird_never_leaks(ctx_builder, no_leak):
 
     assert no_leak("three_bird_shoot", ctx, sun(2)) == (1, 1)
     assert three_bird_awards(ctx.until(sun(0))) == []
+
+
+def test_personal_bests_skip_an_excluded_sunday_but_its_round_counts_toward_five(ctx_builder):
+    b = ctx_builder().event(sun(5), stats_excluded=True).event(sun(4), stats_excluded=True)
+    for i in range(4):
+        b.round(1, sun(i), 30).round(2, sun(i), 30)
+    b.round(1, sun(4), 30).round(1, sun(5), 50).round(1, sun(6), 40)
+    b.round(2, sun(4), 30).round(2, sun(6), 40)
+    ctx = b.build()
+    assert value_series("personal_bests", ctx, 1) == [0.0] * 6 + [1.0]
+    assert value_series("personal_bests", ctx, 2) == [0.0] * 5 + [1.0]
+
+
+def test_clays_broken_and_thrown_count_an_excluded_sunday(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .event(sun(1), stats_excluded=True)
+        .round(1, sun(0), 40)
+        .round(1, sun(1), 50)
+        .build()
+    )
+    assert value_series("clays_broken", ctx, 1) == [40.0, 90.0]
+    assert value_series("clays_thrown", ctx, 1) == [50.0, 100.0]
+
+
+@pytest.mark.parametrize(
+    ("code", "make", "day"),
+    [("events", events_ctx, None), ("doubleheader", doubleheader_ctx, sun(1))],
+)
+def test_count_trophies_still_award_on_an_excluded_sunday(ctx_builder, code, make, day):
+    plain = awards(code, make(ctx_builder))
+    award_day = day or plain[-1][2]
+    assert plain
+    assert award_day in {d for _, _, d in plain}
+    assert awards(code, make(ctx_builder, excluded=(award_day,))) == plain

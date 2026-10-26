@@ -18,6 +18,8 @@ from sunday_clays.analytics.frames import (
     load_events,
     load_rating_history,
     load_rounds,
+    stat_events,
+    stat_rounds,
 )
 from sunday_clays.analytics.streaks import streaks
 from sunday_clays.domain.round_type import RoundType
@@ -264,8 +266,9 @@ def compute_records(
     )
     dated_history = _with_dates(history)
     past_history = in_range(dated_history[dated_history["event_date"] <= as_of])
-    perfect = past_rounds[past_rounds["score"] == PERFECT_SCORE]
-    adjusted = past_rounds[past_rounds["adjusted"].notna()]
+    scored = stat_rounds(past_rounds)  # a thrown-out Sunday is out of every score record
+    perfect = scored[scored["score"] == PERFECT_SCORE]
+    adjusted = scored[scored["adjusted"].notna()]
     seen = _with_dates(rounds if appearances is None else appearances)
     seen_upto = seen[seen["event_date"] <= as_of]
     # The D6 tie key comes from scored rounds (``names``), as on the Sundays board; only a shooter
@@ -287,10 +290,10 @@ def compute_records(
     longest = streak.loc[streak["longest_streak"] > 0, ["shooter_id", "longest_streak"]].rename(
         columns={"longest_streak": "value"}
     )
-    scores = _round_records(past_rounds, past_rounds["score"], names, limit)
+    scores = _round_records(scored, scored["score"], names, limit)
     perfects = _round_records(perfect, perfect["score"], names, limit, newest_first=True)
     beat_field = _round_records(adjusted, adjusted["adjusted"], names, limit)
-    jumps = _jumps(past_rounds, past_events, names, limit)
+    jumps = _jumps(scored, stat_events(past_events), names, limit)
     attendance = _shooter_records(attended, sunday_names, limit)
     runs = _shooter_records(longest, sunday_names, limit)
     ratings = _highest_ratings(past_history, upto, names, limit)

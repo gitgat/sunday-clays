@@ -66,8 +66,9 @@ class EventTrendOut(BaseModel):
     top_score: int
     median: float
     difficulty: float | None
-    top_score_rolling8: float
-    median_rolling8: float
+    stats_excluded: bool
+    top_score_rolling8: float | None
+    median_rolling8: float | None
     difficulty_rolling8: float | None
 
 

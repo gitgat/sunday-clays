@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import asdict
 from datetime import date, timedelta
 
 import numpy as np
@@ -24,6 +25,7 @@ from sunday_clays.analytics.weather_effects import (
     with_bands,
     z_scales,
 )
+from sunday_clays.api.routes.weather import WeatherEventOut
 
 D0 = date(2024, 1, 7)
 
@@ -50,6 +52,7 @@ def _events(rows: list[dict[str, object]]) -> pd.DataFrame:
         "humidity_pct": 70.0,
         "pressure_hpa": 1015.0,
         "condition": "partly_cloudy",
+        "stats_excluded": False,
     }
     records = []
     for i, row in enumerate(rows):
@@ -340,6 +343,7 @@ def _sensitivity_rounds(spec: dict[int, tuple[int, float]], seed: int = 3) -> pd
                     "temp_f": float(rng.uniform(35.0, 90.0)),
                     "gust_mph": gust,
                     "precip_in": float(rng.choice([0.0, 0.0, 0.1])),
+                    "stats_excluded": False,
                 }
             )
     return pd.DataFrame(rows)
@@ -450,3 +454,47 @@ def test_weather_event_rows_convert_missing_values_to_none() -> None:
     )
     assert (second.head_count, second.top_score, second.n_rounds) == (23, 49, 3)
     assert second.temp_band == frames.temp_band(60.0)
+
+
+def test_band_summary_leaves_out_a_thrown_out_sunday() -> None:
+    events = _events(
+        [
+            {"temp_f": 60.0, "difficulty": 1.0},
+            {"temp_f": 61.0, "difficulty": float("nan"), "stats_excluded": True},
+        ]
+    )
+    rounds = pd.DataFrame({"event_date": events["event_date"].tolist(), "score": [40, 50]})
+    temp = [s for s in band_summary(events, rounds) if s.dimension == "temp_band"]
+    assert [(s.band, s.n_events, s.n_rounds, s.mean_score, s.mean_difficulty) for s in temp] == [
+        (frames.temp_band(60.0), 1, 1, 40.0, 1.0)
+    ]
+
+
+def test_fit_ignores_thrown_out_sundays() -> None:
+    events = _events(
+        [{"temp_f": t, "difficulty": 0.1 * t} for t in (40.0, 50.0, 60.0, 70.0)]
+        + [{"temp_f": 55.0, "difficulty": 9.0, "stats_excluded": True}]
+    )
+    model = fit_club_model(events, ("temp_f",))
+    assert model is not None
+    assert model.n_events == 4
+    assert model.coef == pytest.approx((0.0, 0.1))
+
+
+def test_sensitivity_leaves_out_thrown_out_rounds() -> None:
+    rounds = _sensitivity_rounds({1: (10, 0.1)})
+    rounds.loc[rounds.index[-1], "stats_excluded"] = True
+    assert shooter_sensitivity(rounds, SCALES).shooters == ()
+
+
+def test_weather_rows_keep_the_official_numbers_and_flag_the_sunday() -> None:
+    events = _events([{}, {"stats_excluded": True, "median": 40.0, "top_score": 50.0}])
+    days = events["event_date"].tolist()
+    rows = weather_event_rows(
+        events, pd.DataFrame({"event_date": [days[1], days[1]], "score": [50, 30]})
+    )
+    assert [(r.stats_excluded, r.n_rounds, r.median, r.top_score) for r in rows] == [
+        (False, 0, 35.0, 45),
+        (True, 2, 40.0, 50),
+    ]
+    assert WeatherEventOut.model_validate(asdict(rows[1])).stats_excluded is True

@@ -178,4 +178,22 @@ describe('recap formatting', () => {
   it('special, Markdown: the title, label and intro lines are separate paragraphs', () => {
     expect(formatRecap(specialRecap).markdown).toBe(SPECIAL_MARKDOWN);
   });
+
+  it('opens with the thrown-out line on a Sunday with a station thrown out', () => {
+    const line =
+      "Station 11 was thrown out; everyone was credited 7/7, so this week's scores aren't used in averages, PBs or station stats.";
+    const r = {
+      ...regularRecap,
+      thrown_out: [{ station_label: '11', target_count: 7, credited: true }],
+    };
+    expect(formatRecap(r).text).toContain(
+      `Sunday, September 27, 2026\n\n${line}\nTurnout: 24 came out`,
+    );
+    expect(formatRecap(r).markdown).toContain(`${line}\n\nTurnout:`);
+    expect(formatRecap({ ...specialRecap, thrown_out: r.thrown_out }).text).toContain(line);
+    for (const text of allStrings(Object.values(formatRecap(r)))) {
+      expect(text).not.toMatch(OUTSIDER_BANNED);
+      expect(text).not.toMatch(BANNED_WORDS);
+    }
+  });
 });

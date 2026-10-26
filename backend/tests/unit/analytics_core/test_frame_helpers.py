@@ -188,3 +188,37 @@ def test_calendar_from_events_marks_every_sunday_regular_with_fifty_targets(
     assert out["kind"].tolist() == ["regular", "regular"]
     assert out["label"].tolist() == [None, None]
     assert out["target_total"].tolist() == [50, 50]
+
+
+D18 = date(2026, 10, 18)
+D25 = date(2026, 10, 25)
+
+
+def test_stat_rounds_leaves_out_rounds_of_a_thrown_out_sunday(
+    make_rounds: Callable[..., pd.DataFrame],
+) -> None:
+    rounds = make_rounds([(D18, 1, 40), (D18, 2, 30), (D25, 1, 45), (D25, 2, 31)])
+    assert rounds["stats_excluded"].tolist() == [False] * 4
+    rounds["stats_excluded"] = rounds["event_date"].eq(D25)
+    assert frames.stat_rounds(rounds)[["event_date", "score"]].values.tolist() == [
+        [D18, 40],
+        [D18, 30],
+    ]
+    assert len(frames.stat_rounds(rounds.assign(stats_excluded=math.nan))) == 4
+    assert len(frames.stat_rounds(rounds.drop(columns="stats_excluded"))) == 4
+
+
+def test_stat_events_and_live_station_hits(make_events: Callable[..., pd.DataFrame]) -> None:
+    events = make_events([D18, {"event_date": D25, "stats_excluded": True}])
+    assert frames.stat_events(events)["event_date"].tolist() == [D18]
+    hits = pd.DataFrame({"station_label": ["10", "11"], "hits": [5, 7], "dropped": [False, True]})
+    assert frames.live_station_hits(hits)["station_label"].tolist() == ["10"]
+
+
+def test_calendar_from_events_defaults_stats_excluded(
+    make_events: Callable[..., pd.DataFrame],
+) -> None:
+    plain = make_events([D18]).drop(columns="stats_excluded")
+    assert frames.calendar_from_events(plain)["stats_excluded"].tolist() == [False]
+    flagged = make_events([{"event_date": D25, "stats_excluded": True}])
+    assert frames.calendar_from_events(flagged)["stats_excluded"].tolist() == [True]

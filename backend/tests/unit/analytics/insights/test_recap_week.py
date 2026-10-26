@@ -10,6 +10,7 @@ from typing import Any
 from sunday_clays.analytics.insights import registry
 from sunday_clays.analytics.insights.store import InsightRow
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Slot,
     Word,
     plain,
@@ -112,6 +113,18 @@ def sundays(n: int) -> list[date]:
 
 def picks(rows: list[InsightRow], held: list[date], day: date) -> list[str]:
     return [x.type for x in week_picks(rows, held, day, no_supersedes)]
+
+
+COUNT_KINDS = frozenset({"pf.shooter-anniversary", "pf.sunday-milestone"})
+
+
+def test_every_email_score_kind_leaves_thrown_out_sundays_out() -> None:
+    for kind_id, variants in ELIGIBLE.items():
+        kind = registry.get(kind_id)
+        for v in variants - {"rollup"}:
+            assert kind_id in COUNT_KINDS or THROWN_OUT_ROUNDS_HOW in (
+                kind.how.get(v) or kind.how[""]
+            ), (kind_id, v)
 
 
 # --- eligibility ----------------------------------------------------------------------------------

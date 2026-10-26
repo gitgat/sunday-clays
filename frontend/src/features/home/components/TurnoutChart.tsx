@@ -2,6 +2,7 @@ import type { EChartsOption } from 'echarts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { barOption } from '../../../components/charts/builders/bar';
+import { THROWN_OUT_COLUMN, thrownOutCell } from '../../../components/charts/builders/thrownOut';
 import { ChartFrame } from '../../../components/charts/ChartFrame';
 import type { ChartFullQuery, TabularData } from '../../../components/charts/types';
 import { api, unwrap } from '../../../api/client';
@@ -17,11 +18,16 @@ export function turnoutModel(events: EventSummary[]): TabularData & { option: EC
   const columns: TabularData['columns'] = [
     { key: 'event_date', label: 'Date', type: 'date' },
     { key: 'shooters', label: 'People', type: 'int' },
+    THROWN_OUT_COLUMN,
   ];
   const rows = events
     .filter((e) => e.has_scores)
     .sort((a, b) => a.event_date.localeCompare(b.event_date))
-    .map((e) => ({ event_date: e.event_date, shooters: turnout(e) }));
+    .map((e) => ({
+      event_date: e.event_date,
+      shooters: turnout(e),
+      thrown_out: thrownOutCell(e.stats_excluded),
+    }));
   return {
     columns,
     rows,

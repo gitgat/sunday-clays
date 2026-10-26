@@ -1,5 +1,6 @@
 import type { EventDetail } from '../../events/api';
 import { isSpecial, roundTypeLabel, specialLine, targetsOf } from '../../events/format';
+import { thrownOutPhrase } from '../../events/thrownOut';
 import { formatFullDay } from '../format';
 
 export const TOP_RESULTS = 5;
@@ -16,6 +17,7 @@ export function EventShareCard({ event }: { event: EventDetail }) {
     )
     .sort((a, b) => a.rank - b.rank || a.display_name.localeCompare(b.display_name))
     .slice(0, TOP_RESULTS);
+  const star = event.stats_excluded ? '*' : '';
   return (
     <article className="flex flex-col gap-2 rounded-card bg-surface p-4 text-text">
       <p className="text-sm text-accent">Sunday Clays</p>
@@ -24,7 +26,7 @@ export function EventShareCard({ event }: { event: EventDetail }) {
         <>
           <p className="text-text-muted">
             {roundTypeLabel(event.round_type)} · {event.n_shooters} shooters
-            {event.median === null ? '' : ` · median ${event.median}`}
+            {event.median === null ? '' : ` · median ${event.median}${star}`}
           </p>
           <ol className="flex flex-col gap-1">
             {top.map((r) => (
@@ -32,10 +34,13 @@ export function EventShareCard({ event }: { event: EventDetail }) {
                 <span>
                   {r.rank}. {r.display_name}
                 </span>
-                <span className="font-medium">{r.score}</span>
+                <span className="font-medium">{`${r.score}${star}`}</span>
               </li>
             ))}
           </ol>
+          {event.stats_excluded && (
+            <p className="text-xs text-text-muted">{`* ${thrownOutPhrase(event.thrown_out)}.`}</p>
+          )}
         </>
       ) : (
         <p>
@@ -53,10 +58,7 @@ function SpecialShareCard({ event }: { event: EventDetail }) {
   const total = targetsOf(event);
   const top = event.results
     .filter((r) => r.is_best_round)
-    .sort(
-      (a, b) =>
-        b.score - a.score || a.display_name.localeCompare(b.display_name) || a.ordinal - b.ordinal,
-    )
+    .sort((a, b) => b.score - a.score || a.display_name.localeCompare(b.display_name))
     .slice(0, TOP_RESULTS);
   return (
     <article className="flex flex-col gap-2 rounded-card bg-surface p-4 text-text">

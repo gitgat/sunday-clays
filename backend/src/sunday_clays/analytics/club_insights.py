@@ -8,6 +8,8 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from sunday_clays.analytics import frames
+
 REGULAR_WINDOW = timedelta(days=364)
 REGULAR_SHARE = 0.5
 LAPSED_LOOKBACK = timedelta(days=180)
@@ -73,8 +75,9 @@ class EventTrend:
     top_score: int
     median: float
     difficulty: float | None
-    top_score_rolling8: float
-    median_rolling8: float
+    stats_excluded: bool
+    top_score_rolling8: float | None
+    median_rolling8: float | None
     difficulty_rolling8: float | None
 
 
@@ -276,20 +279,28 @@ def event_trends(events: pd.DataFrame, as_of: date) -> list[EventTrend]:
     held = (
         _held_events(events, as_of).dropna(subset=["top_score", "median"]).sort_values("event_date")
     )
+    # A thrown-out Sunday stays on the chart but out of every rolling mean (its row is None).
+    excluded = held["stats_excluded"].eq(True)
     rolling = (
-        held[["top_score", "median", "difficulty"]].rolling(ROLLING_EVENTS, min_periods=1).mean()
+        frames.stat_events(held)[["top_score", "median", "difficulty"]]
+        .rolling(ROLLING_EVENTS, min_periods=1)
+        .mean()
+        .reindex(held.index)
     )
     out = []
-    for (_, e), (_, r) in zip(held.iterrows(), rolling.iterrows(), strict=True):
+    for (_, e), (_, r), skip in zip(held.iterrows(), rolling.iterrows(), excluded, strict=True):
         out.append(
             EventTrend(
                 event_date=e["event_date"],
                 top_score=int(e["top_score"]),
                 median=float(e["median"]),
                 difficulty=None if pd.isna(e["difficulty"]) else float(e["difficulty"]),
-                top_score_rolling8=float(r["top_score"]),
-                median_rolling8=float(r["median"]),
-                difficulty_rolling8=None if pd.isna(r["difficulty"]) else float(r["difficulty"]),
+                stats_excluded=bool(skip),
+                top_score_rolling8=None if skip else float(r["top_score"]),
+                median_rolling8=None if skip else float(r["median"]),
+                difficulty_rolling8=None
+                if skip or pd.isna(r["difficulty"])
+                else float(r["difficulty"]),
             )
         )
     return out
@@ -302,7 +313,7 @@ def seasonality(events: pd.DataFrame, as_of: date) -> list[MonthTrend]:
     for month in range(1, 13):
         in_month = held.loc[[d.month == month for d in held["event_date"]]]
         heads = in_month["head_count"].dropna()
-        medians = in_month["median"].dropna()
+        medians = frames.stat_events(in_month)["median"].dropna()
         out.append(
             MonthTrend(
                 month=month,

@@ -135,3 +135,12 @@ def test_fx_row_counts_match_the_live_tables(fx_session: Session) -> None:
     assert len(rounds) == 7480  # every live round: the shooter_profiles join drops none
     assert int(rounds["held"].sum()) == 7473
     assert len(frames.load_events(fx_session)) == 360
+
+
+def test_load_rounds_reads_stats_excluded(seed: Any, session: Session) -> None:
+    ann = seed.shooter("Oakley, Ann")
+    seed.event(date(2026, 10, 25), stats_excluded=True)
+    seed.round(date(2026, 10, 25), ann, 40)
+    seed.round(date(2026, 11, 1), ann, 38)
+    seed.finish()
+    assert frames.load_rounds(session)["stats_excluded"].tolist() == [True, False]

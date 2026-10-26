@@ -60,6 +60,7 @@ _EVENT_NUMERIC: Final[tuple[str, ...]] = (
 )
 _WEATHER_EVENTS_SQL: Final = """
 SELECT e.event_date, e.round_type, e.head_count, e.has_scores, e.results_complete,
+       e.stats_excluded,
        m.n, m.median, m.mean, m.top_score, m.difficulty,
        w.temp_f, w.apparent_f, w.precip_in, w.wind_mph, w.gust_mph, w.wind_dir_deg,
        w.cloud_pct, w.humidity_pct, w.pressure_hpa, w.condition
@@ -75,6 +76,7 @@ _EVENT_COLUMNS: Final[tuple[str, ...]] = (
     "head_count",
     "has_scores",
     "results_complete",
+    "stats_excluded",
     "n",
     "median",
     "mean",
@@ -157,6 +159,7 @@ class WeatherEvent:
     round_type: str
     head_count: int | None
     has_scores: bool
+    stats_excluded: bool
     n_rounds: int
     median: float | None
     mean: float | None
@@ -216,7 +219,7 @@ def fit_club_model(
     Returns None when there are no more events than parameters or the design is rank-deficient
     (for example a covariate that never varies), so callers can fall back.
     """
-    data = events.dropna(subset=["difficulty", "n", *covariates])
+    data = frames.stat_events(events).dropna(subset=["difficulty", "n", *covariates])
     data = data[data["n"].astype(float) > 0]
     n_events, n_params = len(data), len(covariates) + 1
     if n_events <= n_params:
@@ -262,7 +265,7 @@ def _groups(frame: pd.DataFrame, dimension: str) -> list[tuple[str, pd.DataFrame
 
 def band_summary(events: pd.DataFrame, rounds: pd.DataFrame) -> tuple[BandStat, ...]:
     """Per weather band: scored events, their rounds, mean score and mean published difficulty."""
-    scored = events[events["has_scores"].astype(bool)]
+    scored = frames.stat_events(events[events["has_scores"].astype(bool)])
     scores = rounds[["event_date", "score"]]
     stats: list[BandStat] = []
     for dimension in BAND_DIMENSIONS:
@@ -353,7 +356,7 @@ def fit_shooter(rows: pd.DataFrame, scales: Sequence[ZScale]) -> dict[str, tuple
 def shooter_sensitivity(rounds: pd.DataFrame, scales: Sequence[ZScale]) -> Sensitivity:
     """Per-shooter weather sensitivity of residuals, shrunk toward 0 per covariate."""
     needed = ["residual", *SENSITIVITY_COVARIATES]
-    usable = rounds.dropna(subset=needed).copy()
+    usable = frames.stat_rounds(rounds).dropna(subset=needed).copy()
     usable["precip_in"] = usable["precip_in"].astype(float).round(3)
     fits: list[tuple[int, str, int, dict[str, tuple[float, float]]]] = []
     for _, group in usable.groupby("shooter_id", sort=True):
@@ -400,6 +403,7 @@ def weather_event_rows(events: pd.DataFrame, rounds: pd.DataFrame) -> tuple[Weat
                 round_type=str(rec["round_type"]),
                 head_count=_opt_int(rec["head_count"]),
                 has_scores=bool(rec["has_scores"]),
+                stats_excluded=bool(rec["stats_excluded"]),
                 n_rounds=int(counts.get(day, 0)),
                 median=_opt_float(rec["median"]),
                 mean=_opt_float(rec["mean"]),
@@ -436,6 +440,7 @@ def load_weather_events(session: Session) -> pd.DataFrame:
         events[name] = pd.to_numeric(events[name], errors="coerce").astype(float)
     events["event_date"] = _as_dates(events["event_date"])
     events["has_scores"] = events["has_scores"].astype(bool)
+    events["stats_excluded"] = events["stats_excluded"].eq(True)
     return with_bands(events)
 
 

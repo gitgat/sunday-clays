@@ -90,6 +90,7 @@ class CtxBuilder:
         entry_row: int,
         target_count: int = 7,
         round_id: int | None = None,
+        dropped: bool = False,
     ) -> CtxBuilder:
         self._stations.append(
             {
@@ -102,6 +103,7 @@ class CtxBuilder:
                 "shooter_id": shooter_id,
                 "round_id": round_id,
                 "hits": hits,
+                "dropped": dropped,
             }
         )
         return self
@@ -164,6 +166,7 @@ class CtxBuilder:
                 event_date=day,
                 round_type="sporting",
                 round_type_source="none",
+                stats_excluded=False,
                 n_rounds=n,
                 n_shooters=n,
                 has_scores=True,
@@ -196,6 +199,7 @@ class CtxBuilder:
                     "has_stations": any(s["event_date"] == day for s in self._stations),
                     "results_complete": bool(same_day),
                     "condition": None,
+                    "stats_excluded": False,
                 }
             )
             row.update(self._events.get(day, {}))
@@ -223,6 +227,7 @@ class CtxBuilder:
                 "event_rank": np.nan,
                 "is_best_round": False,
                 "held": bool(by_date.at[day, "results_complete"]),
+                "stats_excluded": bool(by_date.at[day, "stats_excluded"]),
             }
             row.update(dict.fromkeys(_METRICS, np.nan))
             row.update({key: by_date.at[day, key] for key in _WEATHER})

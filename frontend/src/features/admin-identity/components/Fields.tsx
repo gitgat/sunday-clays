@@ -73,3 +73,9 @@ export const ROUND_TYPE_OPTIONS = [
   { value: 'sporting', label: 'Sporting' },
   { value: 'super_sporting', label: 'Super Sporting' },
 ];
+
+export const DROPPED_OPTIONS = [
+  { value: '', label: 'Choose…' },
+  { value: 'yes', label: 'Thrown out' },
+  { value: 'no', label: 'Not thrown out' },
+];

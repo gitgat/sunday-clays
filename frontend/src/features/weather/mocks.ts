@@ -7,6 +7,7 @@ function event(overrides: Partial<WeatherEvent>): WeatherEvent {
     round_type: 'super_sporting',
     head_count: 13,
     has_scores: true,
+    stats_excluded: false,
     n_rounds: 13,
     median: 34,
     mean: 34.46,

@@ -1,6 +1,7 @@
 import type { EChartsOption } from 'echarts';
 import { colors } from '../../../theme/tokens';
 import type { TabularData } from '../types';
+import { SUNDAY_THROWN_OUT } from '../../../features/events/thrownOut';
 import { GRID, NAME_BELOW, escapeHtml, numeric, requireColumn } from './common';
 
 export interface SundayCalendarOpts {
@@ -10,6 +11,8 @@ export interface SundayCalendarOpts {
   value: string;
   /** 'shot', 'missed' (the club held a shoot and they did not) or 'special' (a special shoot they came to). */
   state: string;
+  /** Optional column that is 'yes' on a Sunday with a station thrown out. */
+  thrownOut?: string;
   year: number;
   min?: number;
   max?: number;
@@ -33,10 +36,15 @@ const SPECIAL = -3;
 interface CellItem {
   value: [number, number, number];
   date: string;
+  thrownOut?: true;
 }
 
-function cell(date: string, score: number): CellItem {
-  return { value: [sundayOfMonth(date) - 1, Number(date.slice(5, 7)) - 1, score], date };
+function cell(date: string, score: number, thrownOut = false): CellItem {
+  const base: CellItem = {
+    value: [sundayOfMonth(date) - 1, Number(date.slice(5, 7)) - 1, score],
+    date,
+  };
+  return thrownOut ? { ...base, thrownOut: true } : base;
 }
 
 /**
@@ -48,6 +56,8 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
   const dateKey = requireColumn(data, opts.date).key;
   const valueKey = requireColumn(data, opts.value).key;
   const stateKey = requireColumn(data, opts.state).key;
+  const thrownOutKey =
+    opts.thrownOut === undefined ? null : requireColumn(data, opts.thrownOut).key;
   const prefix = `${opts.year}-`;
   const shot: CellItem[] = [];
   const missed: CellItem[] = [];
@@ -57,7 +67,8 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
     if (typeof date !== 'string' || !date.startsWith(prefix)) continue;
     const state = row[stateKey];
     const score = numeric(row[valueKey]);
-    if (state === 'shot' && score !== null) shot.push(cell(date, score));
+    if (state === 'shot' && score !== null)
+      shot.push(cell(date, score, thrownOutKey !== null && row[thrownOutKey] === 'yes'));
     else if (state === 'missed') missed.push(cell(date, MISSED));
     else if (state === 'special') special.push(cell(date, SPECIAL));
   }
@@ -69,7 +80,10 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
       formatter: (params: unknown) => {
         const { seriesName, data: item } = params as { seriesName: string; data: CellItem };
         const head = `Sunday ${escapeHtml(item.date)}`;
-        if (seriesName === 'Shot') return `${head}<br/>Best score: ${escapeHtml(item.value[2])}`;
+        if (seriesName === 'Shot') {
+          const body = `${head}<br/>Best score: ${escapeHtml(item.value[2])}`;
+          return item.thrownOut ? `${body} *<br/>${SUNDAY_THROWN_OUT}` : body;
+        }
         if (seriesName === 'Special') return `${head}<br/>Special shoot, counts as a Sunday shot`;
         return `${head}<br/>Held, not shot`;
       },
@@ -124,7 +138,10 @@ export function sundayCalendarOption(data: TabularData, opts: SundayCalendarOpts
         itemStyle: { borderColor: colors.elevated, borderWidth: 2 },
         label: {
           show: true,
-          formatter: (p: unknown) => String((p as { value: number[] }).value[2]),
+          formatter: (p: unknown) => {
+            const { value, data: item } = p as { value: number[]; data?: CellItem };
+            return `${String(value[2])}${item?.thrownOut ? '*' : ''}`;
+          },
         },
         emphasis: { itemStyle: { borderColor: colors.text, borderWidth: 1 } },
       },

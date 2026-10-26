@@ -37,6 +37,7 @@ from sunday_clays.domain.rules import (
     load_active_rules,
 )
 from sunday_clays.domain.station_link import LinkRound, StationEntry, link_station_entries
+from sunday_clays.domain.thrown_out import ThrownOut, detect_thrown_out
 from sunday_clays.ingest.types import Finding, StationLayoutEntry
 from sunday_clays.models import (
     AppState,
@@ -118,10 +119,27 @@ def rebuild_live(session: Session) -> RebuildReport:
         )
     )
     layouts = _station_layouts(session, sources)
+    station_hits = _staged_station_hits(session, sources)
+    target_counts = {
+        (d, entry.label): entry.target_count
+        for d, entries in layouts.items()
+        for entry, _ in entries
+    }
+    thrown_out = detect_thrown_out(
+        station_hits, target_counts, rules.station_drops, specials.keys()
+    )
+    overridden = {
+        (d, label)
+        for (d, label) in rules.station_drops
+        if label is not None and d not in specials and (d, label) in target_counts
+    }
     attendance = load_staged_attendance(session, active_id)
-    n_events = _write_events(session, rounds, attendance, layouts, rules, issues, specials)
+    n_events = _write_events(
+        session, rounds, attendance, layouts, rules, issues, specials, thrown_out
+    )
     _write_rounds(session, rounds)
-    _write_station_data(session, sources, layouts, issues)
+    _write_station_data(session, sources, layouts, issues, thrown_out, overridden)
+    issues.extend(_thrown_out_issues(thrown_out, station_hits))
     n_profiles = _write_profiles(session, rounds, rules, merges, specials.keys())
     _note_merged_same_day(rounds, issues)
     session.add_all(issues)
@@ -341,6 +359,54 @@ def _station_layouts(
     return layouts
 
 
+def _staged_station_hits(
+    session: Session, sources: Mapping[date, int]
+) -> dict[tuple[date, str], list[int]]:
+    """Every station entry's hits per (date, station label), linked to a round or not.
+
+    These are entries, not shooters: a second-round row is its own entry.
+    """
+    sheet_dates = {sheet_id: d for d, sheet_id in sources.items()}
+    found: dict[tuple[date, str], list[int]] = defaultdict(list)
+    rows = session.execute(
+        select(ImportStationHit.sheet_id, ImportStationHit.station_label, ImportStationHit.hits)
+        .where(ImportStationHit.sheet_id.in_(list(sheet_dates)))
+        .order_by(
+            ImportStationHit.sheet_id,
+            ImportStationHit.row_number,
+            ImportStationHit.station_no,
+            ImportStationHit.station_label,
+        )
+    )
+    for sheet_id, label, value in rows:
+        found[(sheet_dates[sheet_id], label)].append(value)
+    return dict(found)
+
+
+def _thrown_out_issues(
+    thrown_out: Mapping[date, tuple[ThrownOut, ...]], hits: Mapping[tuple[date, str], list[int]]
+) -> list[DataIssue]:
+    return [
+        DataIssue(
+            code="station_thrown_out",
+            severity="info",
+            event_date=d,
+            message=(
+                f"Station {item.station_label} on {d} looks thrown out (every shooter perfect)."
+                " It's marked * and left out of stats. Override in Rules if that's wrong."
+            ),
+            details={
+                "station_label": item.station_label,
+                "n_entries": len(hits[(d, str(item.station_label))]),
+                "target_count": item.target_count,
+            },
+        )
+        for d, items in thrown_out.items()
+        for item in items
+        if item.source == "auto" and item.station_label is not None
+    ]
+
+
 def _write_events(
     session: Session,
     rounds: list[_LiveRound],
@@ -349,8 +415,10 @@ def _write_events(
     rules: ActiveRules,
     issues: list[DataIssue],
     specials: Mapping[date, SpecialSource] | None = None,
+    thrown_out: Mapping[date, tuple[ThrownOut, ...]] | None = None,
 ) -> int:
     specials = specials or {}
+    excluded = thrown_out or {}
     n_rounds: dict[date, int] = defaultdict(int)
     shooters: dict[date, set[int]] = defaultdict(set)
     for rnd in rounds:
@@ -386,6 +454,7 @@ def _write_events(
                 "kind": "regular" if special is None else "special",
                 "label": None if special is None else special.label,
                 "target_total": REGULAR_TARGETS if special is None else special.target_total,
+                "stats_excluded": d in excluded,
             }
         )
         if has_scores and not complete:
@@ -410,6 +479,34 @@ def _write_events(
                         "rule_id": rule_id,
                         "event_date": d.isoformat(),
                         "round_type": round_type.value,
+                    },
+                )
+            )
+    for (d, label), (rule_id, dropped) in sorted(
+        rules.station_drops.items(), key=lambda kv: (kv[0][0], kv[0][1] or "")
+    ):
+        if label is not None:
+            labels = {entry.label for entry, _ in layouts.get(d, [])}
+            missing = d in specials or label not in labels
+            message = (
+                f"Rule {rule_id} targets Station {label} on {d},"
+                " which has no such station on a regular Sunday"
+            )
+        else:
+            missing = d in specials or d not in event_dates
+            message = f"Rule {rule_id} marks {d} as thrown out, which has no regular Sunday"
+        if missing:
+            issues.append(
+                DataIssue(
+                    code="rule_target_missing",
+                    severity="warning",
+                    event_date=d,
+                    message=message,
+                    details={
+                        "rule_id": rule_id,
+                        "event_date": d.isoformat(),
+                        "station_label": label,
+                        "dropped": dropped,
                     },
                 )
             )
@@ -444,11 +541,19 @@ def _write_station_data(
     sources: dict[date, int],
     layouts: dict[date, list[tuple[StationLayoutEntry, int]]],
     issues: list[DataIssue],
+    thrown_out: Mapping[date, tuple[ThrownOut, ...]] | None = None,
+    overridden: AbstractSet[tuple[date, str]] = frozenset(),
 ) -> None:
     if not sources:
         return
+    on = {
+        (d, item.station_label)
+        for d, items in (thrown_out or {}).items()
+        for item in items
+        if item.station_label is not None
+    }
     session.execute(
-        insert(StationLayout),
+        insert(StationLayout).execution_options(render_nulls=True),
         [
             {
                 "event_date": d,
@@ -456,6 +561,14 @@ def _write_station_data(
                 "station_label": entry.label,
                 "target_count": entry.target_count,
                 "source_import_id": import_id,
+                "dropped": (d, entry.label) in on,
+                "dropped_source": (
+                    "override"
+                    if (d, entry.label) in overridden
+                    else "auto"
+                    if (d, entry.label) in on
+                    else None
+                ),
             }
             for d, entries in sorted(layouts.items())
             for entry, import_id in entries

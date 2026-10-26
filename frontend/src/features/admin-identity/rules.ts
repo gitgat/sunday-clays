@@ -1,6 +1,6 @@
 import type { ShooterOption } from '../admin/api';
 
-/** The eight C5 RuleType values, in form order. */
+/** The nine C5 RuleType values, in form order. */
 export const RULE_TYPES = [
   'merge_shooter',
   'rename_shooter',
@@ -9,6 +9,7 @@ export const RULE_TYPES = [
   'round_type_override',
   'set_status',
   'station_reset',
+  'station_drop',
   'alias_name',
 ] as const;
 export type RuleType = (typeof RULE_TYPES)[number];
@@ -21,6 +22,7 @@ export const RULE_LABELS: Record<RuleType, string> = {
   round_type_override: 'Set an event’s round type',
   set_status: 'Set a shooter’s status',
   station_reset: 'Log a station reset',
+  station_drop: 'Thrown-out station',
   alias_name: 'Alias a name to a shooter',
 };
 
@@ -46,6 +48,7 @@ export type RuleFields = {
   effectiveDate: string;
   resetNote: string;
   nameKey: string;
+  dropped: string;
 };
 
 export const EMPTY_FIELDS: RuleFields = {
@@ -62,6 +65,7 @@ export const EMPTY_FIELDS: RuleFields = {
   effectiveDate: '',
   resetNote: '',
   nameKey: '',
+  dropped: '',
 };
 
 const roundTarget = (r: RoundRef) => ({
@@ -80,11 +84,10 @@ export function stationLabel(input: string): string | null {
   return number >= 1 ? `${String(number)}${match[2] as string}` : null;
 }
 
+export type RulePayload = Record<string, string | number | boolean | null>;
+
 /** The C5 payload for `type`, or null while a required field is missing or invalid. */
-export function buildRulePayload(
-  type: RuleType,
-  f: RuleFields,
-): Record<string, string | number> | null {
+export function buildRulePayload(type: RuleType, f: RuleFields): RulePayload | null {
   switch (type) {
     case 'merge_shooter':
       return f.source !== null && f.target !== null && f.source.shooter_id !== f.target.shooter_id
@@ -119,6 +122,14 @@ export function buildRulePayload(
       return station !== null && f.effectiveDate !== '' && f.resetNote.trim() !== ''
         ? { station, effective_date: f.effectiveDate, note: f.resetNote.trim() }
         : null;
+    }
+    case 'station_drop': {
+      const blank = f.stationNo.trim() === '';
+      const label = blank ? null : stationLabel(f.stationNo);
+      if (f.eventDate === '' || f.dropped === '') return null;
+      if (!blank && label === null) return null;
+      if (blank && f.dropped === 'no') return null;
+      return { event_date: f.eventDate, station_label: label, dropped: f.dropped === 'yes' };
     }
     case 'alias_name':
       return f.nameKey.trim() !== '' && f.shooter !== null

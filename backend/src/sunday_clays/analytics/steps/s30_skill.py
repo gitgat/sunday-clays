@@ -73,14 +73,15 @@ def run(session: Session) -> None:
     Calibration scores only held events after the burn-in. With no such event (empty
     DB, stations-only first import) every grid point ties at 0.0 and the first point
     wins, so that result is used for this run but never stored: the next run with
-    enough data calibrates for real.
+    enough data calibrates for real. Thrown-out Sundays are not counted.
     """
     clear_cache()
     rounds = frames.load_rounds(session)
     params = load_params(session)
     if params is None:
         params = skill.calibrate(rounds, skill.CALIBRATION_GRID)
-        if rounds.loc[rounds["held"], "event_date"].nunique() > skill.BURN_IN_HELD_EVENTS:
+        counted = rounds["held"] & ~rounds["stats_excluded"].eq(True)
+        if rounds.loc[counted, "event_date"].nunique() > skill.BURN_IN_HELD_EVENTS:
             store_state(session, "skill_params", asdict(params))
     result = skill.run_skill_model(rounds, params)
     if not result.rounds.empty:

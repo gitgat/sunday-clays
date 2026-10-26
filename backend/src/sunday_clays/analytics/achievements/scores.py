@@ -1,6 +1,7 @@
 """Scoring trophies (C12, Plan 10 T3): best-round tiers, comebacks and above-average runs.
 
-"Earlier" always means earlier dates (AchContext.shooter_days prior_* / prev_* columns)."""
+"Earlier" always means earlier dates (AchContext.shooter_days prior_* / prev_* columns). Scores
+read the score-only `*_s` prefixes, so a Sunday with a station thrown out is skipped."""
 
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ ABOVE_AVERAGE_RUN = 3
 
 def round_score_value(ctx: AchContext) -> pd.DataFrame:
     days = ctx.shooter_days
+    days = days[~days["stats_excluded"]]
     if days.empty:
         return empty_value_frame()
     best = days.groupby("shooter_id")["day_best"].cummax()
@@ -40,15 +42,16 @@ def round_score_value(ctx: AchContext) -> pd.DataFrame:
 def _comeback(ctx: AchContext) -> Iterator[Award]:
     days = ctx.shooter_days
     hits = days[
-        (days["prior_rounds"] >= COMEBACK_MIN_PRIOR_ROUNDS)
-        & (days["day_best"] >= days["prev_day_best"] + COMEBACK_MIN_GAIN)
+        ~days["stats_excluded"]
+        & (days["prior_rounds"] >= COMEBACK_MIN_PRIOR_ROUNDS)
+        & (days["day_best"] >= days["prev_day_best_s"] + COMEBACK_MIN_GAIN)
     ]
     for sid, day, rid, best, previous in zip(
         hits["shooter_id"],
         hits["event_date"],
         hits["best_round_id"],
         hits["day_best"],
-        hits["prev_day_best"],
+        hits["prev_day_best_s"],
         strict=True,
     ):
         yield Award(
@@ -58,10 +61,11 @@ def _comeback(ctx: AchContext) -> Iterator[Award]:
 
 def _above_average_3(ctx: AchContext) -> Iterator[Award]:
     days = ctx.shooter_days
+    days = days[~days["stats_excluded"]]
     if days.empty:
         return
     prior_rounds = days["prior_rounds"]
-    career_average = days["prior_sum"] / prior_rounds.where(prior_rounds > 0)
+    career_average = days["prior_sum_s"] / days["prior_n_s"].where(days["prior_n_s"] > 0)
     qualifies = (prior_rounds >= ABOVE_AVERAGE_MIN_PRIOR_ROUNDS) & (
         days["day_best"] > career_average
     )

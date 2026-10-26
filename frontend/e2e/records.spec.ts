@@ -190,9 +190,11 @@ test('a window with no rounds says so in plain words and widens to 12M in one ta
 test('the super sporting filter follows the API and stays on links', async ({ page }) => {
   const all = await fetchRecords(page);
   const records = await fetchRecords(page, { round_type: 'super_sporting' });
-  // Fixture facts (Plan 09 D22): the two super sporting Sundays have no 50 and a top score of 48.
+  // Fixture facts (Plan 09 D22): the two super sporting Sundays have no 50. The setup rule throws
+  // out Station 9 on 2026-09-06 (its top score of 48), so records leave that Sunday out and only
+  // 2026-09-13 counts, topping out at 42.
   expect(records.perfect_rounds).toHaveLength(0);
-  expect(records.highest_scores[0]?.value).toBe(48);
+  expect(records.highest_scores[0]?.value).toBe(42);
   await page.goto('/records?w=all&rt=super_sporting');
   const perfect = page.getByRole('region', { name: 'Perfect 50s' });
   await expect(perfect.getByText('None yet')).toBeVisible();

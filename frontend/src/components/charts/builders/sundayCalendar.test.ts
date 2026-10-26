@@ -200,3 +200,34 @@ describe('shotDateOf', () => {
     expect(shotDateOf({ seriesName: 'Special', data: { date: '2026-09-20' } })).toBe('2026-09-20');
   });
 });
+
+describe('thrown-out cells', () => {
+  it('stars a thrown-out shot cell and its tooltip', () => {
+    const data = {
+      columns: [
+        { key: 'd', label: 'Sunday', type: 'date' as const },
+        { key: 's', label: 'Best', type: 'int' as const },
+        { key: 'st', label: 'State', type: 'string' as const },
+        { key: 't', label: 'Thrown out', type: 'string' as const },
+      ],
+      rows: [{ d: '2025-11-09', s: 43, st: 'shot', t: 'yes' }],
+    };
+    const o = sundayCalendarOption(data, {
+      date: 'd',
+      value: 's',
+      state: 'st',
+      thrownOut: 't',
+      year: 2025,
+    });
+    const shot = (
+      o.series as { data: { thrownOut: boolean }[]; label: { formatter: (p: unknown) => string } }[]
+    )[0];
+    expect(shot?.label.formatter({ value: [1, 10, 43], data: shot.data[0] })).toBe('43*');
+    expect(
+      (o.tooltip as { formatter: (p: unknown) => string }).formatter({
+        seriesName: 'Shot',
+        data: shot?.data[0],
+      }),
+    ).toBe('Sunday 2025-11-09<br/>Best score: 43 *<br/>A station was thrown out this Sunday');
+  });
+});

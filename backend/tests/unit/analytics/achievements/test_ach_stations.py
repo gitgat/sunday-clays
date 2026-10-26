@@ -26,11 +26,18 @@ def with_stations(code, ctx):
     )
 
 
-def sheet(builder, day, entries):
+def sheet(builder, day, entries, dropped=frozenset()):
     """entries: [(shooter_id or None, {station_no: hits})]; every station has 7 targets."""
     for entry_row, (shooter_id, hits_by_station) in enumerate(entries, start=10):
         for station_no, hits in hits_by_station.items():
-            builder.station(shooter_id, day, station_no, hits, entry_row=entry_row)
+            builder.station(
+                shooter_id,
+                day,
+                station_no,
+                hits,
+                entry_row=entry_row,
+                dropped=str(station_no) in dropped,
+            )
     return builder
 
 
@@ -213,3 +220,31 @@ def test_a_lettered_station_is_cleaned_and_won_on_its_own(ctx_builder):
     assert with_stations("hardest_station_clean", ctx) == [(1, sun(0), ("7A",))]
     assert with_stations("station_top_gun", ctx) == [(1, sun(0), ("7", "7A", "8"))]
     assert awards("station_cleaner", ctx)[0][:2] == (1, "station_cleaner:1")
+
+
+def test_a_dropped_station_is_never_cleaned(ctx_builder):
+    ctx = sheet(ctx_builder(), sun(0), [(1, {4: 7, 6: 7})], dropped=frozenset({"6"})).build()
+    assert awards("station_cleaner", ctx) == [(1, "station_cleaner:1", sun(0))]
+    assert registry.get("station_cleaner").value(ctx)["value"].tolist() == [1.0]
+
+
+def test_the_hardest_station_is_picked_from_live_stations_only(ctx_builder):
+    ctx = sheet(
+        ctx_builder(),
+        sun(0),
+        [(1, {4: 7, 5: 7, 6: 0}), (2, {4: 6, 5: 7, 6: 7}), (3, {4: 5, 5: 6, 6: 0})],
+        dropped=frozenset({"6"}),
+    ).build()
+    assert with_stations("hardest_station_clean", ctx) == [(1, sun(0), ("4",))]
+
+
+def test_a_dropped_station_has_no_top_gun(ctx_builder):
+    entries = [
+        (1, {4: 6, 6: 7}),
+        (2, {4: 6, 6: 5}),
+        (3, {4: 6, 6: 5}),
+        (4, {4: 5, 6: 5}),
+        (5, {4: 5, 6: 5}),
+    ]
+    ctx = sheet(ctx_builder(), sun(0), entries, dropped=frozenset({"6"})).build()
+    assert awards("station_top_gun", ctx) == []

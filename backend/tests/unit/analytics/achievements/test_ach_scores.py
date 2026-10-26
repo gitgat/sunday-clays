@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import pandas as pd
 import pytest
 
 from sunday_clays.analytics.achievements import registry
@@ -85,12 +86,73 @@ def test_scoring_trophies_handle_an_empty_context(ctx_builder):
     assert awards("above_average_3", ctx) == []
 
 
+def excluded_round_score_ctx(b):
+    return (
+        b()
+        .event(sun(1), stats_excluded=True)
+        .round(1, sun(0), 38)
+        .round(1, sun(1), 50)
+        .round(1, sun(2), 41)
+        .round(2, sun(1), 50)
+        .build()
+    )
+
+
+def test_round_score_ignores_an_excluded_sunday(ctx_builder):
+    ctx = excluded_round_score_ctx(ctx_builder)
+    assert awards("round_score", ctx) == [
+        (1, "round_score:1", sun(0)),
+        (1, "round_score:2", sun(0)),
+        (1, "round_score:3", sun(2)),
+    ]
+    assert list(registry.get("round_score").value(ctx)["event_date"]) == [
+        pd.Timestamp(sun(0)),
+        pd.Timestamp(sun(2)),
+    ]
+    [item] = [p for p in registry.progress(ctx, 2, None) if p.code == "round_score"]
+    assert item.value == 0.0
+
+
+def excluded_comeback_ctx(b):
+    builder = b().event(sun(5), stats_excluded=True)
+    for i in range(5):
+        builder.round(1, sun(i), 30)
+    return builder.round(1, sun(5), 50).round(1, sun(6), 45).build()
+
+
+def test_comeback_skips_back_over_an_excluded_sunday(ctx_builder):
+    got = [
+        (w.event_date, w.round_id, dict(w.details))
+        for w in registry.evaluate_one(registry.get("comeback"), excluded_comeback_ctx(ctx_builder))
+    ]
+    assert got == [(sun(6), 7, {"best": 45, "previous_best": 30})]
+
+
+def excluded_above_ctx(b):
+    builder = b().event(sun(11), stats_excluded=True)
+    for sid in (1, 2):
+        for i in range(10):
+            builder.round(sid, sun(i), 30)
+    builder.round(1, sun(10), 31).round(1, sun(11), 20).round(1, sun(12), 32).round(1, sun(13), 33)
+    builder.round(2, sun(10), 31).round(2, sun(11), 50).round(2, sun(12), 32)
+    return builder.build()
+
+
+def test_above_average_run_skips_an_excluded_sunday_and_never_counts_it(ctx_builder):
+    assert awards("above_average_3", excluded_above_ctx(ctx_builder)) == [
+        (1, "above_average_3", sun(13))
+    ]
+
+
 @pytest.mark.parametrize(
     ("code", "scenario", "cut"),
     [
         ("round_score", round_score_ctx, sun(1)),
         ("comeback", comeback_ctx, sun(6)),
         ("above_average_3", above_ctx, sun(14)),
+        ("round_score", excluded_round_score_ctx, sun(1)),
+        ("comeback", excluded_comeback_ctx, sun(5)),
+        ("above_average_3", excluded_above_ctx, sun(12)),
     ],
     ids=lambda v: v if isinstance(v, str) else None,
 )

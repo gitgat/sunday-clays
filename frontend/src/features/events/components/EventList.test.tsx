@@ -2,11 +2,13 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
 import type { EventSummary } from '../api';
-import { eventSummaries } from '../mocks';
+import { eventSummaries, thrownOutSummary } from '../mocks';
 import { EventList, summaryLine } from './EventList';
 
 function summary(over: Partial<EventSummary>): EventSummary {
   return {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -23,7 +25,9 @@ function summary(over: Partial<EventSummary>): EventSummary {
     top_score: 42,
     difficulty: 2.1,
     condition: null,
-    winners: [{ shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 }],
+    winners: [
+      { stats_excluded: false, shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 },
+    ],
     ...over,
   };
 }
@@ -95,4 +99,14 @@ describe('EventList', () => {
       '/events/2026-09-13?rt=super_sporting',
     );
   });
+});
+
+it('stars a Sunday with a station thrown out, naming it for screen readers', () => {
+  renderWithProviders(<EventList year={2026} events={[thrownOutSummary]} />);
+  expect(
+    screen.getByRole('link', {
+      name: /Oct 25, 2026.*Station 10 was thrown out; everyone was credited 8\/8/,
+    }),
+  ).toBeInTheDocument();
+  expect(summaryLine(thrownOutSummary)).not.toContain('*');
 });

@@ -1,4 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
+import { THROWN_OUT_COUNTS, THROWN_OUT_ROUNDS } from '../../components/charts/thrownOutCopy';
 
 /**
  * Plain-language copy for the Sunday pages, keyed by chart urlKey or stat id. Written against
@@ -13,36 +14,41 @@ const explainers = {
       'Dashed means that Sunday was a different round type from your filter. Faded means nothing is on file.',
     ],
     computed: [
-      'One square per Sunday, plus any shoot on another day.',
+      'One square per Sunday, plus shoots on other days.',
       'Solid = at least one round was entered.',
-      'The year is set with the arrows at the top. A custom time window opens on the year it ends in.',
+      'Arrows at the top set the year; a custom time window opens on the year it ends in.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'year',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   stn: {
     what: 'The targets each shooter broke at each station on this Sunday. Only Sundays with a station sheet show it.',
     read: [
       'Rows are shooters, columns are stations. The colour bar shows which shade means more hits.',
       'A column that is low for everyone was a tough station.',
+      'A station thrown out that day is greyed, marked * and reads "credited".',
     ],
     computed: [
-      'Each cell is the targets broken at that station, straight from the station sheet.',
+      'Each cell is the targets broken at that station.',
       'It is a count, not a share: 4 of 5 and 4 of 10 look the same.',
       'Colours run from the lowest to the highest cell that day.',
     ],
+    terms: ['thrown-out-station'],
   },
   results: {
     what: 'Every round this Sunday, best score first.',
     read: [
       '"T3" is a tie for third; "R2" is a second round.',
-      '"Vs middle score" of +5.0 means 5 targets above the middle score that day.',
+      '+5.0 vs middle score means 5 targets above it.',
     ],
     computed: [
       'Ties share the higher place: two 47s are both T1, the next is 3rd.',
-      'Vs middle score = the round\'s score minus the middle score (median) of every round that day. "—" on partial-results Sundays.',
+      'Vs middle score = score minus the median of every round that day; "—" on partial results or with a station thrown out.',
       'Rating change = how far this Sunday moved the rating (skill estimate out of 50); "—" if ratings did not move.',
+      THROWN_OUT_COUNTS,
     ],
+    terms: ['thrown-out-station'],
   },
   shooters: {
     what: 'How many people have at least one recorded score this Sunday.',
@@ -64,24 +70,31 @@ const explainers = {
     computed: [
       'Every round that day counts, second rounds included.',
       'Rounds are sorted by score and the middle one is taken.',
+      THROWN_OUT_COUNTS,
     ],
+    terms: ['thrown-out-station'],
   },
   topScore: {
     what: 'The best single round this Sunday, out of 50.',
-    computed: ['The highest score among all rounds that day, second rounds included.'],
+    computed: [
+      'The highest score among all rounds that day, second rounds included.',
+      THROWN_OUT_COUNTS,
+    ],
+    terms: ['thrown-out-station'],
   },
   difficulty: {
-    what: 'How much harder or easier the course played than a typical Sunday of the past year, allowing for who showed up.',
+    what: 'How much harder or easier the course played than a typical recent Sunday, allowing for who came.',
     read: [
-      '+2.0 (harder) means shooters broke about 2 fewer targets than usual for them.',
-      'Negative is easier. 0.0 is typical. A low median with new shooters does not make a hard day.',
+      '+2.0 (harder) means about 2 fewer targets than usual.',
+      'Negative is easier; 0.0 is typical. New shooters alone do not make a hard day.',
     ],
     computed: [
       'Each shooter: average score that day minus rating going in. Gaps are averaged; settled shooters count more.',
       "Difficulty = the typical gap over the last 52 weeks of full-results Sundays, minus this Sunday's.",
-      'Small fields are pulled toward 0.0. "—" for partial results.',
+      'Small fields lean toward 0.0. "—" for partial results.',
+      THROWN_OUT_ROUNDS,
     ],
-    terms: ['difficulty'],
+    terms: ['difficulty', 'thrown-out-station'],
   },
   weather: {
     what: "Weather from 10:00 to 12:00, from a weather service's hourly records (not a gauge at the range).",
@@ -104,8 +117,9 @@ const explainers = {
       "Each figure is this Sunday's number minus the earlier Sunday's.",
       'The earlier Sunday is the latest one with full results, of any round type, however many weeks back.',
       '"—" when either Sunday lacks the number.',
+      THROWN_OUT_ROUNDS,
     ],
-    terms: ['difficulty', 'held-sunday', 'round-types'],
+    terms: ['difficulty', 'held-sunday', 'round-types', 'thrown-out-station'],
   },
   notables: {
     what: 'Other highlights from this Sunday. Personal bests and first-timers are in the insights at the top of the page.',

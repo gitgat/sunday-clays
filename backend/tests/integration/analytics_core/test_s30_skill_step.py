@@ -462,3 +462,28 @@ def test_fx_pipeline_calibrates_on_the_real_fixture(fx_session: Session) -> None
         )
     ).scalar_one()
     assert difficulty_mismatch == 0
+
+
+def test_s30_burn_in_does_not_count_a_thrown_out_sunday(
+    seed: Any, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_past_burn_in(seed, skill.BURN_IN_HELD_EVENTS + 1)
+    session.execute(
+        text("UPDATE events SET stats_excluded = true WHERE event_date = :d"), {"d": D2}
+    )
+    seed.bump()
+    monkeypatch.setattr(
+        skill,
+        "CALIBRATION_GRID",
+        {
+            "obs_var": (12.0,),
+            "drift_var_per_week": (0.05,),
+            "difficulty_var": (2.0,),
+            "prior_mu": (30.0,),
+            "prior_var": (49.0,),
+        },
+    )
+    s10_metrics.STEP.run(session)
+    s30_skill.STEP.run(session)
+    assert _stored_params(session) is None
+    assert _history_count(session) == 2 * (skill.BURN_IN_HELD_EVENTS + 1)

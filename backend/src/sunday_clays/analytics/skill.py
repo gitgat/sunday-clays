@@ -127,6 +127,11 @@ class _Collected:
     history: list[pd.DataFrame]
 
 
+def _excluded(group: pd.DataFrame) -> bool:
+    """True when the event's rounds carry stats_excluded=True (absent or NaN counts)."""
+    return "stats_excluded" in group.columns and bool(group["stats_excluded"].eq(True).iloc[0])
+
+
 def _prepare(rounds: pd.DataFrame) -> list[_Event]:
     """Group rounds by event; shooters ascending, rounds by (name_key, ordinal)."""
     ordered = rounds.sort_values(
@@ -141,7 +146,7 @@ def _prepare(rounds: pd.DataFrame) -> list[_Event]:
         events.append(
             _Event(
                 event_date=cast(date, event_date),
-                held=bool(group["held"].iloc[0]),
+                held=bool(group["held"].iloc[0]) and not _excluded(group),
                 round_ids=group["round_id"].to_numpy(dtype=np.int64),
                 scores=scores,
                 round_shooter=inverse.astype(np.int64),
@@ -265,7 +270,8 @@ def run_skill_model(rounds: pd.DataFrame, params: SkillParams = DEFAULT_PARAMS) 
 
     Required columns: round_id, event_date, shooter_id, name_key, ordinal, score, held.
     Held events update skills and difficulty; non-held events carry each attendee's
-    drift-inflated state forward (expected/residual/difficulty NaN).
+    drift-inflated state forward (expected/residual/difficulty NaN). An optional
+    `stats_excluded` column marks a thrown-out event, treated like a non-held one.
     """
     collected = _Collected(rounds=[], events=[], history=[])
     _, state, level = _run(_prepare(rounds), params, collected)

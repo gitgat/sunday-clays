@@ -77,6 +77,7 @@ def test_club_openapi_paths_and_response_schemas() -> None:
         "kind",
         "label",
         "target_total",
+        "stats_excluded",
     ]
     assert attendance["required"] == list(attendance["properties"])
     nested = {
@@ -192,6 +193,7 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "kind": "regular",
             "label": None,
             "target_total": 50,
+            "stats_excluded": False,
         },
         {
             "event_date": "2026-09-06",
@@ -203,6 +205,7 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "kind": "regular",
             "label": None,
             "target_total": 50,
+            "stats_excluded": False,
         },
         {
             "event_date": "2026-09-13",
@@ -214,6 +217,7 @@ def test_attendance_lists_every_event_with_head_count_and_rows(
             "kind": "regular",
             "label": None,
             "target_total": 50,
+            "stats_excluded": False,
         },
     ]
 
@@ -406,3 +410,24 @@ def test_club_fixture_goldens_beyond_counts(fx_viewer_client: TestClient) -> Non
     )
     assert first["mean"] == pytest.approx(33.7722, abs=1e-4)
     assert sum(first["counts"]) == 843
+
+
+def test_club_score_numbers_leave_out_a_thrown_out_sunday(
+    seed: Any, viewer_client: TestClient
+) -> None:
+    ike, amy = seed.shooter("Hadley, Ike"), seed.shooter("Ace, Amy")
+    seed.event(D3, stats_excluded=True)
+    for d, a, b in ((D2, 40, 30), (D3, 50, 48)):
+        seed.round(d, ike, a)
+        seed.round(d, amy, b)
+    seed.finish()
+    s = viewer_client.get("/api/club/summary").json()
+    assert (s["n_rounds"], s["clays_thrown"], s["clays_broken"]) == (4, 200, 168)
+    assert (s["avg_score"], s["median_score"], s["top_score"], s["n_perfect"]) == (
+        35.0,
+        35.0,
+        40,
+        0,
+    )
+    (year,) = viewer_client.get("/api/club/distribution").json()
+    assert (year["key"], year["n"], year["mean"], year["counts"][50]) == ("2026", 2, 35.0, 0)

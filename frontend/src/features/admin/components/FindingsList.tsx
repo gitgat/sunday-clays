@@ -7,6 +7,7 @@ const STATION_CODES = new Set([
   'station_score_mismatch',
   'station_name_unmatched',
   'station_round_ambiguous',
+  'station_dropped',
 ]);
 
 export type FindingGroup = { code: string; severity: string; items: Finding[] };

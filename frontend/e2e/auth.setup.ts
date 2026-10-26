@@ -61,6 +61,38 @@ async function seedFixtureImports(request: APIRequestContext): Promise<void> {
   }
 }
 
+interface RuleRow {
+  rule_type: string;
+  active: boolean;
+  payload: { event_date?: string };
+}
+
+const DROP_DAY = '2026-09-06';
+
+/** Forces Station 9 on 2026-09-06 to be thrown out: no fixture Sunday auto-detects. */
+async function ensureStationDrop(request: APIRequestContext): Promise<void> {
+  const listed = await request.get('/api/admin/rules');
+  expect(listed.status()).toBe(200);
+  const rules = (await listed.json()) as RuleRow[];
+  if (
+    rules.some(
+      (r) => r.active && r.rule_type === 'station_drop' && r.payload.event_date === DROP_DAY,
+    )
+  ) {
+    return;
+  }
+  const created = await request.post('/api/admin/rules', {
+    data: {
+      rule_type: 'station_drop',
+      payload: { event_date: DROP_DAY, station_label: '9', dropped: true },
+      note: 'e2e: thrown-out station',
+    },
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const { job_id: jobId } = (await created.json()) as { job_id: number };
+  await waitForJob(request, jobId);
+}
+
 setup('log in as viewer', async ({ request }) => {
   const response = await request.post('/api/auth/login', {
     data: { password: e2ePassword('viewer') },
@@ -79,4 +111,5 @@ setup('log in as admin and seed the fixture imports', async ({ request }) => {
   expect(await response.json()).toEqual({ role: 'admin' });
   await request.storageState({ path: ADMIN_STATE });
   await seedFixtureImports(request);
+  await ensureStationDrop(request);
 });

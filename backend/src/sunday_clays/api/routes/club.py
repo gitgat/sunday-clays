@@ -70,6 +70,7 @@ class AttendanceOut(BaseModel):
     kind: Literal["regular", "special"] = "regular"  # Plan 17
     label: str | None = None
     target_total: int = frames.REGULAR_TARGETS
+    stats_excluded: bool = False
 
 
 class RetentionOut(BaseModel):
@@ -175,6 +176,7 @@ def club_summary(
     shooters = seen.drop_duplicates("shooter_id")
     by_status = shooters["shooter_status"].value_counts()
     scores = rounds["score"]
+    scored_scores = frames.stat_rounds(rounds)["score"]
     return ClubSummaryOut(
         first_event=None if scored.empty else scored["event_date"].min(),
         last_event=None if scored.empty else scored["event_date"].max(),
@@ -183,10 +185,10 @@ def club_summary(
         n_held_events=int(calendar["results_complete"].sum()),
         n_rounds=len(rounds),
         n_shooters=len(shooters),
-        avg_score=None if rounds.empty else float(scores.mean()),
-        median_score=None if rounds.empty else float(scores.median()),
-        top_score=None if rounds.empty else int(scores.max()),
-        n_perfect=int((scores == TARGETS_PER_ROUND).sum()),
+        avg_score=None if scored_scores.empty else float(scored_scores.mean()),
+        median_score=None if scored_scores.empty else float(scored_scores.median()),
+        top_score=None if scored_scores.empty else int(scored_scores.max()),
+        n_perfect=int((scored_scores == TARGETS_PER_ROUND).sum()),
         clays_thrown=len(rounds) * TARGETS_PER_ROUND,
         clays_broken=int(scores.sum()),
         avg_head_count=opt_float(calendar["head_count"].mean()),
@@ -209,6 +211,7 @@ def club_attendance(session: SessionDep) -> list[AttendanceOut]:
             kind="special" if r["kind"] == frames.EVENT_KIND_SPECIAL else "regular",
             label=opt_str(r["label"]),
             target_total=int(r["target_total"]),
+            stats_excluded=bool(r["stats_excluded"]),
         )
         for r in rows(frames.load_calendar(session))
     ]
@@ -251,7 +254,7 @@ def club_distribution(
     """
     check_window(since, as_of)
     rounds = frames.apply_round_type_filter(frames.load_rounds(session), round_types)
-    return score_distribution(in_window(rounds, since, as_of))
+    return score_distribution(frames.stat_rounds(in_window(rounds, since, as_of)))
 
 
 @router.get("/api/club/first-rounds")

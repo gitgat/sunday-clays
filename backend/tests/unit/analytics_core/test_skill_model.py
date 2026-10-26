@@ -245,3 +245,29 @@ def test_skill_params_accepts_zero_drift_and_tiny_variances() -> None:
     )
     assert tiny.drift_var_per_week == 0.0
     assert tiny.prior_mu == -5.0  # prior_mu is a location, not validated
+
+
+def test_thrown_out_event_is_skipped_like_a_non_held_event(
+    make_rounds: Callable[..., pd.DataFrame],
+) -> None:
+    d2, d3 = D + timedelta(days=14), D + timedelta(days=28)
+    specs = [(D, 1, 35), (D, 2, 30), (d2, 1, 44), (d2, 2, 37), (d3, 1, 36), (d3, 2, 29)]
+    excluded = make_rounds(specs)
+    excluded["stats_excluded"] = excluded["event_date"].eq(d2)
+    not_held = make_rounds(specs)
+    not_held["held"] = not_held["event_date"].ne(d2)
+    got, want = run_skill_model(excluded), run_skill_model(not_held)
+    pd.testing.assert_frame_equal(got.rounds, want.rounds)
+    pd.testing.assert_frame_equal(got.events, want.events)
+    pd.testing.assert_frame_equal(got.history, want.history)
+    assert math.isnan(got.events.set_index("event_date").loc[d2, "difficulty"])
+
+
+def test_nan_stats_excluded_counts_the_event(  # guard: bool(nan) must not exclude
+    make_rounds: Callable[..., pd.DataFrame],
+) -> None:
+    rounds = make_rounds([(D, 1, 35), (D, 2, 30)])
+    pd.testing.assert_frame_equal(
+        run_skill_model(rounds.assign(stats_excluded=math.nan)).rounds,
+        run_skill_model(rounds).rounds,
+    )

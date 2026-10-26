@@ -189,8 +189,8 @@ def test_context_helpers(make_world, sun):
     assert fr.sunday(sun(50)) is None
     assert fr.held_between(sun(0), sun(2)) == 2
     assert fr.names[1] == "Pat Shooter1"
-    assert days[0].prior_mean is None
-    assert days[1].prior_mean == 30
+    assert days[0].prior_mean_s is None
+    assert days[1].prior_mean_s == 30
     assert [d.date for d in held_only(days)] == [sun(0), sun(1), sun(2)]
     assert shot_recently(days, sun(3))
     assert not shot_recently(days, sun(3) + timedelta(weeks=20))

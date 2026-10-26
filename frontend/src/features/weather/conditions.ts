@@ -38,10 +38,11 @@ function mean(values: (number | null)[]): number | null {
 /** Scored events only: mean field median and mean published difficulty. */
 export function summarize(events: WeatherEvent[]): ConditionSummary {
   const scored = events.filter((e) => e.has_scores);
+  const counted = scored.filter((e) => !e.stats_excluded);
   return {
     events: scored.length,
-    meanMedian: mean(scored.map((e) => e.median)),
-    meanDifficulty: mean(scored.map((e) => e.difficulty)),
+    meanMedian: mean(counted.map((e) => e.median)),
+    meanDifficulty: mean(counted.map((e) => e.difficulty)),
   };
 }
 

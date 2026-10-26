@@ -1,4 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
+import { THROWN_OUT_COUNTS, THROWN_OUT_ROUNDS } from '../../components/charts/thrownOutCopy';
 
 /** Plain-language copy for every chart and non-obvious stat in this feature (explainers/STYLE.md).
  * Keys are ChartFrame `urlKey`s or stat ids. */
@@ -53,15 +54,20 @@ export const explainers: Record<string, Explainer> = {
     computed: [
       'Bar = your total so far ÷ the next tier’s target.',
       'Each family counts its own thing (clays broken, Sundays attended, straight Sundays, best round), over all years.',
+      `Best round: ${THROWN_OUT_ROUNDS}`,
+      `Clays broken and Sundays attended: ${THROWN_OUT_COUNTS}`,
     ],
     scope: 'all-time',
+    terms: ['thrown-out-station'],
   },
   'next-trophy': {
     what: 'The three tiers you are closest to earning.',
     computed: [
       'Every tiered trophy you have not finished is scored as your total ÷ the next target.',
       'The three highest scores are shown, so the closest goal comes first.',
+      `Best-round trophies: ${THROWN_OUT_ROUNDS}`,
     ],
     scope: 'all-time',
+    terms: ['thrown-out-station'],
   },
 };

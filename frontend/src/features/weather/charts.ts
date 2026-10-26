@@ -8,7 +8,8 @@ import {
 } from 'echarts/components';
 import { use as registerECharts } from 'echarts/core';
 import { CONTAIN_AXES, CONTAIN_LABELS, NAME_BELOW } from '../../components/charts/builders/common';
-import type { TabularData } from '../../components/charts/types';
+import { THROWN_OUT_COLUMN, thrownOutCell } from '../../components/charts/builders/thrownOut';
+import type { TabularData, TabularRow } from '../../components/charts/types';
 import type {
   WeatherBand,
   WeatherEvent,
@@ -53,15 +54,28 @@ export function difficultyFitChart(
   covariate: ModelCovariate,
 ): ChartModel {
   const points = events.flatMap((e) =>
-    e.difficulty === null ? [] : [{ date: e.event_date, x: e[covariate], y: e.difficulty }],
+    e.difficulty === null || e.stats_excluded
+      ? []
+      : [{ date: e.event_date, x: e[covariate], y: e.difficulty }],
   );
+  // The table keeps every thrown-out Sunday, flagged, even though it is not a point.
+  const tableRows: TabularRow[] = events
+    .filter((e) => e.stats_excluded || e.difficulty !== null)
+    .sort((a, b) => a.event_date.localeCompare(b.event_date))
+    .map((e) => ({
+      event_date: e.event_date,
+      x: e[covariate],
+      difficulty: e.stats_excluded || e.difficulty === null ? null : round2(e.difficulty),
+      thrown_out: thrownOutCell(e.stats_excluded),
+    }));
   const data: TabularData = {
     columns: [
       { key: 'event_date', label: 'Event', type: 'date' },
       { key: 'x', label: COVARIATE_LABELS[covariate], type: 'number' },
       { key: 'difficulty', label: 'Difficulty', type: 'number' },
+      THROWN_OUT_COLUMN,
     ],
-    rows: points.map((p) => ({ event_date: p.date, x: p.x, difficulty: round2(p.y) })),
+    rows: tableRows,
   };
   const series: EChartsOption['series'] = [
     { type: 'scatter', name: 'Events', data: points.map((p) => [p.x, round2(p.y)]) },
@@ -99,7 +113,7 @@ export function difficultyFitChart(
 export function windRoseChart(events: WeatherEvent[]): ChartModel {
   const sums = new Map<string, { total: number; n: number }>();
   for (const e of events) {
-    if (e.wind_dir_deg === null || e.median === null) continue;
+    if (e.stats_excluded || e.wind_dir_deg === null || e.median === null) continue;
     const sector = compassSector(e.wind_dir_deg);
     const acc = sums.get(sector) ?? { total: 0, n: 0 };
     sums.set(sector, { total: acc.total + e.median, n: acc.n + 1 });

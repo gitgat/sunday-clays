@@ -130,3 +130,16 @@ def test_weather_trophies_skip_events_without_weather(ctx_builder):
 def test_no_leak(code, scenario, cut, ctx_builder, no_leak):
     _, after = no_leak(code, scenario(ctx_builder), cut)
     assert after > 0
+
+
+def test_mudder_is_not_awarded_on_an_excluded_sunday_but_rain_is(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .event(sun(0), precip_in=0.02, stats_excluded=True)
+        .event(sun(1), precip_in=0.5)
+        .round(1, sun(0), 45)
+        .round(1, sun(1), 41)
+        .build()
+    )
+    assert awards("mudder", ctx) == [(1, "mudder", sun(1))]
+    assert awards("rain", ctx) == [(1, "rain", sun(0))]

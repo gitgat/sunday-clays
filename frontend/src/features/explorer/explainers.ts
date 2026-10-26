@@ -1,4 +1,9 @@
-import type { Metric } from '../../components/charts/explore';
+import type { Agg, Metric } from '../../components/charts/explore';
+import {
+  THROWN_OUT_COUNTS,
+  THROWN_OUT_ROUNDS,
+  THROWN_OUT_STATION,
+} from '../../components/charts/thrownOutCopy';
 import type { Explainer } from '../../components/charts/types';
 import { mergeTerms } from '../glossary/terms';
 
@@ -112,9 +117,28 @@ export const METRIC_COPY: Record<Metric, MetricCopy> = {
   },
 };
 
-/** The Explorer result's explainer for one metric; `scope` says which dates it covers. */
-export function explorerExplainer(metric: Metric, scope: Explainer['scope']): Explainer {
+/** How each metric treats a Sunday with a station thrown out. */
+const EXPLORE_THROWN_OUT: Record<Metric, string> = {
+  score: THROWN_OUT_ROUNDS,
+  adjusted: THROWN_OUT_ROUNDS,
+  residual: THROWN_OUT_ROUNDS,
+  rating: THROWN_OUT_ROUNDS,
+  difficulty: THROWN_OUT_ROUNDS,
+  hit_pct: THROWN_OUT_STATION,
+  rounds: THROWN_OUT_COUNTS,
+  shooters: THROWN_OUT_COUNTS,
+  attendance: THROWN_OUT_COUNTS,
+  wins: THROWN_OUT_COUNTS,
+};
+
+/**
+ * The Explorer result's explainer for one metric; `scope` says which dates it covers. The engine treats
+ * score with the total aggregate as clays broken, a count, so it keeps thrown-out Sundays.
+ */
+export function explorerExplainer(metric: Metric, scope: Explainer['scope'], agg?: Agg): Explainer {
   const copy = METRIC_COPY[metric];
+  const thrownOut =
+    metric === 'score' && agg === 'sum' ? THROWN_OUT_COUNTS : EXPLORE_THROWN_OUT[metric];
   return {
     what: copy.what,
     read: [
@@ -123,6 +147,7 @@ export function explorerExplainer(metric: Metric, scope: Explainer['scope']): Ex
     ],
     computed: [
       ...copy.computed,
+      thrownOut,
       scope === 'windowed'
         ? 'On the page: only Sundays inside the time window at the top of the page (change it there). Fullscreen and the CSV download cover every Sunday.'
         : 'Every Sunday on record. Fullscreen and the CSV download can hold up to 5,000 rows.',
@@ -131,6 +156,7 @@ export function explorerExplainer(metric: Metric, scope: Explainer['scope']): Ex
     terms: mergeTerms(
       copy.terms,
       'round-types',
+      'thrown-out-station',
       ...(scope === 'windowed' ? (['time-window'] as const) : []),
     ),
     ...(scope === undefined ? {} : { scope }),

@@ -79,4 +79,18 @@ describe('OnThisDayCard', () => {
     renderWithProviders(<OnThisDayCard />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load On this day.');
   });
+
+  it('stars a past Sunday with a station thrown out', async () => {
+    const [first, ...rest] = ON_THIS_DAY.items;
+    server.use(
+      http.get('*/api/on-this-day', () =>
+        HttpResponse.json({
+          ...ON_THIS_DAY,
+          items: [{ ...first, stats_excluded: true }, ...rest],
+        }),
+      ),
+    );
+    renderWithProviders(<OnThisDayCard />);
+    expect(await screen.findByTitle('A station was thrown out this Sunday')).toBeInTheDocument();
+  });
 });

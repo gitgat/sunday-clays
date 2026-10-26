@@ -3,6 +3,8 @@ import { Link } from 'react-router';
 import { useExplicitWindow } from '../../../lib/timeWindowChoice';
 import { formatDay } from '../../shooters/format';
 import { Card } from '../../../components/ui/Card';
+import { ThrownOutMark } from '../../../components/ui/ThrownOutMark';
+import { SUNDAY_THROWN_OUT, THROWN_OUT_RECAP_LINE } from '../../events/thrownOut';
 import { BumpsOffNote, InsightBump } from '../../bumps/BumpsProvider';
 import type { Insight } from '../api';
 import { chartHref } from '../chartLink';
@@ -20,6 +22,7 @@ export function RecapCard({ insight, withNote = false }: { insight: Insight; wit
   const [all, setAll] = useState(false);
   const headlineId = useId();
   const viewerWindow = useExplicitWindow();
+  const thrownOut = insight.how.some((b) => b.map((s) => s.v).join('') === THROWN_OUT_RECAP_LINE);
   return (
     <Card title="Last Sunday" subtitle={latestSubtitle(insight.anchor_date)}>
       {withNote && <BumpsOffNote />}
@@ -28,7 +31,9 @@ export function RecapCard({ insight, withNote = false }: { insight: Insight; wit
         className={all ? 'text-base text-text' : 'line-clamp-3 text-base text-text'}
       >
         <Segments segments={insight.headline} />
+        {thrownOut && <ThrownOutMark phrase={SUNDAY_THROWN_OUT} />}
       </p>
+      {thrownOut && <p className="text-xs text-text-muted">{THROWN_OUT_RECAP_LINE}</p>}
       <div data-insight-key={insight.key} className="flex flex-wrap items-center gap-2">
         <button
           type="button"

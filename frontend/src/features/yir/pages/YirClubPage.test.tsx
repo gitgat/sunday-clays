@@ -244,4 +244,14 @@ describe('YirClubPage', () => {
     renderYear(2025);
     expect(await screen.findByText('Could not load Most Sundays.')).toBeInTheDocument();
   });
+
+  it('says how many rounds marked * are not in the average', async () => {
+    server.use(
+      http.get('*/api/yir/:year', () =>
+        HttpResponse.json({ ...YIR_2025, totals: { ...YIR_2025.totals, n_excluded: 20 } }),
+      ),
+    );
+    renderYear(2025);
+    expect(await screen.findByText('20 rounds marked * not in the average')).toBeInTheDocument();
+  });
 });
