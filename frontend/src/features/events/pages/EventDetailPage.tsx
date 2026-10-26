@@ -5,6 +5,7 @@ import { useChartTarget, useScrollToTarget } from '../../../components/charts/ch
 import { Card } from '../../../components/ui/Card';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { Stat } from '../../../components/ui/Stat';
+import { ThrownOutMark } from '../../../components/ui/ThrownOutMark';
 import { useRoundTypeHref } from '../../../lib/roundTypes';
 import { isoDateCodec } from '../../../lib/useUrlState';
 import { useAllSundays, useEvent } from '../api';
@@ -29,6 +30,7 @@ import {
   specialLine,
   targetsOf,
 } from '../format';
+import { thrownOutBanner, thrownOutPhrase } from '../thrownOut';
 import { eventSections, sectionsAt } from '../sections';
 import type { EventSection } from '../sections';
 
@@ -106,15 +108,28 @@ function ScoredEvent({ event }: { event: EventDetail }) {
   const { target } = useChartTarget('results');
   const highlighted = useMemo(() => highlightedShooters(target.hl), [target.hl]);
   useScrollToTarget('results', true);
+  const excluded = event.stats_excluded;
+  const phrase = thrownOutPhrase(event.thrown_out);
+  const starred = (value: string) => (
+    <>
+      {value}
+      {excluded && <ThrownOutMark phrase={phrase} />}
+    </>
+  );
   return (
     <>
+      {excluded && (
+        <p role="note" className="rounded-card border border-accent p-3">
+          {thrownOutBanner(event.thrown_out)}
+        </p>
+      )}
       {!event.results_complete && event.head_count !== null && (
         <p role="note" className="rounded-card border border-accent p-3">
           {`Partial results — ${event.n_shooters} of ${event.head_count} shooters recorded.`}
         </p>
       )}
       <Card title="This Sunday">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div className={`grid grid-cols-2 gap-2 ${excluded ? 'sm:grid-cols-4' : 'sm:grid-cols-5'}`}>
           <Stat
             label="Shooters"
             value={String(event.n_shooters)}
@@ -127,28 +142,31 @@ function ScoredEvent({ event }: { event: EventDetail }) {
           />
           <Stat
             label="Median"
-            value={formatScore(event.median)}
+            value={starred(formatScore(event.median))}
             explainer={eventExplainers.median}
           />
           <Stat
             label="Top score"
-            value={formatScore(event.top_score)}
+            value={starred(formatScore(event.top_score))}
             explainer={eventExplainers.topScore}
           />
-          <Stat
-            label="Difficulty"
-            value={formatSigned(event.difficulty)}
-            hint={difficultyHint(event.difficulty)}
-            explainer={eventExplainers.difficulty}
-          />
+          {!excluded && (
+            <Stat
+              label="Difficulty"
+              value={formatSigned(event.difficulty)}
+              hint={difficultyHint(event.difficulty)}
+              explainer={eventExplainers.difficulty}
+            />
+          )}
         </div>
       </Card>
       <Card id="chart-results" title="Results">
         <About explainer={eventExplainers.results} label="About these results" />
         <ResultsTable
           results={event.results}
-          complete={event.results_complete}
+          complete={event.results_complete && !excluded}
           highlight={highlighted}
+          phrase={phrase}
         />
       </Card>
       {event.stations !== null && (
@@ -233,7 +251,9 @@ function EventDetailView({ event, sections }: { event: EventDetail; sections: Ev
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <WeatherCard weather={event.weather} />
-          {event.has_scores && !special && <VsPrevCard vsPrev={event.vs_prev} />}
+          {event.has_scores && !special && !event.stats_excluded && (
+            <VsPrevCard vsPrev={event.vs_prev} />
+          )}
           {event.has_scores && <NotablesCard notables={event.notables} />}
         </div>
       </div>

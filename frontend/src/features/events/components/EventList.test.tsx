@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '../../../test/render';
 import type { EventSummary } from '../api';
-import { eventSummaries } from '../mocks';
+import { eventSummaries, thrownOutSummary } from '../mocks';
 import { EventList, summaryLine } from './EventList';
 
 function summary(over: Partial<EventSummary>): EventSummary {
@@ -99,4 +99,14 @@ describe('EventList', () => {
       '/events/2026-09-13?rt=super_sporting',
     );
   });
+});
+
+it('stars a Sunday with a station thrown out, naming it for screen readers', () => {
+  renderWithProviders(<EventList year={2026} events={[thrownOutSummary]} />);
+  expect(
+    screen.getByRole('link', {
+      name: /Oct 25, 2026.*Station 10 was thrown out; everyone was credited 8\/8/,
+    }),
+  ).toBeInTheDocument();
+  expect(summaryLine(thrownOutSummary)).not.toContain('*');
 });
