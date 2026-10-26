@@ -14,6 +14,7 @@ import {
   THROWN_OUT_HOLLOW,
   THROWN_OUT_ROUNDS,
   THROWN_OUT_STATION,
+  thrownOutLineFor,
 } from './thrownOutCopy';
 import type { Explainer } from './types';
 
@@ -90,6 +91,12 @@ const CASES: [string, Book, string, string[]][] = [
 ];
 
 describe('thrown-out disclosure', () => {
+  it('picks the line for a leaderboard or race measure', () => {
+    for (const m of ['avg_score', 'avg_adjusted', 'best_score', 'rating_gain'])
+      expect(thrownOutLineFor(m), m).toBe(THROWN_OUT_ROUNDS);
+    for (const m of ['wins', 'podiums', 'events', 'rounds', 'season_points'])
+      expect(thrownOutLineFor(m), m).toBe(THROWN_OUT_COUNTS);
+  });
   it('pins the shared lines', () => {
     expect(THROWN_OUT_ROUNDS).toBe('Sundays with a station thrown out (marked *) are left out.');
     expect(THROWN_OUT_STATION).toBe('A station thrown out on the day is left out.');

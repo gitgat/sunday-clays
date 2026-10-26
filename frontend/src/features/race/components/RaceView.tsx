@@ -161,7 +161,7 @@ export function RaceView({ frames, metric, mode, query }: RaceViewProps) {
         csvName={`race-${metric}-${frame.event_date}`}
         ariaLabel={`${label} race bar chart`}
         urlKey="race-bars"
-        explainer={raceExplainer('race-bars', mode)}
+        explainer={raceExplainer('race-bars', mode, metric)}
         zoom="none"
         hlLabels={hlLabels}
       />
@@ -188,7 +188,7 @@ export function RaceView({ frames, metric, mode, query }: RaceViewProps) {
         csvName={`race-ranks-${metric}`}
         ariaLabel={`${label} rank bump chart`}
         urlKey="race-bump"
-        explainer={raceExplainer('race-bump', mode)}
+        explainer={raceExplainer('race-bump', mode, metric)}
       />
     </div>
   );

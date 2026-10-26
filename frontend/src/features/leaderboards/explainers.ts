@@ -1,3 +1,4 @@
+import { THROWN_OUT_ROUNDS, thrownOutLineFor } from '../../components/charts/thrownOutCopy';
 import type { Explainer } from '../../components/charts/types';
 import { mergeTerms } from '../glossary/terms';
 import type { LeaderboardMetric, LeaderboardPeriod } from './api';
@@ -126,9 +127,10 @@ export const explainers: Record<string, Explainer> = {
       'Rating is our estimate of the score someone would post on a normal Sunday now, out of 50. Rating points gained = their rating now minus their last rating before the window began (for All time: their rating after their 10th round).',
       'To be listed you need 10 or more rounds before the window and 5 or more inside it (last 8 weeks: 3 or more inside; All time: 15 or more rounds in total), and your rating must have gone up.',
       'It ignores the round-type and gauge filters; the Members/Guests filter applies. The time window at the top picks the dates.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
 };
 
@@ -149,10 +151,17 @@ export function boardExplainer(metric: LeaderboardMetric, kind: BoardKind): Expl
       ];
   return {
     ...base,
-    computed: [...base.computed, ...measure, PERIOD_COMPUTED[kind], WINDOW_LINE],
+    computed: [
+      ...base.computed,
+      ...measure,
+      thrownOutLineFor(metric),
+      PERIOD_COMPUTED[kind],
+      WINDOW_LINE,
+    ],
     terms: mergeTerms(
       base.terms,
       'time-window',
+      'thrown-out-station',
       ...(measure.some((line) => /round-type/.test(line)) ? (['round-types'] as const) : []),
     ),
   };

@@ -93,7 +93,9 @@ describe('glossary trigger lint', () => {
     }
     for (const key of ['race-bars', 'race-bump'] as const) {
       for (const mode of ['rolling_12', 'season', 'ytd'] as const) {
-        built.push([`${key} ${mode}`, raceExplainer(key, mode)]);
+        for (const metric of boardMetrics) {
+          built.push([`${key} ${mode} ${metric}`, raceExplainer(key, mode, metric)]);
+        }
       }
     }
     const problems = built.flatMap(([name, explainer]) =>
