@@ -4,7 +4,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from sunday_clays.domain.round_type import RoundType
 
@@ -83,7 +83,10 @@ class Column(BaseModel):
 
 
 class QueryResult(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     columns: list[Column]
     rows: list[dict[str, str | int | float | None]]
     n_rounds: int
     truncated: bool
+    thrown_out_dates: list[str] = Field(default_factory=list)

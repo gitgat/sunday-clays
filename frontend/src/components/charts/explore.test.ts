@@ -29,6 +29,7 @@ const BY_YEAR_STATUS: QueryResult = {
   ],
   n_rounds: 2217,
   truncated: false,
+  thrown_out_dates: [],
 };
 
 it('names the winter-to-fall dimension "Time of year", not "Season"', () => {

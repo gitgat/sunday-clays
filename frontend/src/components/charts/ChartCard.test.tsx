@@ -35,6 +35,7 @@ function result(spec: QuerySpec): QueryResult {
     ],
     n_rounds: 3,
     truncated: false,
+    thrown_out_dates: [],
   };
 }
 
@@ -414,6 +415,7 @@ describe('ChartCard', () => {
           ],
           n_rounds: 6,
           truncated: false,
+          thrown_out_dates: [],
         } satisfies QueryResult),
       ),
     );
