@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { THROWN_OUT_COUNTS, THROWN_OUT_ROUNDS } from '../../components/charts/thrownOutCopy';
 import { METRICS } from './labels';
 import { boardExplainer, explainers, type BoardKind } from './explainers';
 
@@ -92,5 +93,24 @@ describe('leaderboard explainers', () => {
       'Points are added up over the Sundays in your dates; places are always against the whole field that day.',
     );
     expect(boardExplainer('wins', 'custom').computed.join(' ')).toContain('scores in your dates');
+  });
+
+  it('says per measure whether thrown-out Sundays count, on every kind of board', () => {
+    for (const metric of METRICS) {
+      for (const kind of KINDS) {
+        const entry = boardExplainer(metric.value, kind);
+        const line = ['avg_score', 'avg_adjusted', 'best_score', 'rating_gain'].includes(
+          metric.value,
+        )
+          ? THROWN_OUT_ROUNDS
+          : THROWN_OUT_COUNTS;
+        expect(entry.computed, `${metric.value} ${kind}`).toContain(line);
+        expect(entry.computed).not.toContain(
+          line === THROWN_OUT_ROUNDS ? THROWN_OUT_COUNTS : THROWN_OUT_ROUNDS,
+        );
+        expect(entry.terms).toContain('thrown-out-station');
+      }
+    }
+    expect(explainers['lb-movers']?.computed).toContain(THROWN_OUT_ROUNDS);
   });
 });

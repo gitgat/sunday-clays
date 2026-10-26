@@ -52,6 +52,15 @@ function SpecialLatest({ event }: { event: EventDetail }) {
   );
 }
 
+function LatestFullLink({ date }: { date: string }) {
+  const to = useRoundTypeLink(`/events/${date}`);
+  return (
+    <Link to={to} className="inline-flex min-h-11 items-center self-start underline">
+      {`Latest full results: ${formatDay(date)}`}
+    </Link>
+  );
+}
+
 function LatestEventBody({
   event,
   lastFull,
@@ -70,7 +79,6 @@ function LatestEventBody({
     <ThrownOutMark phrase={thrownOutPhrase(event.thrown_out)} />
   ) : null;
   const eventLink = useRoundTypeLink(`/events/${event.event_date}`);
-  const fullLink = useRoundTypeLink(`/events/${lastFull ?? event.event_date}`);
   return (
     <div className="flex flex-col gap-3">
       <Link
@@ -121,11 +129,7 @@ function LatestEventBody({
       ) : (
         <>
           <p>{attendanceText(event.head_count)}</p>
-          {lastFull !== null && (
-            <Link to={fullLink} className="inline-flex min-h-11 items-center self-start underline">
-              {`Latest full results: ${formatDay(lastFull)}`}
-            </Link>
-          )}
+          {lastFull !== null && <LatestFullLink date={lastFull} />}
         </>
       )}
       {event.has_scores && (
@@ -157,7 +161,7 @@ export function LatestEventCard() {
       return (
         <EmptyState title="Couldn't load the latest Sunday" description={event.error.message} />
       );
-    return <LatestEventBody event={event.data} lastFull={meta.data?.last_score_date ?? null} />;
+    return <LatestEventBody event={event.data} lastFull={meta.data.last_score_date} />;
   }
 
   return (

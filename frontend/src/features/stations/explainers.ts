@@ -1,4 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
+import { THROWN_OUT_STATION } from '../../components/charts/thrownOutCopy';
 
 const SHEETS_ONLY = 'Only Sundays with a station sheet count (older station sheets were not kept).';
 const WINDOW =
@@ -26,8 +27,9 @@ export const explainers: Record<string, Explainer> = {
       LETTERED,
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
-    terms: ['time-window'],
+    terms: ['time-window', 'thrown-out-station'],
   },
   sthit: {
     what: 'The share of targets broken at each station, with a tick above and below each bar showing a likely range.',
@@ -43,8 +45,9 @@ export const explainers: Record<string, Explainer> = {
       LETTERED,
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
-    terms: ['field-adjusted', 'time-window'],
+    terms: ['field-adjusted', 'time-window', 'thrown-out-station'],
   },
   sttime: {
     what: 'One line per station: the share of its targets broken on each Sunday.',
@@ -58,9 +61,10 @@ export const explainers: Record<string, Explainer> = {
       '“Since last reset” shows each station only since its latest reset. The chart and its table cover the time window you picked. Fullscreen shows every Sunday, and the CSV download has them all.',
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
     scope: 'windowed',
-    terms: ['time-window'],
+    terms: ['time-window', 'thrown-out-station'],
   },
   stmatrix: {
     what: 'A grid: each row is a shooter, each column a station, and each square is that shooter’s hit % at that station.',
@@ -75,8 +79,9 @@ export const explainers: Record<string, Explainer> = {
       'Only shooters matched to a profile appear.',
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   stera: {
     what: 'How this station has played in each of its setups, split on the dates it was reset or rebuilt.',
@@ -90,8 +95,9 @@ export const explainers: Record<string, Explainer> = {
       'This chart always shows every setup the station had inside the time window; the setup choice does not change it.',
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   stwind: {
     what: 'How this station plays on calm, breezy and gusty days.',
@@ -106,8 +112,9 @@ export const explainers: Record<string, Explainer> = {
       'Sundays without weather are left out.',
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   'station-leaders': {
     what: 'The shooters who break the highest share of this station’s targets. The first ten show; “Show all” lists the rest.',
@@ -120,8 +127,9 @@ export const explainers: Record<string, Explainer> = {
       'Two rounds on one Sunday count as 2 rounds. Only shooters matched to a profile appear.',
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   stdelta: {
     what: 'How many percentage points better or worse than the field you shoot each station.',
@@ -136,8 +144,9 @@ export const explainers: Record<string, Explainer> = {
       'The CSV download lists every station; a station shot fewer than twice has no versus-field number.',
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   'stdelta-table': {
     what: 'Every station you have shot: your hit %, the field’s hit % on the same Sundays, the gap and how many rounds it rests on.',
@@ -150,7 +159,8 @@ export const explainers: Record<string, Explainer> = {
       'The setup choice and round-type filter apply.',
       WINDOW,
       SHEETS_ONLY,
+      THROWN_OUT_STATION,
     ],
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
 };

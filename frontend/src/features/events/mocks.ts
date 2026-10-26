@@ -481,6 +481,8 @@ export const specialDetail: EventDetail = {
   target_total: 60,
 };
 
+const STATIONS_BASE = eventDetail.stations as StationMatrix;
+
 export const THROWN_OUT_10: ThrownOut = { station_label: '10', target_count: 8, credited: true };
 
 /** A Sunday with Station 10 thrown out; kept out of `eventSummaries` so existing lists are unchanged. */
@@ -498,9 +500,8 @@ export const thrownOutDetail: EventDetail = {
     rating_delta: null,
   })),
   stations: {
-    entries: [],
-    ...eventDetail.stations,
-    layout: (eventDetail.stations?.layout ?? []).map((s) => ({ ...s, dropped: s.label === '10' })),
+    ...STATIONS_BASE,
+    layout: STATIONS_BASE.layout.map((s) => ({ ...s, dropped: s.label === '10' })),
   },
 };
 

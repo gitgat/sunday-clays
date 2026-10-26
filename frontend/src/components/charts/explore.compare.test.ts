@@ -62,4 +62,21 @@ describe('withCompare', () => {
     };
     expect(withCompare(two, compare, ['year', 'round_type'], 'Everyone')).toBe(two);
   });
+
+  it('reads the first axis when xAxis is an array', () => {
+    const main: EChartsOption = {
+      xAxis: [{ type: 'category', data: ['2025', '2026'] }],
+      series: [{ type: 'bar', data: [30, 31] }],
+    };
+    const out = withCompare(main, compare, ['year'], 'Everyone');
+    expect((out.series as { data: unknown[] }[])[1]?.data).toEqual([-0.5, 1.5]);
+  });
+
+  it('adds the compare line even when the chart has no series yet', () => {
+    const main: EChartsOption = { xAxis: { type: 'category', data: ['2026'] } };
+    const out = withCompare(main, compare, ['year'], 'Everyone');
+    expect(out.series).toEqual([
+      expect.objectContaining({ type: 'line', name: 'Everyone', data: [1.5] }),
+    ]);
+  });
 });

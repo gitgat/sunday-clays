@@ -1,4 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
+import { THROWN_OUT_ROUNDS } from '../../components/charts/thrownOutCopy';
 
 /**
  * Plain-language copy for the Next Sunday card and profile outlook. Every statement matches
@@ -19,7 +20,8 @@ export const explainers = {
       'Who is likely to come: the shooters who came to at least one of the last 13 Sundays with scores. Their chance of coming is the number of those Sundays they shot, out of 13.',
       'Predicted field median = the middle expected score among those shooters, counting each in proportion to their chance of coming. Expected turnout = the chances of coming, added up.',
       'Recomputed after every analytics run, and the forecast refreshes twice a day.',
+      THROWN_OUT_ROUNDS,
     ],
-    terms: ['difficulty', 'field-median'],
+    terms: ['difficulty', 'field-median', 'thrown-out-station'],
   },
 } as const satisfies Record<string, Explainer>;

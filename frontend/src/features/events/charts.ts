@@ -84,18 +84,14 @@ export function stationMatrixModel(
   const dropped = matrix.layout.filter((s) => s.dropped).map(stationName);
   if (dropped.length > 0 && Array.isArray(option.series)) {
     // The thrown-out columns have no hits to colour: grey them instead of reading as zero.
-    option.series = option.series.map((series, i) =>
-      i === 0
-        ? {
-            ...series,
-            markArea: {
-              silent: true,
-              itemStyle: { color: colors.outlineVariant },
-              data: dropped.map((l) => [{ xAxis: l }, { xAxis: l }]),
-            },
-          }
-        : series,
-    ) as typeof option.series;
+    option.series = option.series.map((series) => ({
+      ...series,
+      markArea: {
+        silent: true,
+        itemStyle: { color: colors.outlineVariant },
+        data: dropped.map((l) => [{ xAxis: l }, { xAxis: l }]),
+      },
+    })) as typeof option.series;
   }
   return { columns, rows, option };
 }

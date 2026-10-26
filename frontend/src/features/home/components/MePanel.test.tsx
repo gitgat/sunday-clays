@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -120,6 +120,20 @@ describe('MePanel', () => {
     expect(screen.queryByText('Events')).not.toBeInTheDocument();
     // The odometer is lifetime, and its tag says so next to the disclosure.
     expect(within(panel).getByText('Lifetime')).toBeVisible();
+  });
+
+  it('stars the score of a Sunday with a station thrown out, and shows no rating move', async () => {
+    server.use(
+      http.get('*/api/shooters/:id', () => HttpResponse.json(meDetail)),
+      http.get('*/api/shooters/:id/rounds', () =>
+        HttpResponse.json([{ ...latest, stats_excluded: true, mu_before: 35, mu_after: 35.4 }]),
+      ),
+    );
+    renderWithProviders(<MePanel meId={3} onCleared={vi.fn()} widgets={[]} />);
+    const score = (await screen.findByText('Score · finish')).closest('div');
+    await waitFor(() => expect(score).toHaveTextContent('37*'));
+    expect(score).toHaveTextContent('A station was thrown out this Sunday');
+    expect(screen.getByText('Rating move').closest('div')).toHaveTextContent('Rating move—');
   });
 
   it('shows a dash, not 0.0, for the rating move of a partial-results Sunday', async () => {
