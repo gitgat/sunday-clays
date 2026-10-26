@@ -230,8 +230,8 @@ OWN_AVG_PRIOR = 10
 
 
 def above_own_average(day: Day) -> bool | None:
-    """Above the mean of every round on earlier dates (all Sundays shot count)."""
-    return None if day.prior_mean is None else day.score > day.prior_mean
+    """Above the mean of every scored round on earlier dates."""
+    return None if day.prior_mean_s is None else day.score > day.prior_mean_s
 
 
 def _own_avg(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:

@@ -60,8 +60,8 @@ def is_pb(day: Day) -> bool:
     """C12: the day's best round beats every round on earlier dates, with >= 5 earlier rounds."""
     return (
         day.prior_rounds >= PB_MIN_PRIOR_ROUNDS
-        and day.prior_best is not None
-        and day.score > day.prior_best
+        and day.prior_best_s is not None
+        and day.score > day.prior_best_s
     )
 
 
@@ -91,14 +91,14 @@ def _pb_fact(days: Sequence[Day], i: int, old: int, *, variant: str, pages: froz
 
 def _pb(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for i, days in anchor_days(fr, scope):
-        old = days[i].prior_best
+        old = days[i].prior_best_s
         if is_pb(days[i]) and old is not None:
             yield _pb_fact(days, i, old, variant="", pages=frozenset({P.SUNDAY, P.HOME}))
     for _sid, days in evergreen_days(fr, scope):
         latest = next((j for j in range(len(days) - 1, -1, -1) if is_pb(days[j])), None)
         if latest is None:
             continue
-        old = days[latest].prior_best
+        old = days[latest].prior_best_s
         recent = fr.held_between(days[latest].date, scope.as_of) < PB_PROFILE_SUNDAYS
         if old is not None and recent:
             yield _pb_fact(days, latest, old, variant=PROFILE, pages=frozenset({P.PROFILE}))
@@ -229,10 +229,10 @@ TIED_OVER_USUAL = 3.0
 def _tied_best(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for i, days in anchor_days(fr, scope):
         d = days[i]
-        usual = d.prior_mean
-        if d.prior_best is None or usual is None or d.prior_rounds < TIED_PRIOR:
+        usual = d.prior_mean_s
+        if d.prior_best_s is None or usual is None or d.prior_rounds < TIED_PRIOR:
             continue
-        if d.score != d.prior_best or d.prior_best < usual + TIED_OVER_USUAL:
+        if d.score != d.prior_best_s or d.prior_best_s < usual + TIED_OVER_USUAL:
             continue
         yield Fact(
             subject_id=str(d.shooter_id),
@@ -683,7 +683,7 @@ def _back_strong(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         gap = (d.date - last).days
         if gap < BACK_DAYS:
             continue
-        usual = d.prior_mean
+        usual = d.prior_mean_s
         show_score = usual is not None and d.score >= usual
         params: dict[str, object] = {
             "s": d.shooter_id,
@@ -797,9 +797,9 @@ TIER_PRIOR = 10
 def _first_tier(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for i, days in anchor_days(fr, scope):
         d = days[i]
-        if d.prior_rounds < TIER_PRIOR or d.prior_best is None:
+        if d.prior_rounds < TIER_PRIOR or d.prior_best_s is None:
             continue
-        level = crossed(d.prior_best, d.score, TIER_LEVELS)
+        level = crossed(d.prior_best_s, d.score, TIER_LEVELS)
         if level is None:
             continue
         yield Fact(

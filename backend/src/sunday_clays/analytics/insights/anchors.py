@@ -65,7 +65,7 @@ def trend_rows(fr: InsightFrames, link: ChartLink) -> pd.DataFrame:
                 "score": d.score,
                 "adjusted": d.adjusted,
                 "pb": max(scores),
-                "so_far": d.prior_mean,
+                "so_far": d.prior_mean_s,
                 "roll10": mean([float(s) for s in scores[-10:]]) if len(scores) >= 10 else None,
                 "roll20": mean([float(s) for s in scores[-20:]]) if len(scores) >= 20 else None,
             }

@@ -551,7 +551,9 @@ def _season_best(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         best = max(this_year, key=lambda d: (d.score, -d.date.toordinal()))
         average = mean([float(d.score) for d in this_year])
         is_pb = (
-            best.prior_rounds >= 5 and best.prior_best is not None and best.score > best.prior_best
+            best.prior_rounds >= 5
+            and best.prior_best_s is not None
+            and best.score > best.prior_best_s
         )
         recent = fr.held_between(best.date, scope.as_of) < SEASON_RECENT
         if is_pb or not recent or best.score < average + SEASON_OVER_AVG:
