@@ -38,6 +38,7 @@ _DAY_DTYPES: dict[str, str] = {
     "shooter_id": "int64",
     "event_ts": _TS_DTYPE,
     "event_date": "object",
+    "stats_excluded": "bool",
     "n_rounds": "int64",
     "day_best": "int64",
     "day_sum": "int64",
@@ -46,10 +47,11 @@ _DAY_DTYPES: dict[str, str] = {
     "cum_rounds": "int64",
     "cum_sum": "int64",
     "prior_rounds": "int64",
-    "prior_sum": "int64",
-    "prior_best": "float64",
+    "prior_n_s": "int64",
+    "prior_sum_s": "int64",
+    "prior_best_s": "float64",
     "prev_ts": _TS_DTYPE,
-    "prev_day_best": "float64",
+    "prev_day_best_s": "float64",
 }
 _VALUE_DTYPES: dict[str, str] = {
     "shooter_id": "int64",
@@ -113,6 +115,7 @@ def _shooter_days(rounds: pd.DataFrame) -> pd.DataFrame:
             day_best=("score", "max"),
             day_sum=("score", "sum"),
             best_round_id=("round_id", "first"),
+            stats_excluded=("stats_excluded", "any"),
         )
         .reset_index()
     )
@@ -122,10 +125,17 @@ def _shooter_days(rounds: pd.DataFrame) -> pd.DataFrame:
     days["cum_rounds"] = by_shooter["n_rounds"].cumsum()
     days["cum_sum"] = by_shooter["day_sum"].cumsum()
     days["prior_rounds"] = days["cum_rounds"] - days["n_rounds"]
-    days["prior_sum"] = days["cum_sum"] - days["day_sum"]
-    days["prior_best"] = by_shooter["day_best"].transform(lambda s: s.cummax().shift(1))
+    # Score-only prefixes: a Sunday with a station thrown out adds nothing to them.
+    scored = ~days["stats_excluded"]
+    n_s = days["n_rounds"].where(scored, 0)
+    sum_s = days["day_sum"].where(scored, 0)
+    best_s = days["day_best"].where(scored).astype(float)
+    days["prior_n_s"] = n_s.groupby(days["shooter_id"]).cumsum() - n_s
+    days["prior_sum_s"] = sum_s.groupby(days["shooter_id"]).cumsum() - sum_s
+    best_by_shooter = best_s.groupby(days["shooter_id"], sort=False)
+    days["prior_best_s"] = best_by_shooter.transform(lambda s: s.cummax().ffill().shift(1))
     days["prev_ts"] = by_shooter["event_ts"].shift(1)
-    days["prev_day_best"] = by_shooter["day_best"].shift(1).astype(float)
+    days["prev_day_best_s"] = best_by_shooter.transform(lambda s: s.ffill().shift(1))
     return days[list(_DAY_DTYPES)]
 
 
