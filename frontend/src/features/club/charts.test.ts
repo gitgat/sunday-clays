@@ -139,6 +139,7 @@ describe('score trend and difficulty', () => {
       top_score: 45,
       median: 34,
       difficulty: null,
+      stats_excluded: false,
       top_score_rolling8: 45,
       median_rolling8: 34,
       difficulty_rolling8: null,
