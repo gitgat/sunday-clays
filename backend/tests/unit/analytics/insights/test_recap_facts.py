@@ -1092,3 +1092,54 @@ def test_appending_later_sundays_never_changes_an_earlier_days_facts(
         assert now == week_facts(fr.until(day), day), day
         seen.update(f.type for f in now)
     assert len(seen) >= 8, seen
+
+
+# --- thrown-out stations and Sundays -------------------------------------------------------------
+
+
+def test_station_feats_leave_out_a_thrown_out_station(make_world: Any) -> None:
+    world = weekly(make_world, 1)
+    world.shooter(1, "Hadley, Ike")
+    for sid in (1, 2, 3, 4):
+        world.round(sid, FIRST, 40)
+        world.station(sid, FIRST, 11, 7, entry_row=sid, target_count=7, dropped=True)
+    add_entry(world, FIRST, 1, 1, [16, 16, 16, 16, 5, 5])
+    for sid in (2, 3, 4):
+        add_entry(world, FIRST, sid, sid, [5] * 6)
+    assert texts(world.frames(), FIRST, "station_feats") == [
+        "Ike Hadley broke every target at 4 of 6 stations."
+    ]
+
+
+def test_course_stations_never_name_a_thrown_out_station(make_world: Any) -> None:
+    world = stations_world(make_world, {3: [10] * 9 + [8], 5: [13] * 10})
+    for entry in range(1, 11):
+        world.station(entry, FIRST, 11, 16, entry_row=entry, target_count=16, dropped=True)
+    assert texts(world.frames(), FIRST, "course_stations") == [
+        "Toughest station: Station 3, 61% of targets broken. Easiest: Station 5, 81%."
+    ]
+
+
+def test_scores_context_skips_and_forgets_a_thrown_out_sunday(make_world: Any) -> None:
+    fr = weekly(
+        make_world,
+        30,
+        score=lambda i: {5: 47, 29: 45}.get(i, 40),
+        event=lambda i: {"stats_excluded": True} if i == 5 else {},
+    ).frames()
+    assert texts(fr, wk(FIRST, 5), "scores_context") == []
+    assert texts(fr, wk(FIRST, 29), "scores_context") == [
+        "The middle score of 45 was the highest on record."
+    ]
+
+
+def test_improvement_skips_and_forgets_a_thrown_out_round(make_world: Any) -> None:
+    world = weekly(make_world, 122, event=lambda i: {"stats_excluded": True} if i == 120 else {})
+    world.shooter(1, "Hadley, Ike")
+    for i in range(122):
+        world.round(1, wk(FIRST, i), 50 if i == 120 else 40 if i >= 100 else 36)
+    fr = world.frames()
+    assert texts(fr, wk(FIRST, 120), "improvement") == []
+    assert texts(fr, wk(FIRST, 121), "improvement") == [
+        "Ike Hadley's average over the last 20 rounds is up 4.0 targets compared with a year ago."
+    ]
