@@ -106,9 +106,9 @@ export function scoreTrendModel(events: EventTrend[]): ChartModel {
   const rows = byDate(events).map((e) => ({
     event_date: e.event_date,
     median: e.median,
-    median_rolling8: round1(e.median_rolling8),
+    median_rolling8: r1(e.median_rolling8),
     top_score: e.top_score,
-    top_score_rolling8: round1(e.top_score_rolling8),
+    top_score_rolling8: r1(e.top_score_rolling8),
   }));
   return {
     columns,
