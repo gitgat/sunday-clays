@@ -7,7 +7,13 @@ import { ShooterPicker } from '../../admin/components/ShooterPicker';
 import { useCreateRule } from '../api';
 import { buildRulePayload, EMPTY_FIELDS, RULE_LABELS, RULE_TYPES } from '../rules';
 import type { RuleFields, RuleType } from '../rules';
-import { ROUND_TYPE_OPTIONS, SelectField, STATUS_OPTIONS, TextField } from './Fields';
+import {
+  DROPPED_OPTIONS,
+  ROUND_TYPE_OPTIONS,
+  SelectField,
+  STATUS_OPTIONS,
+  TextField,
+} from './Fields';
 import { RoundPicker } from './RoundPicker';
 
 type SetField = <K extends keyof RuleFields>(key: K, value: RuleFields[K]) => void;
@@ -102,6 +108,28 @@ function TypeFields({ type, f, set }: { type: RuleType; f: RuleFields; set: SetF
             label="What changed"
             value={f.resetNote}
             onChange={(v) => set('resetNote', v)}
+          />
+        </>
+      );
+    case 'station_drop':
+      return (
+        <>
+          <TextField
+            label="Sunday"
+            type="date"
+            value={f.eventDate}
+            onChange={(v) => set('eventDate', v)}
+          />
+          <TextField
+            label="Station (like 7 or 7A; blank for the whole Sunday)"
+            value={f.stationNo}
+            onChange={(v) => set('stationNo', v.toUpperCase())}
+          />
+          <SelectField
+            label="Thrown out?"
+            value={f.dropped}
+            onChange={(v) => set('dropped', v)}
+            options={DROPPED_OPTIONS}
           />
         </>
       );

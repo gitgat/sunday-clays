@@ -41,10 +41,10 @@ describe('RuleCreateForm', () => {
     );
   });
 
-  it('offers the eight rule types and keeps Create disabled until the form is complete', async () => {
+  it('offers the nine rule types and keeps Create disabled until the form is complete', async () => {
     const user = userEvent.setup();
     renderWithProviders(<RuleCreateForm />);
-    expect(screen.getByLabelText('Rule type').querySelectorAll('option')).toHaveLength(8);
+    expect(screen.getByLabelText('Rule type').querySelectorAll('option')).toHaveLength(9);
     expect(screen.getByRole('button', { name: 'Create rule' })).toBeDisabled();
     await pick(user, 'Merge this shooter', 'Crimson, Al · 1 rounds');
     expect(screen.getByRole('button', { name: 'Create rule' })).toBeDisabled();
@@ -159,6 +159,26 @@ describe('RuleCreateForm', () => {
           effective_date: '2026-10-04',
           note: 'New presentation on station 7A',
         },
+        note: null,
+      },
+    ]);
+  });
+
+  it('station_drop takes a Sunday, an optional station and whether it was thrown out', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<RuleCreateForm />);
+    await chooseType(user, 'station_drop');
+    fireEvent.change(screen.getByLabelText('Sunday'), { target: { value: '2026-10-25' } });
+    await user.type(
+      screen.getByLabelText('Station (like 7 or 7A; blank for the whole Sunday)'),
+      '11',
+    );
+    await user.selectOptions(screen.getByLabelText('Thrown out?'), 'yes');
+    await create(user);
+    expect(created).toEqual([
+      {
+        rule_type: 'station_drop',
+        payload: { event_date: '2026-10-25', station_label: '11', dropped: true },
         note: null,
       },
     ]);
