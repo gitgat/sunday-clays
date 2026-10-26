@@ -1,4 +1,5 @@
 import type { Explainer } from '../../components/charts/types';
+import { THROWN_OUT_COUNTS, THROWN_OUT_ROUNDS } from '../../components/charts/thrownOutCopy';
 
 /**
  * Plain-language copy for the home page, keyed by chart urlKey or stat id. Written against
@@ -43,9 +44,10 @@ const explainers = {
     computed: [
       'The highest score of any round on a scored Sunday in the window, second rounds included.',
       'It is one round, not an average. The round-type filter applies.',
+      THROWN_OUT_ROUNDS,
     ],
     scope: 'windowed',
-    terms: ['round-types', 'time-window'],
+    terms: ['round-types', 'time-window', 'thrown-out-station'],
   },
   latestShooters: {
     what: 'How many people have at least one recorded score at the latest Sunday.',
@@ -60,29 +62,32 @@ const explainers = {
     computed: [
       'Every round that day counts, second rounds included. Sorted by score, the middle one is taken.',
       'The round-type filter does not apply.',
+      THROWN_OUT_COUNTS,
     ],
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   latestTop: {
     what: 'The best single round at the latest Sunday, out of 50.',
     computed: [
       'The highest score among all rounds that day, second rounds included.',
       'The round-type filter does not apply.',
+      THROWN_OUT_COUNTS,
     ],
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   meLast: {
-    what: 'Your most recent Sunday: the date, your best score, where it placed and how your rating moved.',
+    what: 'Your latest Sunday: the date, your best score, its place and how your rating moved.',
     read: [
       '"44 · 2nd" means your best round was a 44 and it finished second.',
-      'Rating move is how much that Sunday changed your rating, our skill estimate out of 50.',
+      'Rating move is how much that Sunday changed your rating (skill estimate out of 50).',
     ],
     computed: [
       'Last out is the newest Sunday you shot, within the round-type filter.',
       'Score is your best round; finish is its place among best rounds.',
-      'Rating move = rating after minus rating before, to 0.1. "—" means the Sunday had partial results, so ratings did not move.',
+      'Rating move = rating after minus rating before, to 0.1; "—" when ratings did not move.',
+      THROWN_OUT_COUNTS,
     ],
-    terms: ['round-types'],
+    terms: ['round-types', 'thrown-out-station'],
   },
   meOdometer: {
     what: 'Your lifetime totals at Sunday Clays.',
@@ -92,9 +97,10 @@ const explainers = {
       'Sundays: Sundays with at least one round from you, special shoots included.',
       'Current streak: Sundays in a row, counting back from the latest Sunday with full results (0 if you missed it). Partial Sundays neither add nor break it.',
       'All round types count; the round-type filter does not apply.',
+      THROWN_OUT_COUNTS,
     ],
     scope: 'lifetime',
-    terms: ['held-sunday', 'round-types', 'special-shoot', 'streak'],
+    terms: ['held-sunday', 'round-types', 'special-shoot', 'streak', 'thrown-out-station'],
   },
 } satisfies Record<string, Explainer>;
 

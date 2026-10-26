@@ -3,9 +3,9 @@ import { allStrings, BANNED_WORDS } from '../../test/language';
 import { GLOSSARY_TERMS, termById } from './terms';
 
 describe('glossary terms', () => {
-  it('has the 15 terms of the spec, sorted by id', () => {
+  it('has the 16 terms of the spec, sorted by id', () => {
     const ids = GLOSSARY_TERMS.map((t) => t.id);
-    expect(ids).toHaveLength(15);
+    expect(ids).toHaveLength(16);
     expect(ids).toEqual([...ids].sort());
   });
 
@@ -18,6 +18,7 @@ describe('glossary terms', () => {
   it('looks a term up by id', () => {
     expect(termById('percentile').term).toBe('Percentile');
     expect(termById('held-sunday').term).toBe('Sunday with full results');
+    expect(termById('thrown-out-station').term).toBe('Thrown-out station');
   });
 
   it('refuses an id that is not a glossary term', () => {
