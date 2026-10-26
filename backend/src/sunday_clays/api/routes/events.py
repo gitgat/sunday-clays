@@ -1,11 +1,12 @@
 """GET /api/events and /api/events/{date}: calendar list and event detail."""
 
+from collections.abc import Sequence
 from datetime import date
 from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Path, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from sunday_clays.analytics import frames
 from sunday_clays.analytics.personal_best import PB_MIN_PRIOR_ROUNDS as PB_MIN_PRIOR_ROUNDS
@@ -15,16 +16,37 @@ from sunday_clays.api.routes._filters import round_type_param
 from sunday_clays.db import SessionDep
 from sunday_clays.domain.errors import NotFoundError
 from sunday_clays.domain.round_type import RoundType
+from sunday_clays.domain.thrown_out import ThrownOut
 
 router = APIRouter()
 
 EventKind = Literal["regular", "special"]
 
 
+class ThrownOutOut(BaseModel):
+    """A station thrown out on a Sunday; `station_label` None means the whole Sunday was marked."""
+
+    station_label: str | None
+    target_count: int | None
+    credited: bool
+
+
+def thrown_out_out(items: Sequence[ThrownOut]) -> list[ThrownOutOut]:
+    return [
+        ThrownOutOut(
+            station_label=item.station_label,
+            target_count=item.target_count,
+            credited=item.credited,
+        )
+        for item in items
+    ]
+
+
 class WinnerOut(BaseModel):
     shooter_id: int
     display_name: str
     score: int
+    stats_excluded: bool
 
 
 class EventSummaryOut(BaseModel):
@@ -45,6 +67,8 @@ class EventSummaryOut(BaseModel):
     difficulty: float | None
     condition: str | None
     winners: list[WinnerOut]
+    stats_excluded: bool = False
+    thrown_out: list[ThrownOutOut] = Field(default_factory=list)
     # Plan 17: a special Sunday counts only as an appearance; its own name and target total
     kind: EventKind = "regular"
     label: str | None = None
@@ -69,6 +93,7 @@ class EventResultOut(BaseModel):
     mu_before: float | None
     mu_after: float | None
     rating_delta: float | None
+    stats_excluded: bool
 
 
 class EventWeatherOut(BaseModel):
@@ -88,6 +113,7 @@ class StationLayoutOut(BaseModel):
     label: str
     station_no: int
     target_count: int
+    dropped: bool
 
 
 class StationCellOut(BaseModel):
@@ -150,6 +176,8 @@ class EventDetailOut(BaseModel):
     stations: StationMatrixOut | None
     notables: list[NotableOut]
     vs_prev: VsPrevOut | None
+    stats_excluded: bool = False
+    thrown_out: list[ThrownOutOut] = Field(default_factory=list)
     # Plan 17: a special Sunday counts only as an appearance; its own name and target total
     kind: EventKind = "regular"
     label: str | None = None
@@ -168,6 +196,7 @@ def _winners(rounds: pd.DataFrame) -> dict[date, list[WinnerOut]]:
             shooter_id=int(row["shooter_id"]),
             display_name=str(row["display_name"]),
             score=int(row["score"]),
+            stats_excluded=bool(row["stats_excluded"]),
         )
         out.setdefault(row["event_date"], []).append(winner)
     return out
@@ -191,6 +220,7 @@ def list_events(
         events = events.loc[[d <= date_to for d in events["event_date"]]]
     events = events.sort_values("event_date")  # D16 date order is the route's, not the loader's
     winners = _winners(frames.load_rounds(session))
+    thrown = frames.load_thrown_out(session)
     return [
         EventSummaryOut(
             event_date=row["event_date"],
@@ -207,6 +237,8 @@ def list_events(
             difficulty=opt_float(row["difficulty"]),
             condition=opt_str(row["condition"]),
             winners=winners.get(row["event_date"], []),
+            stats_excluded=bool(row["stats_excluded"]),
+            thrown_out=thrown_out_out(thrown.get(row["event_date"], ())),
             kind=_kind(row),
             label=opt_str(row["label"]),
             target_total=int(row["target_total"]),
@@ -238,6 +270,7 @@ def _special_results(special: pd.DataFrame, event_date: date) -> list[EventResul
             mu_before=None,
             mu_after=None,
             rating_delta=None,
+            stats_excluded=False,
         )
         for r in rows(ordered)
     ]
@@ -264,6 +297,7 @@ def _results(day: pd.DataFrame) -> list[EventResultOut]:
             mu_before=opt_float(r["mu_before"]),
             mu_after=opt_float(r["mu_after"]),
             rating_delta=opt_float(r["mu_after"] - r["mu_before"]),
+            stats_excluded=bool(r["stats_excluded"]),
         )
         for r in rows(ordered)
     ]
@@ -290,7 +324,7 @@ def _stations(hits: pd.DataFrame, names: dict[int, str]) -> StationMatrixOut | N
     if hits.empty:
         return None
     layout = (
-        hits[["station_no", "station_label", "target_count"]]
+        hits[["station_no", "station_label", "target_count", "dropped"]]
         .drop_duplicates()
         .sort_values(["station_no", "station_label"])
     )
@@ -323,6 +357,7 @@ def _stations(hits: pd.DataFrame, names: dict[int, str]) -> StationMatrixOut | N
                 label=str(r["station_label"]),
                 station_no=int(r["station_no"]),
                 target_count=int(r["target_count"]),
+                dropped=bool(r["dropped"]),
             )
             for r in rows(layout)
         ],
@@ -414,6 +449,7 @@ def get_event(
         else _results(rounds.loc[rounds["event_date"] == event_date])
     )
     regular = events.loc[events["kind"] == frames.EVENT_KIND_REGULAR]
+    excluded = not special and bool(event["stats_excluded"])
     return EventDetailOut(
         event_date=event_date,
         round_type=RoundType(str(event["round_type"])),
@@ -433,7 +469,9 @@ def get_event(
         weather=_weather(event),
         stations=_stations(hits.loc[hits["event_date"] == event_date], names),
         notables=event_notables(rounds, shooters, event_date),
-        vs_prev=None if special else _vs_prev(regular, event),
+        vs_prev=None if special or excluded else _vs_prev(frames.stat_events(regular), event),
+        stats_excluded=bool(event["stats_excluded"]),
+        thrown_out=thrown_out_out(frames.load_thrown_out(session).get(event_date, ())),
         kind=_kind(event),
         label=opt_str(event["label"]),
         target_total=int(event["target_total"]),

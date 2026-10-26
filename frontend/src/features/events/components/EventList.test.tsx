@@ -7,6 +7,8 @@ import { EventList, summaryLine } from './EventList';
 
 function summary(over: Partial<EventSummary>): EventSummary {
   return {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -23,7 +25,9 @@ function summary(over: Partial<EventSummary>): EventSummary {
     top_score: 42,
     difficulty: 2.1,
     condition: null,
-    winners: [{ shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 }],
+    winners: [
+      { stats_excluded: false, shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 },
+    ],
     ...over,
   };
 }

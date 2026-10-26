@@ -34,6 +34,8 @@ const stationWeek = {
 
 export const eventSummaries: EventSummary[] = [
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -47,11 +49,13 @@ export const eventSummaries: EventSummary[] = [
     top_score: 49,
     difficulty: -1.4,
     winners: [
-      { shooter_id: 31, display_name: 'Stockton, Ethan', score: 49 },
-      { shooter_id: 30, display_name: 'Finnegan, Stanton', score: 49 },
+      { stats_excluded: false, shooter_id: 31, display_name: 'Stockton, Ethan', score: 49 },
+      { stats_excluded: false, shooter_id: 30, display_name: 'Finnegan, Stanton', score: 49 },
     ],
   },
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -64,9 +68,13 @@ export const eventSummaries: EventSummary[] = [
     median: 34,
     top_score: 42,
     difficulty: 2.1,
-    winners: [{ shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 }],
+    winners: [
+      { stats_excluded: false, shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 },
+    ],
   },
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -79,9 +87,13 @@ export const eventSummaries: EventSummary[] = [
     median: 36,
     top_score: 48,
     difficulty: 0.3,
-    winners: [{ shooter_id: 32, display_name: 'Grimsby, Gregor', score: 48 }],
+    winners: [
+      { stats_excluded: false, shooter_id: 32, display_name: 'Grimsby, Gregor', score: 48 },
+    ],
   },
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -95,12 +107,14 @@ export const eventSummaries: EventSummary[] = [
     top_score: 48,
     difficulty: -0.6,
     winners: [
-      { shooter_id: 31, display_name: 'Stockton, Ethan', score: 48 },
-      { shooter_id: 44, display_name: 'Ackerly, Alton', score: 48 },
-      { shooter_id: 45, display_name: 'Blakeslee, Ryder', score: 48 },
+      { stats_excluded: false, shooter_id: 31, display_name: 'Stockton, Ethan', score: 48 },
+      { stats_excluded: false, shooter_id: 44, display_name: 'Ackerly, Alton', score: 48 },
+      { stats_excluded: false, shooter_id: 45, display_name: 'Blakeslee, Ryder', score: 48 },
     ],
   },
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -118,6 +132,8 @@ export const eventSummaries: EventSummary[] = [
     winners: [],
   },
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -130,7 +146,9 @@ export const eventSummaries: EventSummary[] = [
     median: 39,
     top_score: 47,
     difficulty: -0.2,
-    winners: [{ shooter_id: 60, display_name: 'Boatwright, Oliver', score: 47 }],
+    winners: [
+      { stats_excluded: false, shooter_id: 60, display_name: 'Boatwright, Oliver', score: 47 },
+    ],
   },
 ];
 
@@ -147,6 +165,8 @@ function cells(hits: number[]): StationMatrix['entries'][number]['hits'] {
 }
 
 export const eventDetail: EventDetail = {
+  stats_excluded: false,
+  thrown_out: [],
   kind: 'regular',
   label: null,
   target_total: 50,
@@ -166,6 +186,7 @@ export const eventDetail: EventDetail = {
   difficulty: 2.1,
   results: [
     {
+      stats_excluded: false,
       ...noModel,
       round_id: 7444,
       shooter_id: 12,
@@ -182,6 +203,7 @@ export const eventDetail: EventDetail = {
       rating_delta: 0.9,
     },
     {
+      stats_excluded: false,
       ...noModel,
       round_id: 7445,
       shooter_id: 7,
@@ -198,6 +220,7 @@ export const eventDetail: EventDetail = {
       rating_delta: 0.2,
     },
     {
+      stats_excluded: false,
       ...noModel,
       round_id: 7450,
       shooter_id: 3,
@@ -214,6 +237,7 @@ export const eventDetail: EventDetail = {
       rating_delta: -0.3,
     },
     {
+      stats_excluded: false,
       ...noModel,
       round_id: 7456,
       shooter_id: 21,
@@ -247,6 +271,7 @@ export const eventDetail: EventDetail = {
       label: String(station_no),
       station_no,
       target_count: station_no === 10 ? 8 : 7,
+      dropped: false,
     })),
     entries: [
       {
@@ -307,6 +332,8 @@ export const eventDetail: EventDetail = {
 };
 
 export const attendanceOnlyDetail: EventDetail = {
+  stats_excluded: false,
+  thrown_out: [],
   kind: 'regular',
   label: null,
   target_total: 50,
@@ -333,6 +360,8 @@ export const attendanceOnlyDetail: EventDetail = {
 
 /** Plan 17: the special Sunday (invented names, as everywhere in tests). */
 export const specialSummary: EventSummary = {
+  stats_excluded: false,
+  thrown_out: [],
   ...stationWeek,
   round_type_source: 'none',
   event_date: '2026-09-20',
@@ -359,6 +388,7 @@ const asEntered = {
   mu_before: null,
   mu_after: null,
   rating_delta: null,
+  stats_excluded: false,
 } as const;
 
 /** One hit count per station 1..10 (6 targets each) → the API's cells. */
@@ -391,6 +421,8 @@ const SPECIAL_SHOOTERS = [
 ] as const;
 
 export const specialDetail: EventDetail = {
+  stats_excluded: false,
+  thrown_out: [],
   event_date: '2026-09-20',
   round_type: 'sporting',
   round_type_source: 'none',
@@ -420,6 +452,7 @@ export const specialDetail: EventDetail = {
       label: String(i + 1),
       station_no: i + 1,
       target_count: 6,
+      dropped: false,
     })),
     entries: SPECIAL_SHOOTERS.map((s, i) => ({
       entry_row: i + 5,

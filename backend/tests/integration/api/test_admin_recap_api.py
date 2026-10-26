@@ -394,3 +394,28 @@ def test_a_busy_sunday_keeps_every_crossing_and_drops_their_own_trophy_lines(
     ]
     assert f"{natural_name(b_name)}: Events Attended - 25" in lines
     assert not [x for x in lines if "thousand-target marks" in x]
+
+
+def test_a_thrown_out_sunday_lists_its_station(
+    fx_admin_client: TestClient, fx_session: Session
+) -> None:
+    fx_session.execute(
+        text(
+            "UPDATE station_layouts SET dropped = true, dropped_source = 'override'"
+            " WHERE event_date = '2026-09-13' AND station_label = '9'"
+        )
+    )
+    fx_session.execute(
+        text("UPDATE events SET stats_excluded = true WHERE event_date = '2026-09-13'")
+    )
+    clear_cache()
+    assert fx_admin_client.get("/api/admin/recap/2026-09-13").json()["thrown_out"] == [
+        {"station_label": "9", "target_count": 7, "credited": False}
+    ]
+
+
+def test_recaps_without_a_thrown_out_station_list_none(
+    fx_special_admin_client: TestClient,
+) -> None:
+    for day in (LATEST, SPECIAL):
+        assert fx_special_admin_client.get(f"/api/admin/recap/{day}").json()["thrown_out"] == []

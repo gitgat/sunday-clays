@@ -26,6 +26,8 @@ const unmodelled = {
 
 /** 2026-09-27: a tie at 49 for first, then 48. */
 export const latestEvent: EventDetail = {
+  stats_excluded: false,
+  thrown_out: [],
   kind: 'regular',
   label: null,
   target_total: 50,
@@ -45,6 +47,7 @@ export const latestEvent: EventDetail = {
   difficulty: -1.4,
   results: [
     {
+      stats_excluded: false,
       ...unmodelled,
       round_id: 7458,
       shooter_id: 30,
@@ -61,6 +64,7 @@ export const latestEvent: EventDetail = {
       rating_delta: 0.8,
     },
     {
+      stats_excluded: false,
       ...unmodelled,
       round_id: 7457,
       shooter_id: 31,
@@ -77,6 +81,7 @@ export const latestEvent: EventDetail = {
       rating_delta: 0.5,
     },
     {
+      stats_excluded: false,
       ...unmodelled,
       round_id: 7459,
       shooter_id: 32,
@@ -104,6 +109,8 @@ const scoredWeek = { has_scores: true, results_complete: true, condition: null }
 /** 2026 season sample. 2026-09-27's head count is blanked on purpose (its 23 shooters stand in for turnout). */
 export const seasonEvents: EventSummary[] = [
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -118,9 +125,13 @@ export const seasonEvents: EventSummary[] = [
     median: 34,
     top_score: 42,
     difficulty: 2.1,
-    winners: [{ shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 }],
+    winners: [
+      { stats_excluded: false, shooter_id: 12, display_name: 'Nordquist, Sherman', score: 42 },
+    ],
   },
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -136,11 +147,13 @@ export const seasonEvents: EventSummary[] = [
     top_score: 49,
     difficulty: -1.4,
     winners: [
-      { shooter_id: 31, display_name: 'Stockton, Ethan', score: 49 },
-      { shooter_id: 30, display_name: 'Finnegan, Stanton', score: 49 },
+      { stats_excluded: false, shooter_id: 31, display_name: 'Stockton, Ethan', score: 49 },
+      { stats_excluded: false, shooter_id: 30, display_name: 'Finnegan, Stanton', score: 49 },
     ],
   },
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -155,9 +168,13 @@ export const seasonEvents: EventSummary[] = [
     median: 36,
     top_score: 48,
     difficulty: 0.3,
-    winners: [{ shooter_id: 32, display_name: 'Grimsby, Gregor', score: 48 }],
+    winners: [
+      { stats_excluded: false, shooter_id: 32, display_name: 'Grimsby, Gregor', score: 48 },
+    ],
   },
   {
+    stats_excluded: false,
+    thrown_out: [],
     kind: 'regular',
     label: null,
     target_total: 50,
@@ -216,6 +233,7 @@ export const meDetail: ShooterDetail = {
 };
 
 const roundDefaults = {
+  stats_excluded: false,
   gauge_class: null,
   status: 'member',
   expected: null,

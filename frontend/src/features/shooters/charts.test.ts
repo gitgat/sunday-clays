@@ -39,6 +39,7 @@ function round(over: Partial<ShooterRound>): ShooterRound {
     mu_before: null,
     mu_after: null,
     condition: null,
+    stats_excluded: false,
     ...over,
   };
 }

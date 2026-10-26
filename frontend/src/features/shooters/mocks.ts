@@ -164,6 +164,7 @@ export const hadleyInsights: ShooterInsights = {
 };
 
 const unrated = {
+  stats_excluded: false,
   expected: null,
   residual: null,
   gauge_class: null,
