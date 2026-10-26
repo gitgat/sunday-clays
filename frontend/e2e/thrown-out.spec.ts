@@ -42,6 +42,7 @@ test('the Sunday page shows the banner, the * and the counts line', async ({ pag
   await expect(page.getByText(THROWN_OUT_COUNTS)).toBeVisible();
 });
 
+// A wiring guard for the explainer copy: it does not depend on the station_drop rule.
 test('a score board says thrown-out Sundays are left out, a points board says they count', async ({
   page,
 }) => {
