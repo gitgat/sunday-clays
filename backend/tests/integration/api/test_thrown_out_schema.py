@@ -17,6 +17,16 @@ FIELDS = [
     ("ThrownOutOut", "station_label"),
     ("ThrownOutOut", "target_count"),
     ("ThrownOutOut", "credited"),
+    ("ShooterRoundOut", "stats_excluded"),
+    ("ShooterStatsOut", "n_excluded"),
+    ("SplitOut", "n_excluded"),
+    ("YirTotalsOut", "n_excluded"),
+    ("YirShooterTotalsOut", "n_excluded"),
+    ("YirTopRoundOut", "stats_excluded"),
+    ("OnThisDayItemOut", "stats_excluded"),
+    ("WeatherEventOut", "stats_excluded"),
+    ("EventTrendOut", "stats_excluded"),
+    ("QueryResult", "thrown_out_dates"),
 ]
 
 

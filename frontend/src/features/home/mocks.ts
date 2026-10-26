@@ -233,6 +233,7 @@ export const meDetail: ShooterDetail = {
 };
 
 const roundDefaults = {
+  stats_excluded: false,
   gauge_class: null,
   status: 'member',
   expected: null,

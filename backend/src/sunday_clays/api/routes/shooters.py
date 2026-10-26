@@ -134,6 +134,7 @@ class ShooterRoundOut(BaseModel):
     mu_before: float | None
     mu_after: float | None
     condition: str | None
+    stats_excluded: bool
 
 
 class RatingPointOut(BaseModel):
@@ -454,6 +455,7 @@ def get_shooter_rounds(
             mu_before=opt_float(r["mu_before"]),
             mu_after=opt_float(r["mu_after"]),
             condition=opt_str(r["condition"]),
+            stats_excluded=bool(r["stats_excluded"]),
         )
         for r in rows(mine.sort_values(["event_date", "ordinal"]))
     ]
