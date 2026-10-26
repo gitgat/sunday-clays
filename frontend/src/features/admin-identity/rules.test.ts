@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildRulePayload, EMPTY_FIELDS, RULE_LABELS, RULE_TYPES, ruleSummary } from './rules';
-import type { RuleFields, RuleType } from './rules';
+import type { RuleFields, RulePayload, RuleType } from './rules';
 
 const hadley = { shooter_id: 3, display_name: 'Hadley, Ike' };
 const al = { shooter_id: 90, display_name: 'Crimson, Al' };
@@ -14,7 +14,7 @@ const round = {
 const f = (over: Partial<RuleFields>): RuleFields => ({ ...EMPTY_FIELDS, ...over });
 
 describe('RULE_TYPES', () => {
-  it('offers exactly the eight C5 rule types, each with a label', () => {
+  it('offers exactly the nine C5 rule types, each with a label', () => {
     expect([...RULE_TYPES].sort()).toEqual([
       'alias_name',
       'hide_round',
@@ -23,6 +23,7 @@ describe('RULE_TYPES', () => {
       'round_type_override',
       'score_override',
       'set_status',
+      'station_drop',
       'station_reset',
     ]);
     expect(RULE_TYPES.every((t) => RULE_LABELS[t].length > 0)).toBe(true);
@@ -30,7 +31,7 @@ describe('RULE_TYPES', () => {
 });
 
 describe('buildRulePayload', () => {
-  it.each<[RuleType, Partial<RuleFields>, Record<string, string | number>]>([
+  it.each<[RuleType, Partial<RuleFields>, RulePayload]>([
     [
       'merge_shooter',
       { source: al, target: hadley },
@@ -69,6 +70,21 @@ describe('buildRulePayload', () => {
       { station: '7B', effective_date: '2026-10-04', note: 'x' },
     ],
     [
+      'station_drop',
+      { eventDate: '2026-10-25', stationNo: '11', dropped: 'yes' },
+      { event_date: '2026-10-25', station_label: '11', dropped: true },
+    ],
+    [
+      'station_drop',
+      { eventDate: '2026-01-11', stationNo: ' 7a ', dropped: 'no' },
+      { event_date: '2026-01-11', station_label: '7A', dropped: false },
+    ],
+    [
+      'station_drop',
+      { eventDate: '2026-10-25', stationNo: '', dropped: 'yes' },
+      { event_date: '2026-10-25', station_label: null, dropped: true },
+    ],
+    [
       'alias_name',
       { nameKey: ' hadley dik ', shooter: hadley },
       { name_key: 'hadley dik', shooter_id: 3 },
@@ -100,11 +116,19 @@ describe('buildRulePayload', () => {
     ['station_reset', { stationNo: '', effectiveDate: '2026-10-04', resetNote: 'x' }],
     ['station_reset', { stationNo: '6', resetNote: 'x' }],
     ['station_reset', { stationNo: '6', effectiveDate: '2026-10-04', resetNote: ' ' }],
+    ['station_drop', { stationNo: '11', dropped: 'yes' }],
+    ['station_drop', { eventDate: '2026-10-25', stationNo: '11' }],
+    ['station_drop', { eventDate: '2026-10-25', stationNo: '', dropped: 'no' }],
+    ['station_drop', { eventDate: '2026-10-25', stationNo: 'A7', dropped: 'yes' }],
     ['alias_name', { nameKey: 'hadley dik' }],
     ['alias_name', { shooter: hadley }],
   ])('%s is incomplete for %j', (type, fields) => {
     expect(buildRulePayload(type, f(fields))).toBeNull();
   });
+});
+
+describe('RULE_LABELS', () => {
+  it('labels the new rule', () => expect(RULE_LABELS.station_drop).toBe('Thrown-out station'));
 });
 
 describe('ruleSummary', () => {

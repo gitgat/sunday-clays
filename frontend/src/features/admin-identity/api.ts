@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { api, unwrap } from '../../api/client';
 import type { paths } from '../../api/schema';
 import type { JsonOf } from '../admin/api';
-import type { RuleType } from './rules';
+import type { RulePayload, RuleType } from './rules';
 
 export type DuplicatePair = JsonOf<paths['/api/admin/possible-duplicates']['get']>[number];
 export type ShooterRef = DuplicatePair['a'];
@@ -67,11 +67,8 @@ export function useRules() {
 
 export function useCreateRule() {
   return useMutation({
-    mutationFn: (body: {
-      rule_type: RuleType;
-      payload: Record<string, string | number>;
-      note: string | null;
-    }) => unwrap(api.POST('/api/admin/rules', { body })),
+    mutationFn: (body: { rule_type: RuleType; payload: RulePayload; note: string | null }) =>
+      unwrap(api.POST('/api/admin/rules', { body })),
   });
 }
 
