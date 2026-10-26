@@ -91,3 +91,13 @@ def test_count_rows_by_sunday_list_the_thrown_out_dates(frames: ExplorerFrames) 
     assert hit.thrown_out_dates == []
     schema = create_app().openapi()["components"]["schemas"]["QueryResult"]
     assert "thrown_out_dates" in schema["required"]
+
+
+def test_a_score_total_counts_clays_broken_on_a_thrown_out_sunday(frames: ExplorerFrames) -> None:
+    f = _thrown_out(frames)
+    total = run_query(f, QuerySpec(metric=Metric.SCORE, agg=Agg.SUM))
+    every_round = float(frames.rounds["score"].sum())
+    assert (total.rows[0]["value"], total.n_rounds) == (every_round, 9)
+    by_event = run_query(f, QuerySpec(metric=Metric.SCORE, agg=Agg.SUM, group_by=[Dim.EVENT]))
+    assert "2025-03-02" in _values(by_event.rows, "event")
+    assert by_event.thrown_out_dates == ["2025-03-02"]

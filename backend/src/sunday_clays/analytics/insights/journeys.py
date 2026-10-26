@@ -250,7 +250,7 @@ def _targets_milestone(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for i, days in anchor_days(fr, scope):
         d = days[i]
         level = d.targets // TARGETS_STEP * TARGETS_STEP
-        if level == 0 or d.prior_sum >= level:
+        if level == 0 or d.targets - sum(d.scores) >= level:
             continue
         thousands = level // TARGETS_STEP
         yield Fact(

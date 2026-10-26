@@ -314,3 +314,46 @@ def test_streak_rows_count_a_special_sunday(make_world, sun):
     w.special(1, sun(2))
     rows = anchors.streak_rows(w.frames(), link("/records", "rec-streaks", sun(0), sun(3)))
     assert dict(zip(rows["shooter_id"], rows["value"], strict=True)) == {1: 4, 2: 3}
+
+
+def test_trend_rows_keep_the_thrown_out_point_out_of_every_line(make_world, sun):
+    fr = make_world().series(1, 0, [30, 50, 34]).sunday(sun(1), stats_excluded=True).frames()
+    trend = anchors.trend_rows(fr, link("/shooters/1", "trend", sun(0), sun(20)))
+    assert trend["thrown_out"].tolist() == [False, True, False]
+    assert trend["score"].fillna(-1).tolist() == [30.0, -1.0, 34.0]
+    assert trend["pb"].fillna(-1).tolist() == [30.0, -1.0, 34.0]
+    assert trend["so_far"].fillna(-1).tolist() == [-1.0, -1.0, 30.0]
+
+
+def test_trend_rolling_average_skips_the_thrown_out_round(make_world, sun):
+    fr = (
+        make_world()
+        .series(1, 0, [30 + i for i in range(11)])
+        .sunday(sun(5), stats_excluded=True)
+        .frames()
+    )
+    trend = anchors.trend_rows(fr, link("/shooters/1", "trend", sun(0), sun(20)))
+    assert pd.isna(trend["roll10"].iloc[9])
+    assert trend["roll10"].iloc[10] == pytest.approx(35.0)
+
+
+def test_highest_stations_and_first_rounds_leave_out_thrown_out_data(make_world, sun):
+    w = (
+        make_world()
+        .round(1, sun(0), 45)
+        .round(2, sun(1), 30)
+        .round(1, sun(2), 49)
+        .round(3, sun(3), 50)
+    )
+    w.sunday(sun(0), stats_excluded=True).sunday(sun(3), stats_excluded=True)
+    w.station(1, sun(2), 11, 7, target_count=7, dropped=True).station(
+        1, sun(2), 3, 4, target_count=8
+    )
+    fr, window = w.frames(), (sun(0), sun(20))
+    assert anchors.highest_rows(fr, link("/records", "rec-highest", *window))["value"].tolist() == [
+        49
+    ]
+    rows = anchors.station_rows(fr, link("/stations", "sthit", *window))
+    assert (rows["station"].tolist(), rows["value"].tolist()) == (["3"], [50.0])
+    firsts = anchors.first_round_rows(fr, link("/club", "first-rounds", *window))
+    assert (firsts["score"].tolist(), firsts["value"].tolist()) == (["30"], [1])

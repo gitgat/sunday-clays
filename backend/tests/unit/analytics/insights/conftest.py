@@ -154,6 +154,7 @@ class World:
                 has_stations=any(s["event_date"] == day for s in self._stations),
                 results_complete=bool(n) and cols.get("held", True),
                 condition=None,
+                stats_excluded=False,
             )
             row.update({k: v for k, v in cols.items() if k != "held"})
             rows.append(row)
@@ -161,6 +162,7 @@ class World:
 
     def _round_frame(self, events: pd.DataFrame) -> pd.DataFrame:
         held = dict(zip(events["event_date"], events["results_complete"], strict=True))
+        excluded = dict(zip(events["event_date"], events["stats_excluded"], strict=True))
         base = pd.DataFrame(
             [
                 {
@@ -170,10 +172,19 @@ class World:
                     "name_key": f"s{r['shooter_id']}",
                     "score": r["score"],
                     "held": bool(held[r["event_date"]]),
+                    "stats_excluded": bool(excluded[r["event_date"]]),
                 }
                 for i, r in enumerate(self._rounds)
             ],
-            columns=["round_id", "event_date", "shooter_id", "name_key", "score", "held"],
+            columns=[
+                "round_id",
+                "event_date",
+                "shooter_id",
+                "name_key",
+                "score",
+                "held",
+                "stats_excluded",
+            ],
         )
         base["ordinal"] = (
             base.sort_values(["score", "round_id"], ascending=[False, True])
@@ -190,6 +201,7 @@ class World:
             for column in ("field_median", "adjusted", "event_rank", "is_best_round", "percentile"):
                 out[column] = metrics[column].to_numpy()
         out["is_best_round"] = out["is_best_round"].eq(True)
+        out["stats_excluded"] = out["stats_excluded"].eq(True)
         for i, r in enumerate(self._rounds):
             for key in ("residual", "expected", "mu_before", "mu_after"):
                 if key in r:

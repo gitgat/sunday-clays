@@ -28,7 +28,13 @@ import pandas as pd
 
 from sunday_clays.analytics import club_milestones as cm
 from sunday_clays.analytics import frames, streaks
-from sunday_clays.analytics.insights.context import Day, InsightFrames, Sunday, mean
+from sunday_clays.analytics.insights.context import (
+    Day,
+    InsightFrames,
+    Sunday,
+    mean,
+    scored_only,
+)
 from sunday_clays.station_label import label_sort_key
 
 FACT_TYPES: Final[tuple[str, ...]] = (
@@ -210,7 +216,7 @@ class FactSource:
         for d in self._round_dates:
             total += counts[d]
             self._cumulative.append(total)
-        stations = fr.stations
+        stations = frames.live_station_hits(fr.stations)
         self._stations: dict[date, pd.DataFrame] = (
             {cast(date, d): g for d, g in stations.groupby("event_date", sort=False)}
             if len(stations)
@@ -353,9 +359,9 @@ class FactSource:
         sundays = self.fr.sundays
         today = sundays[i]
         middle = today.median
-        if middle is None:
+        if middle is None or today.stats_excluded:
             return []
-        prior = [s for s in sundays[:i] if s.median is not None]
+        prior = [s for s in sundays[:i] if s.median is not None and not s.stats_excluded]
         month = today.date.month
         same = [s for s in prior if s.date.month == month]
         beaten = [s for s in same if s.median is not None and s.median >= middle]
@@ -626,13 +632,15 @@ class FactSource:
     def _improvement(self, i: int) -> list[RecapFact]:
         fr = self.fr
         today = fr.sundays[i]
+        if today.stats_excluded:
+            return []
         out: list[RecapFact] = []
         for result in today.results:
             sid = result.shooter_id
             profile = fr.profiles.get(sid)
             if profile is None or profile.deceased:
                 continue
-            days = fr.history_until(sid, today.date)
+            days = scored_only(fr.history_until(sid, today.date))
             gain = self._gain(days, today.date)
             if gain is None or gain < IMPROVE_MIN_GAIN:
                 continue

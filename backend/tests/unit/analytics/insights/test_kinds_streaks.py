@@ -67,7 +67,7 @@ def test_own_average_is_the_mean_of_every_earlier_round(make_world, sun, run):
     scores = [30] * 10 + [45, 38, 38, 38]
     fr = field_world(make_world, sun, scores).frames()
     days = fr.histories[1]
-    assert days[11].prior_mean == sum(scores[:11]) / 11
+    assert days[11].prior_mean_s == sum(scores[:11]) / 11
     (profile,) = [f for f in run("pf.above-own-avg-streak", fr) if f.variant == PROFILE]
     assert profile.params["k"] == 4
 

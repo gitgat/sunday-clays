@@ -16,6 +16,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Count,
     Int,
     MonthYear,
@@ -166,6 +167,7 @@ register(
                     )
                 ),
                 T(named("Up to three names, biggest gap first. All round types count.")),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(SPOTLIGHT_LABEL,),
@@ -228,7 +230,7 @@ def _rain_day(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
                 "same" if abs(crowd_gap) < CROWD_SAME else ("fewer" if crowd_gap < 0 else "more")
             )
         played = "unknown"
-        if (d := sunday.difficulty) is not None:
+        if (d := sunday.difficulty) is not None and not sunday.stats_excluded:
             played = "same" if abs(d) < PLAYED_SAME else ("tough" if d > 0 else "easy")
         better: list[tuple[float, int]] = []
         steady: list[int] = []
@@ -354,6 +356,7 @@ register(
                         "of each other."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(RAIN_TURNOUT_LABEL, RAIN_NAME_LABEL),
@@ -374,6 +377,7 @@ def _how_it_played(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         d = sunday.difficulty
         if (
             sunday.date not in scope.sundays
+            or sunday.stats_excluded
             or d is None
             or abs(d) < PLAYED_MIN
             or sunday.median is None
@@ -450,6 +454,7 @@ register(
                         "recent Sunday."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(PLAYED_LABEL,),
@@ -472,14 +477,21 @@ SINCE_WEEKS = 26
 def _toughest_since(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for sunday in fr.sundays:
         d = sunday.difficulty
-        if sunday.date not in scope.sundays or d is None or abs(d) < SINCE_MIN:
+        if (
+            sunday.date not in scope.sundays
+            or sunday.stats_excluded
+            or d is None
+            or abs(d) < SINCE_MIN
+        ):
             continue
         sign = 1.0 if d > 0 else -1.0
         prev = next(
             (
                 s
                 for s in reversed(fr.sundays[: sunday.i])
-                if s.difficulty is not None and sign * s.difficulty >= sign * d
+                if s.difficulty is not None
+                and not s.stats_excluded
+                and sign * s.difficulty >= sign * d
             ),
             None,
         )
@@ -541,6 +553,7 @@ register(
                         "in the 26 weeks before went further."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(TOUGH_SINCE_LABEL,),
@@ -562,7 +575,7 @@ JUMP_NAMES = 2
 def _week_jump(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     spotlit = {day: {d.shooter_id for d in top} for day, top in spotlight_days(fr, scope).items()}
     found: dict[date, list[tuple[int, Day, Day]]] = {}
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         d = days[i]
         prev = days[i - 1] if i else None
         sunday = fr.sunday(d.date)
@@ -653,6 +666,7 @@ register(
                     )
                 ),
                 T(named("Up to two names; anyone already in the Sunday's spotlight is left out.")),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(JUMP_LABEL,),
@@ -673,7 +687,7 @@ TOP_MIN_SUNDAYS = 20
 
 def _record_watch(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     record: int | None = None
-    for sunday in fr.sundays:
+    for sunday in fr.scored_sundays:
         if not sunday.results:
             continue
         top = sunday.results[0]
@@ -764,6 +778,7 @@ register(
                         "round on any earlier Sunday. All round types count."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(HIGHEST_LABEL,),
@@ -781,7 +796,7 @@ register(
 
 def _top_score(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
     for sunday in fr.sundays:
-        if sunday.date not in scope.sundays or sunday.top is None:
+        if sunday.date not in scope.sundays or sunday.top is None or sunday.stats_excluded:
             continue
         month_day = (sunday.date.month, sunday.date.day)
         start = (
@@ -789,7 +804,11 @@ def _top_score(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
             if month_day == (2, 29)
             else (sunday.date.replace(year=sunday.date.year - TOP_YEARS))
         )
-        earlier = [s.top for s in fr.sundays[: sunday.i] if s.top is not None and s.date >= start]
+        earlier = [
+            s.top
+            for s in fr.sundays[: sunday.i]
+            if s.top is not None and not s.stats_excluded and s.date >= start
+        ]
         if len(earlier) < TOP_MIN_SUNDAYS:
             continue
         higher = sum(t > sunday.top for t in earlier)
@@ -847,6 +866,7 @@ register(
                         "the 3 years before. Needs 20 earlier Sundays in that time."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(TOP_LABEL,),
@@ -875,7 +895,11 @@ def first_rounds_before(fr: InsightFrames, day: date) -> list[int]:
     return [
         days[0].score
         for days in fr.histories.values()
-        if days and days[0].date < day and cutoff is not None and days[0].date >= cutoff
+        if days
+        and days[0].date < day
+        and cutoff is not None
+        and days[0].date >= cutoff
+        and not days[0].stats_excluded
     ]
 
 
@@ -894,7 +918,11 @@ def _new_faces(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
             continue
         earlier = first_rounds_before(fr, sunday.date)
         strong: tuple[int, Day] | None = None
-        if len(earlier) >= STRONG_MIN_FIRSTS and sunday.median is not None:
+        if (
+            len(earlier) >= STRONG_MIN_FIRSTS
+            and sunday.median is not None
+            and not sunday.stats_excluded
+        ):
             for d in sorted(firsts, key=lambda x: (-x.score, fr.names.get(x.shooter_id, ""))):
                 share = 100 * sum(e < d.score for e in earlier) // len(earlier)
                 if share >= STRONG_SHARE and d.score >= sunday.median:
@@ -931,6 +959,22 @@ def _new_faces_chart(fact: Fact) -> ChartLink:
 
 _WELCOME = field_("Welcome to ", Count("n", "first-timer"), ".")
 
+_NEW_FACES_HOW = (
+    T(
+        named(
+            "First-timer = a shooter whose first Sunday on record is this one. "
+            "Not shown for the club's first 8 weeks of records, when we cannot "
+            "yet tell who is new."
+        )
+    ),
+    T(
+        named(
+            "Strong start: a first round better than 70% of every earlier first "
+            "round at the club and at or over the field's middle score."
+        )
+    ),
+)
+
 register(
     Kind(
         id="ev.new-faces",
@@ -963,23 +1007,7 @@ register(
                 ),
             ),
         },
-        how={
-            "": (
-                T(
-                    named(
-                        "First-timer = a shooter whose first Sunday on record is this one. "
-                        "Not shown for the club's first 8 weeks of records, when we cannot "
-                        "yet tell who is new."
-                    )
-                ),
-                T(
-                    named(
-                        "Strong start: a first round better than 70% of every earlier first "
-                        "round at the club and at or over the field's middle score."
-                    )
-                ),
-            )
-        },
+        how={"": _NEW_FACES_HOW, "strong": (*_NEW_FACES_HOW, THROWN_OUT_ROUNDS_HOW)},
         labels=(FIRST_ROUNDS_LABEL,),
         chart=_new_faces_chart,
         proof=(

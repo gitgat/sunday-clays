@@ -19,6 +19,7 @@ from sunday_clays.analytics.insights.context import (
 )
 from sunday_clays.analytics.insights.registry import Kind, register
 from sunday_clays.analytics.insights.templates import (
+    THROWN_OUT_ROUNDS_HOW,
     Count,
     Int,
     MonthYear,
@@ -59,9 +60,10 @@ PB_PROFILE_SUNDAYS = 52  # the profile row shows the latest PB set in the last 5
 def is_pb(day: Day) -> bool:
     """C12: the day's best round beats every round on earlier dates, with >= 5 earlier rounds."""
     return (
-        day.prior_rounds >= PB_MIN_PRIOR_ROUNDS
-        and day.prior_best is not None
-        and day.score > day.prior_best
+        not day.stats_excluded
+        and day.prior_rounds >= PB_MIN_PRIOR_ROUNDS
+        and day.prior_best_s is not None
+        and day.score > day.prior_best_s
     )
 
 
@@ -90,15 +92,15 @@ def _pb_fact(days: Sequence[Day], i: int, old: int, *, variant: str, pages: froz
 
 
 def _pb(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    for i, days in anchor_days(fr, scope):
-        old = days[i].prior_best
+    for i, days in anchor_days(fr, scope, scored=True):
+        old = days[i].prior_best_s
         if is_pb(days[i]) and old is not None:
             yield _pb_fact(days, i, old, variant="", pages=frozenset({P.SUNDAY, P.HOME}))
-    for _sid, days in evergreen_days(fr, scope):
+    for _sid, days in evergreen_days(fr, scope, scored=True):
         latest = next((j for j in range(len(days) - 1, -1, -1) if is_pb(days[j])), None)
         if latest is None:
             continue
-        old = days[latest].prior_best
+        old = days[latest].prior_best_s
         recent = fr.held_between(days[latest].date, scope.as_of) < PB_PROFILE_SUNDAYS
         if old is not None and recent:
             yield _pb_fact(days, latest, old, variant=PROFILE, pages=frozenset({P.PROFILE}))
@@ -189,8 +191,8 @@ register(
             ROLLUP: (T(named("Personal bests today: ", NameList("names"), ".")),),
         },
         how={
-            "": _PB_HOW,
-            PROFILE: _PB_HOW,
+            "": (*_PB_HOW, THROWN_OUT_ROUNDS_HOW),
+            PROFILE: (*_PB_HOW, THROWN_OUT_ROUNDS_HOW),
             ROLLUP: (
                 T(
                     named(
@@ -198,6 +200,7 @@ register(
                         "with 5 or more earlier rounds."
                     )
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
         },
         labels=(PB_LABEL, PB_ROLLUP_LABEL),
@@ -227,12 +230,12 @@ TIED_OVER_USUAL = 3.0
 
 
 def _tied_best(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         d = days[i]
-        usual = d.prior_mean
-        if d.prior_best is None or usual is None or d.prior_rounds < TIED_PRIOR:
+        usual = d.prior_mean_s
+        if d.prior_best_s is None or usual is None or d.prior_rounds < TIED_PRIOR:
             continue
-        if d.score != d.prior_best or d.prior_best < usual + TIED_OVER_USUAL:
+        if d.score != d.prior_best_s or d.prior_best_s < usual + TIED_OVER_USUAL:
             continue
         yield Fact(
             subject_id=str(d.shooter_id),
@@ -320,8 +323,12 @@ register(
                         "your average. All round types count."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             ),
-            ROLLUP: (T(named("Each matched the best round of their own history.")),),
+            ROLLUP: (
+                T(named("Each matched the best round of their own history.")),
+                THROWN_OUT_ROUNDS_HOW,
+            ),
         },
         labels=(TREND_LABEL, RESULTS_LABEL),
         chart=_tied_chart,
@@ -683,8 +690,8 @@ def _back_strong(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
         gap = (d.date - last).days
         if gap < BACK_DAYS:
             continue
-        usual = d.prior_mean
-        show_score = usual is not None and d.score >= usual
+        usual = d.prior_mean_s
+        show_score = not d.stats_excluded and usual is not None and d.score >= usual
         params: dict[str, object] = {
             "s": d.shooter_id,
             "months": max(6, round(gap / 30.44)),
@@ -773,7 +780,7 @@ register(
         },
         how={
             "": _BACK_HOW,
-            "score": _BACK_HOW,
+            "score": (*_BACK_HOW, THROWN_OUT_ROUNDS_HOW),
             ROLLUP: (T(named("Each came back after 180 or more days away.")),),
         },
         labels=(charts.CAL_LABEL, RESULTS_LABEL),
@@ -795,11 +802,11 @@ TIER_PRIOR = 10
 
 
 def _first_tier(fr: InsightFrames, scope: Scope) -> Iterator[Fact]:
-    for i, days in anchor_days(fr, scope):
+    for i, days in anchor_days(fr, scope, scored=True):
         d = days[i]
-        if d.prior_rounds < TIER_PRIOR or d.prior_best is None:
+        if d.prior_rounds < TIER_PRIOR or d.prior_best_s is None:
             continue
-        level = crossed(d.prior_best, d.score, TIER_LEVELS)
+        level = crossed(d.prior_best_s, d.score, TIER_LEVELS)
         if level is None:
             continue
         yield Fact(
@@ -898,6 +905,7 @@ register(
                         "personal best."
                     ),
                 ),
+                THROWN_OUT_ROUNDS_HOW,
             )
         },
         labels=(charts.BEST_EACH_LABEL,),
@@ -923,7 +931,7 @@ SINCE_LEVELS: tuple[tuple[str, int], ...] = (
 
 def _reached(day: Day, variant: str, level: int) -> bool:
     if variant == "score":
-        return day.score >= level
+        return not day.stats_excluded and day.score >= level
     return day.held and day.rank is not None and day.rank <= level  # any field size (history)
 
 
@@ -972,6 +980,23 @@ def _since_chart(fact: Fact) -> ChartLink:
         p_int(fact.params, "s"), "finishes", label=charts.FINISH_LABEL, window=window, hl=hl
     )
 
+
+_FIRST_SINCE_HOW = (
+    T(
+        named(
+            "A win, a podium, or a round of 45 or 40 or better, last reached a year "
+            "or more and 15 or more rounds earlier."
+        ),
+        you=named(
+            "A win, a podium, or a round of 45 or 40 or better that you last "
+            "reached a year or more and 15 or more rounds earlier."
+        ),
+    ),
+    T(
+        named("The mark must have been reached at least twice before."),
+        you=named("You must have reached the mark at least twice before."),
+    ),
+)
 
 register(
     Kind(
@@ -1028,22 +1053,8 @@ register(
             ),
         },
         how={
-            "": (
-                T(
-                    named(
-                        "A win, a podium, or a round of 45 or 40 or better, last reached a year "
-                        "or more and 15 or more rounds earlier."
-                    ),
-                    you=named(
-                        "A win, a podium, or a round of 45 or 40 or better that you last "
-                        "reached a year or more and 15 or more rounds earlier."
-                    ),
-                ),
-                T(
-                    named("The mark must have been reached at least twice before."),
-                    you=named("You must have reached the mark at least twice before."),
-                ),
-            ),
+            "": _FIRST_SINCE_HOW,
+            "score": (*_FIRST_SINCE_HOW, THROWN_OUT_ROUNDS_HOW),
             ROLLUP: (T(named("Each reached a mark for the first time in a year or more.")),),
         },
         labels=(charts.BEST_EACH_LABEL, charts.FINISH_LABEL, RESULTS_LABEL),
