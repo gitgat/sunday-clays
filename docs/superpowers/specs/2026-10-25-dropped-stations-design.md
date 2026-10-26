@@ -104,7 +104,7 @@ Every consumer in the appendix carries one of these classes:
 
 - `frames._ROUNDS_SQL` and `_EVENTS_SQL` gain `e.stats_excluded`. `_STATION_HITS_SQL` gains `l.dropped`. Add them to `ROUND_COLUMNS`/`EVENT_COLUMNS`/`STATION_HIT_COLUMNS`, the `bools=` cast, and the test-world helpers (`appearances_from_rounds`, `calendar_from_events`) with default `False`.
 - Add two helpers in `frames.py`: `stat_rounds(df)` (rows where not `stats_excluded`) and `live_station_hits(df)` (rows where not `dropped`). Score-stat consumers call `stat_rounds`. Station consumers call `live_station_hits` **before** `stations.add_sheet_totals`, so sheet totals leave out the free station.
-- The duplicate SQL readers each gain the column or the filter: `stations._FRAME_SQL`, `achievements/context._STATION_SQL` (also add to `STATION_COLUMNS`, which `insights/trophies.py:_next_trophy` rebuilds from), `weather_effects._WEATHER_EVENTS_SQL`, `yir._EVENTS_SQL`, `predictions._scored_events` and `api/routes/claysmasher._STATIONS_SQL`. Folding them into `frames.py` is the builder's call. It is not required.
+- The duplicate SQL readers each gain the column or the filter: `stations._FRAME_SQL`, `achievements/context._STATION_SQL` (also add to `STATION_COLUMNS`, which `insights/trophies.py:_next_trophy` rebuilds from), `weather_effects._WEATHER_EVENTS_SQL`, and `yir._EVENTS_SQL`. `predictions._scored_events` (attendance probabilities) stays unchanged, because attendance counts; skill-based predictions are excluded through D5. The ClaySmasher export carries a round-level `thrown_out` note instead of a station column. Folding them into `frames.py` is the builder's call. It is not required.
 
 **D5. Skill and metrics.**
 
@@ -206,7 +206,7 @@ Every consumer in the appendix carries one of these classes:
 ## 8. Rollout
 
 1. Merge to `main`. CI builds multi-arch images and the deployer mirrors and updates the stack. Migration `0010` is expand-only.
-2. The rebuild job runs on deploy or by admin recompute. It auto-detects **2026-10-25 Station 11** and **2026-01-11 Station 10**.
+2. Queue a `rebuild` job, because a deploy queues nothing and admin recompute only re-runs the pipeline (`jobs/handlers.py`). Run it inside the api container: `get_session()` → `enqueue(s, "rebuild", dedupe_key="rebuild")`, the same way the 2026-10-25 import was committed. Any import or rule change also queues one. The rebuild auto-detects **2026-10-25 Station 11** and **2026-01-11 Station 10**.
 3. Verify in prod:
    - both Sundays show the banner and \*
    - Station 11 on 10/25 and Station 10 on 1/11 are gone from station stats
