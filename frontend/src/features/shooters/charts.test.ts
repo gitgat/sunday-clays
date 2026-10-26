@@ -9,6 +9,7 @@ import {
   monthsModel,
   pbRoundIds,
   ratingModel,
+  roundsBefore,
   finishesModel,
   splitsModel,
   toughDaysModel,
@@ -16,7 +17,6 @@ import {
   trendModel,
 } from './charts';
 import { hadleyRounds } from './mocks';
-import { roundsBefore } from './charts';
 
 type LineSeries = { name: string; data: unknown[]; markPoint?: { data: { coord: unknown[] }[] } };
 
@@ -578,5 +578,13 @@ describe('thrown-out rounds (T7e)', () => {
       { event_date: '2026-03-29', difficulty: null, adjusted: null, thrown_out: 'yes' },
     ]);
     expect((m.option.series as { data: unknown[] }[])[0]?.data).toHaveLength(1);
+    expect(m.points).toBe(1);
   });
+  it('tough days with only a thrown-out Sunday have no points to plot', () =>
+    expect(
+      toughDaysModel(
+        [round({ event_date: '2026-03-29', adjusted: null, stats_excluded: true })],
+        [],
+      ).points,
+    ).toBe(0));
 });

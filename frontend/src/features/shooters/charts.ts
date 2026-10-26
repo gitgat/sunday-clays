@@ -486,7 +486,7 @@ export function monthsModel(
 export function toughDaysModel(
   rounds: ShooterRound[],
   difficulty: readonly TabularRow[],
-): ChartModel {
+): ChartModel & { points: number } {
   const byDate = new Map<string, number>();
   for (const row of difficulty) {
     if (typeof row.event === 'string' && typeof row.value === 'number') {
@@ -517,11 +517,13 @@ export function toughDaysModel(
     ];
   });
   rows.sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)));
+  const plotted = rows.filter((r) => r.difficulty !== null && r.adjusted !== null);
   return {
     columns,
     rows,
+    points: plotted.length,
     option: scatterOption(
-      { columns, rows: rows.filter((r) => r.difficulty !== null && r.adjusted !== null) },
+      { columns, rows: plotted },
       {
         x: 'difficulty',
         y: 'adjusted',
