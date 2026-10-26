@@ -150,6 +150,11 @@ STAT_METRICS: Final = frozenset(
 )
 
 
+def _is_stat(spec: QuerySpec) -> bool:
+    """A score total is clays broken, a count that keeps a thrown-out Sunday."""
+    return spec.metric in STAT_METRICS and not (spec.metric is Metric.SCORE and spec.agg is Agg.SUM)
+
+
 def _invalid(message: str) -> DomainError:
     return DomainError("invalid_query", message)
 
@@ -282,14 +287,14 @@ def _units(
     metric = spec.metric
     if metric in EVENT_METRICS:
         source = frames.events
-        if metric in STAT_METRICS:
+        if _is_stat(spec):
             source = fr.stat_events(source)
         events = _filter_events(source, spec.filters)
         units, key_cols, sort_cols = _keys(events, spec.group_by)
         units["value"] = events[AGGREGATED[metric]].astype(float)
         return units, key_cols, sort_cols, 0
     source_rounds = frames.rounds
-    if metric in STAT_METRICS:
+    if _is_stat(spec):
         source_rounds = fr.stat_rounds(source_rounds)
     rounds = _filter_rounds(source_rounds, spec.filters)
     if metric is Metric.HIT_PCT:
@@ -371,11 +376,7 @@ def run_query(frames: ExplorerFrames, spec: QuerySpec) -> QueryResult:
         for record in grouped[keys].itertuples(index=False, name=None)
     ]
     thrown_out_dates: list[str] = []
-    if (
-        spec.metric not in STAT_METRICS
-        and spec.metric is not Metric.HIT_PCT
-        and Dim.EVENT in spec.group_by
-    ):
+    if not _is_stat(spec) and spec.metric is not Metric.HIT_PCT and Dim.EVENT in spec.group_by:
         events = frames.events
         flagged = events[events["stats_excluded"].eq(True)]["event_date"]
         excluded = {d.isoformat() for d in flagged}
