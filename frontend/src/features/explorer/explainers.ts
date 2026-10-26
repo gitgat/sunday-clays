@@ -1,5 +1,4 @@
-import type { Metric } from '../../components/charts/explore';
-import type { Agg } from '../../components/charts/explore';
+import type { Agg, Metric } from '../../components/charts/explore';
 import {
   THROWN_OUT_COUNTS,
   THROWN_OUT_ROUNDS,
