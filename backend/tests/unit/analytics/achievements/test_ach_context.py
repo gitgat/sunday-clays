@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from sunday_clays.analytics.achievements.context import (
+    STATION_COLUMNS,
     AchContext,
     empty_value_frame,
     load_station_entries,
@@ -215,6 +216,7 @@ STATION_DTYPES = {
     "shooter_id": "Int64",
     "round_id": "Int64",
     "hits": "int64",
+    "dropped": "bool",
     "event_ts": "datetime64[ns]",
 }
 
@@ -250,6 +252,7 @@ def test_builder_station_frame_mirrors_load_station_entries(ctx_builder, empty):
                 "shooter_id": shooter_id,
                 "round_id": None,
                 "hits": hits,
+                "dropped": False,
             }
             for shooter_id, station_no, hits, entry_row in ((1, 4, 7, 10), (None, 5, 3, 11))
         ]
@@ -257,6 +260,17 @@ def test_builder_station_frame_mirrors_load_station_entries(ctx_builder, empty):
     assert dtypes(built) == STATION_DTYPES
     production = load_station_entries(cast(Session, _RowsSession(rows)))
     pd.testing.assert_frame_equal(built.drop(columns=["event_ts"]), production)
+
+
+def test_from_frames_leaves_dropped_station_entries_out(ctx_builder):
+    ctx = (
+        ctx_builder()
+        .station(1, sun(0), 4, 5, entry_row=10)
+        .station(1, sun(0), 11, 7, entry_row=10, dropped=True)
+        .build()
+    )
+    assert list(ctx.station_hits["station_label"]) == ["4"]
+    assert STATION_COLUMNS[-1] == "dropped"
 
 
 def test_shooter_days_is_computed_once_per_context(ctx_builder):

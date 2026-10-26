@@ -46,6 +46,21 @@ def test_build_context_reads_fixture_frames(fx_session):
     assert ctx.station_hits["shooter_id"].notna().all()
 
 
+def test_build_context_leaves_a_dropped_station_out(fx_session):
+    first = fx_session.execute(text("SELECT min(event_date) FROM station_layouts")).scalar_one()
+    fx_session.execute(
+        text(
+            "UPDATE station_layouts SET dropped = true "
+            "WHERE station_label = '9' AND event_date = :d"
+        ),
+        {"d": first},
+    )
+    assert int(load_station_entries(fx_session)["dropped"].sum()) == 24
+    live = build_context(fx_session).station_hits
+    assert len(live) == 259 - 24
+    assert not ((live["station_label"] == "9") & (live["event_date"] == first)).any()
+
+
 def test_s50_writes_every_evaluated_award(fx_session, toy_trophies):
     STEP.run(fx_session)
     stored = sorted(

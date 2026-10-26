@@ -90,6 +90,7 @@ class CtxBuilder:
         entry_row: int,
         target_count: int = 7,
         round_id: int | None = None,
+        dropped: bool = False,
     ) -> CtxBuilder:
         self._stations.append(
             {
@@ -102,6 +103,7 @@ class CtxBuilder:
                 "shooter_id": shooter_id,
                 "round_id": round_id,
                 "hits": hits,
+                "dropped": dropped,
             }
         )
         return self

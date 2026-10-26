@@ -26,6 +26,7 @@ STATION_COLUMNS: tuple[str, ...] = (
     "shooter_id",
     "round_id",
     "hits",
+    "dropped",
 )
 _STATION_INTS: tuple[str, ...] = ("station_no", "target_count", "sheet_id", "entry_row", "hits")
 _STATION_NULLABLE_INTS: tuple[str, ...] = ("shooter_id", "round_id")
@@ -71,7 +72,7 @@ _ATTENDANCE_DTYPES: dict[str, str] = {
 _STATION_SQL = text(
     """
     SELECT h.event_date, h.station_no, h.station_label, l.target_count, h.sheet_id, h.entry_row,
-           h.shooter_id, h.round_id, h.hits
+           h.shooter_id, h.round_id, h.hits, l.dropped
     FROM station_hits h
     JOIN station_layouts l ON l.event_date = h.event_date AND l.station_label = h.station_label
     JOIN events e ON e.event_date = h.event_date
@@ -167,6 +168,7 @@ class AchContext:
     """Frames as frames.load_* return them, each with an extra `event_ts` (datetime64) column.
 
     `rounds`, `events` and `station_hits` are regular Sundays only (score trophies read them);
+    `station_hits` leaves out stations thrown out on the day;
     `appearances` and `calendar` include special Sundays (attendance trophies, Plan 17).
     """
 
@@ -195,7 +197,7 @@ class AchContext:
         return cls(
             rounds=_with_ts(rounds),
             events=_with_ts(events),
-            station_hits=_with_ts(station_hits),
+            station_hits=_with_ts(frames.live_station_hits(station_hits)),
             rating_history=_with_ts(rating_history),
             appearances=_with_ts(
                 frames.appearances_from_rounds(rounds) if appearances is None else appearances
@@ -278,6 +280,7 @@ def station_frame(rows: Iterable[Mapping[Any, Any]]) -> pd.DataFrame:
     for column in _STATION_NULLABLE_INTS:
         frame[column] = frame[column].astype("Int64")
     frame["station_label"] = frame["station_label"].astype(str)
+    frame["dropped"] = frame["dropped"].eq(True)
     return frame
 
 
