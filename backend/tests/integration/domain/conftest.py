@@ -71,7 +71,7 @@ def _scores_workbook(
 
 def _stations_workbook(
     sheets: Sequence[tuple[str, date, Sequence[int], Sequence[HitSpec]]],
-    stations: Sequence[int] = (4, 5, 6, 7, 8, 9, 10),
+    stations: Sequence[int | str] = (4, 5, 6, 7, 8, 9, 10),
 ) -> bytes:
     """Stations workbook with one tab per (tab name, A2 date, target counts, [(name, hits)])."""
     wb = openpyxl.Workbook()

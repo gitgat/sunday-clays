@@ -747,6 +747,12 @@ BuildPayload = Callable[[Callable[[str], int]], dict[str, object]]
             {"station_hits", "data_issues"},
             id="alias_name",
         ),
+        pytest.param(
+            RuleType.STATION_DROP,
+            lambda _: {"event_date": "2026-09-13", "station_label": "4", "dropped": True},
+            {"events", "station_layouts"},
+            id="station_drop",
+        ),
     ],
 )
 def test_deactivating_a_rule_restores_the_no_rule_live_tables(
