@@ -3,6 +3,12 @@ import { barOption } from '../../components/charts/builders/bar';
 import { lineOption } from '../../components/charts/builders/line';
 import { scatterOption } from '../../components/charts/builders/scatter';
 import { sundayCalendarOption } from '../../components/charts/builders/sundayCalendar';
+import {
+  THROWN_OUT_COLUMN,
+  hollowPoint,
+  thrownOutAxisTooltip,
+  thrownOutCell,
+} from '../../components/charts/builders/thrownOut';
 import type { TabularData, TabularRow } from '../../components/charts/types';
 import type {
   ClubDistributionGroup,
@@ -86,11 +92,14 @@ export function pbRoundIds(rounds: ShooterRound[]): Set<number> {
   let earlier = 0;
   for (const date of [...byDate.keys()].sort()) {
     const day = byDate.get(date) as ShooterRound[];
-    const top = day.reduce((a, b) =>
-      b.score > a.score || (b.score === a.score && b.ordinal < a.ordinal) ? b : a,
-    );
-    if (earlier >= MIN_PB_EARLIER_ROUNDS && top.score > best) pbs.add(top.round_id);
-    best = Math.max(best, top.score);
+    // A thrown-out day counts toward the earlier-round gate but is never a PB or a best to beat.
+    if (!day.some((r) => r.stats_excluded)) {
+      const top = day.reduce((a, b) =>
+        b.score > a.score || (b.score === a.score && b.ordinal < a.ordinal) ? b : a,
+      );
+      if (earlier >= MIN_PB_EARLIER_ROUNDS && top.score > best) pbs.add(top.round_id);
+      best = Math.max(best, top.score);
+    }
     earlier += day.length;
   }
   return pbs;
@@ -123,7 +132,12 @@ export function trendLineByDate(
   const before: number[] = [];
   const out = new Map<string, number | null>();
   for (const date of dates) {
-    const day = rounds.filter((r) => r.event_date === date).map((r) => r.score);
+    const dayRounds = rounds.filter((r) => r.event_date === date);
+    if (dayRounds.some((r) => r.stats_excluded)) {
+      out.set(date, null);
+      continue;
+    }
+    const day = dayRounds.map((r) => r.score);
     const soFar = before.length > 0 ? round1(mean(before)) : null;
     bests.push(Math.max(...day));
     const window = line === 'roll10' ? 10 : line === 'roll20' ? 20 : 0;
@@ -151,10 +165,14 @@ export function trendModel(rounds: ShooterRound[], line: TrendLine | null = null
     adjusted: r.adjusted,
     pb: pbs.has(r.round_id) ? 'PB' : '',
     ...(lineByDate === null ? {} : { line: lineByDate.get(r.event_date) ?? null }),
+    thrown_out: thrownOutCell(r.stats_excluded),
   }));
+  const excludedDates = new Set(
+    rows.filter((r) => r.thrown_out === 'yes').map((r) => r.event_date),
+  );
   const lineName = line === null ? null : TREND_LINE_LABELS[line];
   const option: EChartsOption = {
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', formatter: thrownOutAxisTooltip(excludedDates) },
     legend: { data: ['Score', 'Vs middle score', ...(lineName === null ? [] : [lineName])] },
     xAxis: { type: 'category', data: rows.map((r) => r.event_date) },
     yAxis: [
@@ -166,7 +184,7 @@ export function trendModel(rounds: ShooterRound[], line: TrendLine | null = null
         name: 'Score',
         type: 'line',
         symbolSize: 4,
-        data: rows.map((r) => r.score),
+        data: rows.map((r) => hollowPoint(r.score, r.thrown_out === 'yes')),
         markPoint: {
           symbol: 'pin',
           data: rows.flatMap((r, i) =>
@@ -189,6 +207,7 @@ export function trendModel(rounds: ShooterRound[], line: TrendLine | null = null
               type: 'line' as const,
               step: line === 'pb' ? ('end' as const) : undefined,
               showSymbol: false,
+              connectNulls: true,
               lineStyle: { width: 3 },
               data: rows.map((r) => lineByDate?.get(r.event_date) ?? null),
             },
@@ -202,6 +221,7 @@ export function trendModel(rounds: ShooterRound[], line: TrendLine | null = null
       { key: 'adjusted', label: 'Vs middle score', type: 'number' },
       { key: 'pb', label: 'PB', type: 'string' },
       ...(lineName === null ? [] : [{ key: 'line', label: lineName, type: 'number' as const }]),
+      THROWN_OUT_COLUMN,
     ] satisfies TabularData['columns'],
     rows,
     option,
@@ -223,13 +243,21 @@ export function finishesModel(rounds: ShooterRound[]): ChartModel {
   const rows = [...rounds]
     .filter(isFinish)
     .sort((a, b) => a.event_date.localeCompare(b.event_date))
-    .map((r) => ({ event_date: r.event_date, place: r.event_rank }));
+    .map((r) => ({
+      event_date: r.event_date,
+      place: r.event_rank,
+      thrown_out: thrownOutCell(r.stats_excluded),
+    }));
+  const excludedDates = new Set(
+    rows.filter((r) => r.thrown_out === 'yes').map((r) => r.event_date),
+  );
   const columns: TabularData['columns'] = [
     { key: 'event_date', label: 'Sunday', type: 'date' },
     { key: 'place', label: 'Place', type: 'int' },
+    THROWN_OUT_COLUMN,
   ];
   const option: EChartsOption = {
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', formatter: thrownOutAxisTooltip(excludedDates) },
     xAxis: { type: 'category', data: rows.map((r) => r.event_date) },
     yAxis: { type: 'value', name: 'Place', inverse: true, min: 1, minInterval: 1 },
     series: [
@@ -238,7 +266,7 @@ export function finishesModel(rounds: ShooterRound[]): ChartModel {
         type: 'line',
         symbolSize: 8,
         lineStyle: { opacity: 0.35 },
-        data: rows.map((r) => r.place),
+        data: rows.map((r) => hollowPoint(r.place, r.thrown_out === 'yes')),
         markLine: {
           symbol: 'none',
           silent: true,
@@ -266,8 +294,9 @@ export function distributionModel(
   rounds: ShooterRound[],
   groups: ClubDistributionGroup[],
 ): ChartModel {
+  const scored = rounds.filter((r) => !r.stats_excluded);
   const you = new Map<number, number>();
-  for (const r of rounds) you.set(r.score, (you.get(r.score) ?? 0) + 1);
+  for (const r of scored) you.set(r.score, (you.get(r.score) ?? 0) + 1);
   const club = new Map<number, number>();
   for (const g of groups)
     g.counts.forEach((n, score) => club.set(score, (club.get(score) ?? 0) + n));
@@ -283,7 +312,7 @@ export function distributionModel(
     const score = lo + i;
     return {
       score,
-      you_pct: share(you.get(score) ?? 0, rounds.length),
+      you_pct: share(you.get(score) ?? 0, scored.length),
       club_pct: share(club.get(score) ?? 0, clubTotal),
     };
   });
@@ -365,29 +394,33 @@ export function attendanceModel(
   specialDates: readonly string[] = [],
 ): ChartModel {
   const best = new Map<string, number>();
+  const excluded = new Set<string>();
   for (const r of rounds) {
     if (!r.event_date.startsWith(`${year}-`)) continue;
+    if (r.stats_excluded) excluded.add(r.event_date);
     best.set(r.event_date, Math.max(best.get(r.event_date) ?? 0, r.score));
   }
   const columns: TabularData['columns'] = [
     { key: 'date', label: 'Sunday', type: 'date' },
     { key: 'state', label: 'State', type: 'string' },
     { key: 'score', label: 'Best score', type: 'int' },
+    THROWN_OUT_COLUMN,
   ];
   const rows: TabularData['rows'] = [...best.entries()].map(([date, score]) => ({
     date,
     state: 'shot',
     score,
+    thrown_out: thrownOutCell(excluded.has(date)),
   }));
   const special = new Set(specialDates);
   for (const date of special) {
     if (date.startsWith(`${year}-`) && !best.has(date)) {
-      rows.push({ date, state: 'special', score: null });
+      rows.push({ date, state: 'special', score: null, thrown_out: '' });
     }
   }
   for (const date of heldDates) {
     if (date.startsWith(`${year}-`) && !best.has(date) && !special.has(date)) {
-      rows.push({ date, state: 'missed', score: null });
+      rows.push({ date, state: 'missed', score: null, thrown_out: '' });
     }
   }
   rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -396,7 +429,7 @@ export function attendanceModel(
     rows,
     option: sundayCalendarOption(
       { columns, rows },
-      { date: 'date', value: 'score', state: 'state', year },
+      { date: 'date', value: 'score', state: 'state', thrownOut: 'thrown_out', year },
     ),
   };
 }
@@ -464,18 +497,31 @@ export function toughDaysModel(
     { key: 'event_date', label: 'Sunday', type: 'date' },
     { key: 'difficulty', label: 'How the day played', type: 'number' },
     { key: 'adjusted', label: 'Against the field', type: 'number' },
+    THROWN_OUT_COLUMN,
   ];
-  const rows = rounds.flatMap((r) => {
+  const rows = rounds.flatMap((r): TabularRow[] => {
+    if (!r.is_best_round) return [];
+    // A thrown-out Sunday stays in the table, flagged, but has no point on the chart.
+    if (r.stats_excluded) {
+      return [{ event_date: r.event_date, difficulty: null, adjusted: null, thrown_out: 'yes' }];
+    }
     const played = byDate.get(r.event_date);
-    if (!r.is_best_round || r.adjusted === null || played === undefined) return [];
-    return [{ event_date: r.event_date, difficulty: round1(played), adjusted: round1(r.adjusted) }];
+    if (r.adjusted === null || played === undefined) return [];
+    return [
+      {
+        event_date: r.event_date,
+        difficulty: round1(played),
+        adjusted: round1(r.adjusted),
+        thrown_out: '',
+      },
+    ];
   });
-  rows.sort((a, b) => a.event_date.localeCompare(b.event_date));
+  rows.sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)));
   return {
     columns,
     rows,
     option: scatterOption(
-      { columns, rows },
+      { columns, rows: rows.filter((r) => r.difficulty !== null && r.adjusted !== null) },
       {
         x: 'difficulty',
         y: 'adjusted',
