@@ -234,6 +234,9 @@ def test_unmatched_station_drop_rules_are_reported(
         date(2026, 9, 20),
         f"Rule {r20} marks 2026-09-20 as thrown out, which has no regular Sunday",
     )
+    assert b.details["station_label"] is None
+    assert b.details["event_date"] == "2026-09-20"
+    assert (a.severity, b.severity) == ("warning", "warning")
 
 
 def test_a_special_sunday_is_never_thrown_out(

@@ -728,18 +728,20 @@ def test_0010_defaults_the_flags_off_and_checks_dropped_source(scratch_engine: E
 
 
 def test_0010_downgrade_removes_the_flags(scratch_engine: Engine) -> None:
+    flags = text(
+        "SELECT column_name FROM information_schema.columns WHERE column_name IN"
+        " ('stats_excluded', 'dropped', 'dropped_source')"
+    )
     _alembic(scratch_engine, "upgrade", "head")
+    with scratch_engine.connect() as conn:
+        assert {r[0] for r in conn.execute(flags)} == {
+            "stats_excluded",
+            "dropped",
+            "dropped_source",
+        }
     _alembic(scratch_engine, "downgrade", "0009")
     with scratch_engine.connect() as conn:
-        assert (
-            conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns WHERE column_name IN"
-                    " ('stats_excluded', 'dropped', 'dropped_source')"
-                )
-            ).all()
-            == []
-        )
+        assert conn.execute(flags).all() == []
 
 
 def test_import_kind_check_accepts_a_special_import(session: Session) -> None:
