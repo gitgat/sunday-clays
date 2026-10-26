@@ -23,7 +23,7 @@
 
 ### Interface contract
 
-Repo: /Users/bryanmoran/code/sunday-clays-public, branch feat/dropped-stations. Spec: docs/superpowers/specs/2026-10-25-dropped-stations-design.md. Inventory: docs/superpowers/specs/2026-10-25-dropped-stations-inventory.md. Plan: docs/superpowers/plans/2026-10-25-dropped-stations.md.
+Branch feat/dropped-stations. Spec: docs/superpowers/specs/2026-10-25-dropped-stations-design.md. Inventory: docs/superpowers/specs/2026-10-25-dropped-stations-inventory.md. Plan: docs/superpowers/plans/2026-10-25-dropped-stations.md.
 
 Where this contract and the spec differ, the contract wins (recap line, Sunday banner, `RecapOut.thrown_out` type, no `stats_excluded` on `PbOut`/`RecordRoundOut`).
 
