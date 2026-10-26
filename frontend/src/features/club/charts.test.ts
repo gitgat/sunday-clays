@@ -30,17 +30,18 @@ describe('attendanceModel', () => {
   it('lists head count, score rows and shooters per event in date order', () => {
     const model = attendanceModel([...clubAttendance].reverse());
     expect(model.rows).toEqual([
-      { event_date: '2018-12-30', head_count: 7, rounds: 0, shooters: 0 },
-      { event_date: '2019-01-14', head_count: 9, rounds: 0, shooters: 0 },
-      { event_date: '2026-08-30', head_count: 36, rounds: 36, shooters: 35 },
-      { event_date: '2026-09-13', head_count: 13, rounds: 13, shooters: 13 },
-      { event_date: '2026-09-27', head_count: 23, rounds: 23, shooters: 23 },
+      { event_date: '2018-12-30', head_count: 7, rounds: 0, shooters: 0, thrown_out: '' },
+      { event_date: '2019-01-14', head_count: 9, rounds: 0, shooters: 0, thrown_out: '' },
+      { event_date: '2026-08-30', head_count: 36, rounds: 36, shooters: 35, thrown_out: '' },
+      { event_date: '2026-09-13', head_count: 13, rounds: 13, shooters: 13, thrown_out: '' },
+      { event_date: '2026-09-27', head_count: 23, rounds: 23, shooters: 23, thrown_out: '' },
     ]);
     expect(model.columns.map((c) => c.label)).toEqual([
       'Date',
       'Head count',
       'Rounds scored',
       'Shooters with scores',
+      'Thrown out',
     ]);
   });
 });
@@ -115,6 +116,7 @@ describe('score trend and difficulty', () => {
         median_rolling8: 38.1,
         top_score: 48,
         top_score_rolling8: 46.9,
+        thrown_out: '',
       },
       {
         event_date: '2026-09-13',
@@ -122,6 +124,7 @@ describe('score trend and difficulty', () => {
         median_rolling8: 37.4,
         top_score: 42,
         top_score_rolling8: 46.5,
+        thrown_out: '',
       },
       {
         event_date: '2026-09-27',
@@ -129,6 +132,7 @@ describe('score trend and difficulty', () => {
         median_rolling8: 37.3,
         top_score: 49,
         top_score_rolling8: 46.6,
+        thrown_out: '',
       },
     ]);
   });
@@ -145,10 +149,10 @@ describe('score trend and difficulty', () => {
       difficulty_rolling8: null,
     };
     expect(difficultyModel([...clubTrends.events, unrated]).rows).toEqual([
-      { event_date: '2020-01-05', difficulty: null, difficulty_rolling8: null },
-      { event_date: '2026-09-06', difficulty: 0.3, difficulty_rolling8: 0.4 },
-      { event_date: '2026-09-13', difficulty: 2.1, difficulty_rolling8: 0.6 },
-      { event_date: '2026-09-27', difficulty: -1.4, difficulty_rolling8: 0.3 },
+      { event_date: '2020-01-05', difficulty: null, difficulty_rolling8: null, thrown_out: '' },
+      { event_date: '2026-09-06', difficulty: 0.3, difficulty_rolling8: 0.4, thrown_out: '' },
+      { event_date: '2026-09-13', difficulty: 2.1, difficulty_rolling8: 0.6, thrown_out: '' },
+      { event_date: '2026-09-27', difficulty: -1.4, difficulty_rolling8: 0.3, thrown_out: '' },
     ]);
   });
 });
@@ -297,5 +301,52 @@ describe('firstRoundsModel', () => {
     expect(
       firstRoundsModel({ n: 0, median: null, counts: Array<number>(51).fill(0) }).rows,
     ).toEqual([]);
+  });
+});
+
+describe('thrown-out Sundays in club charts', () => {
+  it.each([
+    [
+      'attendanceModel',
+      () => attendanceModel(clubAttendance.map((p, i) => ({ ...p, stats_excluded: i === 0 }))),
+    ],
+    [
+      'scoreTrendModel',
+      () =>
+        scoreTrendModel(
+          clubTrends.events.map((e) => ({ ...e, stats_excluded: e.event_date === '2026-09-06' })),
+        ),
+    ],
+    [
+      'difficultyModel',
+      () =>
+        difficultyModel(
+          clubTrends.events.map((e) => ({ ...e, stats_excluded: e.event_date === '2026-09-06' })),
+        ),
+    ],
+  ])('%s exports a thrown_out column', (_, build) => {
+    const m = build();
+    expect(m.columns.at(-1)).toEqual({ key: 'thrown_out', label: 'Thrown out', type: 'string' });
+    expect(m.rows.filter((r) => r.thrown_out === 'yes')).toHaveLength(1);
+  });
+
+  it('draws a thrown-out Sunday hollow on the score trend and leaves its rolling value empty', () => {
+    const events = clubTrends.events.map((e) =>
+      e.event_date === '2026-09-06'
+        ? { ...e, stats_excluded: true, median_rolling8: null, top_score_rolling8: null }
+        : e,
+    );
+    const m = scoreTrendModel(events);
+    const series = m.option.series as { name: string; data: unknown[] }[];
+    expect(series.find((s) => s.name === 'Middle score')?.data[0]).toEqual({
+      value: ['2026-09-06', 36],
+      symbol: 'emptyCircle',
+      symbolSize: 8,
+    });
+    expect(m.rows[0]?.median_rolling8).toBeNull();
+    expect(series.find((s) => s.name === 'Middle score (8-Sunday average)')?.data[0]).toEqual([
+      '2026-09-06',
+      null,
+    ]);
   });
 });

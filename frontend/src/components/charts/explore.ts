@@ -6,6 +6,7 @@ import { barOption } from './builders/bar';
 import { cellLabel, distinct, numeric } from './builders/common';
 import { heatmapOption } from './builders/heatmap';
 import { lineOption } from './builders/line';
+import { THROWN_OUT_COLUMN, thrownOutCell } from './builders/thrownOut';
 import type { ChartType, TabularData, TabularRow } from './types';
 
 export type QuerySpec = components['schemas']['QuerySpec'];
@@ -130,9 +131,21 @@ export function useExplore(spec: QuerySpec, { enabled = true }: { enabled?: bool
 }
 
 export function toTabular(result: QueryResult): TabularData {
+  const columns: TabularData['columns'] = result.columns.map((c) => ({
+    key: c.key,
+    label: c.label,
+    type: c.type,
+  }));
+  const dates = new Set(result.thrown_out_dates);
+  if (dates.size === 0 || !columns.some((c) => c.key === 'event')) {
+    return { columns, rows: result.rows };
+  }
   return {
-    columns: result.columns.map((c) => ({ key: c.key, label: c.label, type: c.type })),
-    rows: result.rows,
+    columns: [...columns, THROWN_OUT_COLUMN],
+    rows: result.rows.map((row) => ({
+      ...row,
+      thrown_out: thrownOutCell(dates.has(String(row.event).slice(0, 10))),
+    })),
   };
 }
 

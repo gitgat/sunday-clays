@@ -2,6 +2,12 @@ import type { EChartsOption } from 'echarts';
 import { barOption } from '../../components/charts/builders/bar';
 import { lineOption } from '../../components/charts/builders/line';
 import { ridgelineOption } from '../../components/charts/builders/ridgeline';
+import {
+  THROWN_OUT_COLUMN,
+  hollowSeries,
+  thrownOutAxisTooltip,
+  thrownOutCell,
+} from '../../components/charts/builders/thrownOut';
 import type { TabularData } from '../../components/charts/types';
 import type {
   AttendancePoint,
@@ -34,12 +40,14 @@ export function attendanceModel(points: AttendancePoint[]): ChartModel {
     col('head_count', 'Head count', 'int'),
     col('rounds', 'Rounds scored', 'int'),
     col('shooters', 'Shooters with scores', 'int'),
+    THROWN_OUT_COLUMN,
   ];
   const rows = byDate(points).map((p) => ({
     event_date: p.event_date,
     head_count: p.head_count,
     rounds: p.n_rounds,
     shooters: p.n_shooters,
+    thrown_out: thrownOutCell(p.stats_excluded),
   }));
   return {
     columns,
@@ -102,21 +110,37 @@ export function scoreTrendModel(events: EventTrend[]): ChartModel {
     col('median_rolling8', 'Middle score (8-Sunday average)', 'number'),
     col('top_score', 'Top score', 'int'),
     col('top_score_rolling8', 'Top score (8-Sunday average)', 'number'),
+    THROWN_OUT_COLUMN,
   ];
-  const rows = byDate(events).map((e) => ({
+  const sorted = byDate(events);
+  const rows = sorted.map((e) => ({
     event_date: e.event_date,
     median: e.median,
     median_rolling8: r1(e.median_rolling8),
     top_score: e.top_score,
     top_score_rolling8: r1(e.top_score_rolling8),
+    thrown_out: thrownOutCell(e.stats_excluded),
   }));
-  return {
-    columns,
-    rows,
-    option: lineOption(
+  const excluded = rows.map((r) => r.thrown_out === 'yes');
+  const option = hollowSeries(
+    lineOption(
       { columns, rows },
       { x: 'event_date', y: ['median', 'median_rolling8', 'top_score', 'top_score_rolling8'] },
     ),
+    ['Middle score', 'Top score'],
+    excluded,
+  );
+  const excludedDates = new Set(sorted.filter((e) => e.stats_excluded).map((e) => e.event_date));
+  return {
+    columns,
+    rows,
+    option: {
+      ...option,
+      tooltip: {
+        trigger: 'axis',
+        formatter: thrownOutAxisTooltip(excludedDates) as (params: unknown) => string,
+      },
+    },
   };
 }
 
@@ -126,11 +150,13 @@ export function difficultyModel(events: EventTrend[]): ChartModel {
     col('event_date', 'Date', 'date'),
     col('difficulty', 'Difficulty', 'number'),
     col('difficulty_rolling8', 'Difficulty (8-Sunday average)', 'number'),
+    THROWN_OUT_COLUMN,
   ];
   const rows = byDate(events).map((e) => ({
     event_date: e.event_date,
     difficulty: r1(e.difficulty),
     difficulty_rolling8: r1(e.difficulty_rolling8),
+    thrown_out: thrownOutCell(e.stats_excluded),
   }));
   return {
     columns,

@@ -20,7 +20,9 @@ const TurnoutChart = lazy(async () => ({
 /** Full-results Sundays are the results-complete ones (C7); turnout and the high use every scored Sunday. */
 export function pulseStats(events: EventSummary[]) {
   const scored = events.filter((e) => e.has_scores);
-  const tops = scored.flatMap((e) => (e.top_score === null ? [] : [e.top_score]));
+  const tops = scored
+    .filter((e) => !e.stats_excluded)
+    .flatMap((e) => (e.top_score === null ? [] : [e.top_score]));
   return {
     held: events.filter((e) => e.results_complete).length,
     scored: scored.length,
