@@ -9,6 +9,7 @@ import {
   monthsModel,
   pbRoundIds,
   ratingModel,
+  roundsBefore,
   finishesModel,
   splitsModel,
   toughDaysModel,
@@ -272,17 +273,17 @@ describe('activeYears and attendanceModel', () => {
 
   it('puts the best score of each attended Sunday of the chosen year on the calendar', () => {
     expect(attendanceModel(rounds, [], 2025).rows).toEqual([
-      { date: '2025-11-09', state: 'shot', score: 42 },
+      { date: '2025-11-09', state: 'shot', score: 42, thrown_out: '' },
     ]);
   });
 
   it('adds every held Sunday of the year the shooter did not shoot as missed, in date order', () => {
     const held = ['2025-01-05', '2025-11-02', '2025-11-09', '2025-11-16', '2026-09-06'];
     expect(attendanceModel(rounds, held, 2025).rows).toEqual([
-      { date: '2025-01-05', state: 'missed', score: null },
-      { date: '2025-11-02', state: 'missed', score: null },
-      { date: '2025-11-09', state: 'shot', score: 42 },
-      { date: '2025-11-16', state: 'missed', score: null },
+      { date: '2025-01-05', state: 'missed', score: null, thrown_out: '' },
+      { date: '2025-11-02', state: 'missed', score: null, thrown_out: '' },
+      { date: '2025-11-09', state: 'shot', score: 42, thrown_out: '' },
+      { date: '2025-11-16', state: 'missed', score: null, thrown_out: '' },
     ]);
   });
 
@@ -293,7 +294,7 @@ describe('activeYears and attendanceModel', () => {
 
   it('lists Sunday, state and best score, and draws a Sunday grid', () => {
     const m = attendanceModel(rounds, [], 2025);
-    expect(m.columns.map((c) => c.label)).toEqual(['Sunday', 'State', 'Best score']);
+    expect(m.columns.map((c) => c.label)).toEqual(['Sunday', 'State', 'Best score', 'Thrown out']);
     expect((m.option.xAxis as { data: string[] }).data).toEqual([
       '1st',
       '2nd',
@@ -384,8 +385,8 @@ describe('finishesModel', () => {
       },
     ] as typeof history);
     expect(model.rows).toEqual([
-      { event_date: '2026-01-04', place: 5 },
-      { event_date: '2026-02-01', place: 2 },
+      { event_date: '2026-01-04', place: 5, thrown_out: '' },
+      { event_date: '2026-02-01', place: 2, thrown_out: '' },
     ]);
   });
 });
@@ -438,7 +439,9 @@ describe('toughDaysModel', () => {
       { event: 'not a date row', value: null },
     ];
     const model = toughDaysModel(rounds, difficulty);
-    expect(model.rows).toEqual([{ event_date: '2026-08-16', difficulty: 1.3, adjusted: 2 }]);
+    expect(model.rows).toEqual([
+      { event_date: '2026-08-16', difficulty: 1.3, adjusted: 2, thrown_out: '' },
+    ]);
     expect(model.option.series).toBeDefined();
   });
 
@@ -464,20 +467,20 @@ describe('special shoots in the attendance views (Plan 17)', () => {
   it('marks a special shoot as special, never missed, once however many rounds', () => {
     const m = attendanceModel(hadleyRounds, held, 2026, ['2026-09-20', '2026-09-20']);
     expect(m.rows.filter((r) => r.date === '2026-09-20')).toEqual([
-      { date: '2026-09-20', state: 'special', score: null },
+      { date: '2026-09-20', state: 'special', score: null, thrown_out: '' },
     ]);
     expect(m.rows.map((r) => r.date)).toEqual([...m.rows.map((r) => r.date)].sort());
   });
 
   it('never calls a held date missed when the shooter came to a special shoot on it', () => {
     const m = attendanceModel([], ['2026-09-20'], 2026, ['2026-09-20']);
-    expect(m.rows).toEqual([{ date: '2026-09-20', state: 'special', score: null }]);
+    expect(m.rows).toEqual([{ date: '2026-09-20', state: 'special', score: null, thrown_out: '' }]);
   });
 
   it('leaves out a special shoot of another year', () => {
     expect(attendanceModel([], [], 2025, ['2026-09-20']).rows).toEqual([]);
     expect(attendanceModel([], [], 2026, ['2026-09-20']).rows).toEqual([
-      { date: '2026-09-20', state: 'special', score: null },
+      { date: '2026-09-20', state: 'special', score: null, thrown_out: '' },
     ]);
   });
 
@@ -491,4 +494,97 @@ describe('special shoots in the attendance views (Plan 17)', () => {
     });
     expect(monthsModel([], ['2026-09-20']).rows).toEqual([{ month: '2026-09', sundays: 1 }]);
   });
+});
+
+describe('thrown-out rounds (T7e)', () => {
+  const gate = [
+    round({ round_id: 11, event_date: '2026-03-01', score: 30 }),
+    round({ round_id: 12, event_date: '2026-03-08', score: 31 }),
+    round({ round_id: 13, event_date: '2026-03-15', score: 32 }),
+    round({ round_id: 14, event_date: '2026-03-22', score: 33 }),
+    round({ round_id: 15, event_date: '2026-03-29', score: 49, stats_excluded: true }),
+    round({ round_id: 16, event_date: '2026-04-05', score: 34 }),
+  ];
+  it('a thrown-out round counts toward the 5 earlier rounds but is never a PB or the best to beat', () =>
+    expect([...pbRoundIds(gate)]).toEqual([16]));
+  it('the trend lines skip a thrown-out Sunday', () => {
+    expect([...trendLineByDate(gate, 'pb').values()]).toEqual([30, 31, 32, 33, null, 34]);
+    expect(trendLineByDate(gate, 'so_far').get('2026-04-05')).toBe(31.5);
+  });
+  it('plots a thrown-out round hollow, stars its tooltip and exports it', () => {
+    const m = trendModel(gate);
+    expect(m.columns.at(-1)).toEqual({ key: 'thrown_out', label: 'Thrown out', type: 'string' });
+    expect(m.rows.map((r) => r.thrown_out)).toEqual(['', '', '', '', 'yes', '']);
+    const [score] = m.option.series as LineSeries[];
+    expect(score?.data[4]).toEqual({ value: 49, symbol: 'emptyCircle', symbolSize: 8 });
+    const tip = (m.option.tooltip as { formatter: (p: unknown) => string }).formatter;
+    expect(
+      tip([
+        {
+          axisValue: '2026-03-29',
+          axisValueLabel: '2026-03-29',
+          marker: '',
+          seriesName: 'Score',
+          value: 49,
+        },
+      ]),
+    ).toBe('2026-03-29 *<br/>Score: 49');
+  });
+  it('a thrown-out Sunday still has a place on the finishes chart, drawn hollow', () => {
+    const m = finishesModel([
+      {
+        ...history[0],
+        event_date: '2026-03-29',
+        event_rank: 4,
+        percentile: 0.8,
+        stats_excluded: true,
+      },
+    ] as typeof history);
+    expect(m.rows).toEqual([{ event_date: '2026-03-29', place: 4, thrown_out: 'yes' }]);
+    expect((m.option.series as LineSeries[])[0]?.data[0]).toEqual({
+      value: 4,
+      symbol: 'emptyCircle',
+      symbolSize: 8,
+    });
+  });
+  it('your score shares leave out thrown-out rounds', () => {
+    const rows = distributionModel(
+      [round({ score: 30 }), round({ score: 30 }), round({ score: 49, stats_excluded: true })],
+      [],
+    ).rows;
+    expect(rows.find((r) => r.score === 30)?.you_pct).toBe(100);
+    expect(rows.find((r) => r.score === 49)?.you_pct).toBe(0);
+  });
+  it('the calendar keeps the official best score of a thrown-out Sunday and flags it', () =>
+    expect(
+      attendanceModel(
+        [round({ event_date: '2025-11-09', score: 43, stats_excluded: true })],
+        [],
+        2025,
+      ).rows,
+    ).toEqual([{ date: '2025-11-09', state: 'shot', score: 43, thrown_out: 'yes' }]));
+  it('PbTable early counts still include thrown-out rounds (D8)', () =>
+    expect(roundsBefore(gate, '2026-04-05')).toBe(5));
+  it('tough days keep a thrown-out Sunday in the table, flagged, but not as a point', () => {
+    const m = toughDaysModel(
+      [
+        round({ event_date: '2026-03-22', adjusted: 2 }),
+        round({ event_date: '2026-03-29', adjusted: null, stats_excluded: true }),
+      ],
+      [{ event: '2026-03-22', value: 1 }],
+    );
+    expect(m.rows).toEqual([
+      { event_date: '2026-03-22', difficulty: 1, adjusted: 2, thrown_out: '' },
+      { event_date: '2026-03-29', difficulty: null, adjusted: null, thrown_out: 'yes' },
+    ]);
+    expect((m.option.series as { data: unknown[] }[])[0]?.data).toHaveLength(1);
+    expect(m.points).toBe(1);
+  });
+  it('tough days with only a thrown-out Sunday have no points to plot', () =>
+    expect(
+      toughDaysModel(
+        [round({ event_date: '2026-03-29', adjusted: null, stats_excluded: true })],
+        [],
+      ).points,
+    ).toBe(0));
 });

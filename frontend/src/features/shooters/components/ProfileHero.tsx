@@ -5,6 +5,7 @@ import { isCustomWindow, useMeta, useTimeWindow } from '../../../lib/timeWindow'
 import { plural } from '../format';
 import { windowPhrase, windowTagText } from '../../../lib/windowText';
 import type { ShooterDetail } from '../api';
+import { excludedNote } from '../../events/thrownOut';
 import { explainers } from '../explainers';
 import { formatScore, spanText } from '../format';
 import { MeButton } from './MeButton';
@@ -76,6 +77,7 @@ export function ProfileHero({
                   <Stat
                     label="Average"
                     value={formatScore(inWindow.avg_score)}
+                    hint={excludedNote(inWindow.n_excluded) ?? undefined}
                     explainer={explainers['win-average']}
                   />
                   <Stat
@@ -105,6 +107,7 @@ export function ProfileHero({
           <Stat
             label="Average"
             value={formatScore(stats.avg_score)}
+            hint={excludedNote(stats.n_excluded) ?? undefined}
             explainer={explainers['hero-average']}
           />
           <Stat

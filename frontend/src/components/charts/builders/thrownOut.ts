@@ -52,7 +52,8 @@ function dateKey(v: unknown): string {
 
 /** Axis-tooltip formatter that stars the header of a thrown-out date. */
 export function thrownOutAxisTooltip(excludedDates: ReadonlySet<string>) {
-  return (params: readonly AxisParam[]): string => {
+  return (raw: unknown): string => {
+    const params = raw as readonly AxisParam[];
     const first = params[0];
     if (!first) return '';
     const star = excludedDates.has(dateKey(first.axisValue)) ? ' *' : '';
