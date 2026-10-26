@@ -130,6 +130,7 @@ class World:
                 "round_id": cols.get("round_id"),
                 "hits": hits,
                 "round_type": "sporting",
+                "dropped": cols.get("dropped", False),
             }
         )
         self._events.setdefault(day, {})
