@@ -5,6 +5,7 @@ import type { EventSummary } from '../api';
 import { eventExplainers } from '../explainers';
 import { About } from './About';
 import { formatDay, isSpecial, specialName } from '../format';
+import { thrownOutPhrase } from '../thrownOut';
 
 const MONTH = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
 
@@ -48,7 +49,10 @@ export function cellLabel(e: EventSummary): string {
     const name = specialName(e);
     return `${formatDay(e.event_date)} — ${name === null ? '' : `${name}, `}special shoot, ${e.n_shooters} shooters`;
   }
-  if (e.has_scores) return `${formatDay(e.event_date)} — ${e.n_shooters} shooters`;
+  if (e.has_scores) {
+    const base = `${formatDay(e.event_date)} — ${e.n_shooters} shooters`;
+    return e.stats_excluded ? `${base} · ${thrownOutPhrase(e.thrown_out)}` : base;
+  }
   if (e.head_count !== null) {
     return `${formatDay(e.event_date)} — attendance only, ${e.head_count} shooters`;
   }
@@ -122,11 +126,13 @@ export function SeasonCalendar({
                   key={day}
                   to={href(`/events/${day}`)}
                   aria-label={cellLabel(event)}
+                  title={event.stats_excluded ? cellLabel(event) : undefined}
                   className={`flex size-11 items-center justify-center rounded-button text-sm ${
                     CELL_STYLES[cellState(event)]
                   }`}
                 >
                   {dayOfMonth}
+                  {event.stats_excluded && <span aria-hidden="true">*</span>}
                 </Link>
               );
             })}

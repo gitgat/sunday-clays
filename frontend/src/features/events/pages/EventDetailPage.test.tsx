@@ -10,7 +10,13 @@ import { server } from '../../../test/msw/server';
 import { LAZY_CHART, LAZY_TEST_TIMEOUT } from '../../../test/lazyChart';
 import { renderWithProviders } from '../../../test/render';
 import type { EventDetail, Notable, StationMatrix } from '../api';
-import { attendanceOnlyDetail, eventDetail, eventSummaries, specialDetail } from '../mocks';
+import {
+  attendanceOnlyDetail,
+  eventDetail,
+  eventSummaries,
+  specialDetail,
+  thrownOutDetail,
+} from '../mocks';
 import type { EventSection } from '../sections';
 import { EventDetailPage } from './EventDetailPage';
 
@@ -533,5 +539,31 @@ describe('EventDetailPage', () => {
       );
       expect(screen.queryByText('Station hits')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('a Sunday with a station thrown out', () => {
+  const phrase = 'Station 10 was thrown out; everyone was credited 8/8';
+  it('shows the banner, starred official numbers and no difficulty or comparison', async () => {
+    renderEvent(thrownOutDetail);
+    const results = await screen.findByRole('table', { name: 'Results' });
+    expect(screen.getByRole('note')).toHaveTextContent(
+      `${phrase}. Today's results and standings count, marked *. These scores are left out of averages, PBs and station stats.`,
+    );
+    expect(screen.getAllByTitle(phrase).length).toBeGreaterThanOrEqual(
+      2 + thrownOutDetail.results.length,
+    );
+    expect(screen.queryByText('Difficulty')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'vs previous Sunday' })).toBeNull();
+    const row = within(results).getAllByRole('row')[1] as HTMLElement;
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[2]).toHaveTextContent(`* ${phrase}`);
+    expect(cells[3]).toHaveTextContent('—');
+    expect(cells.at(-1)).toHaveTextContent('—');
+  });
+  it('a normal Sunday has no thrown-out note', async () => {
+    renderEvent(eventDetail);
+    await screen.findByRole('table', { name: 'Results' });
+    expect(screen.queryByTitle(/thrown out/)).toBeNull();
   });
 });
