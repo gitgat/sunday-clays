@@ -338,12 +338,15 @@ def event_notables(
     earlier = rounds.loc[rounds["event_date"] < event_date]
     notables: list[NotableOut] = []
     best = day.loc[day["is_best_round"]].sort_values("display_name")
-    prior = {
-        int(r["shooter_id"]): (int(r["max"]), int(r["size"]))
-        for r in rows(earlier.groupby("shooter_id")["score"].agg(["max", "size"]).reset_index())
-    }
+    if day["stats_excluded"].eq(True).any():
+        best = best.iloc[0:0]  # a thrown-out Sunday sets no PB
+    # The gate counts every earlier round; the score to beat comes from scored rounds only.
+    n_earlier = earlier.groupby("shooter_id").size()
+    top_scored = frames.stat_rounds(earlier).groupby("shooter_id")["score"].max()
     for r in rows(best):
-        previous, n_prior = prior.get(int(r["shooter_id"]), (0, 0))
+        shooter = int(r["shooter_id"])
+        n_prior = int(n_earlier.get(shooter, 0))
+        previous = int(top_scored[shooter]) if shooter in top_scored.index else None
         if is_new_pb(int(r["score"]), previous, n_prior):
             notables.append(
                 NotableOut(

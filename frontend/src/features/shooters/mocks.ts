@@ -70,6 +70,7 @@ export const hadleyDetail: ShooterDetail = {
   stats: {
     n_rounds: 267,
     n_events: 267,
+    n_excluded: 0,
     avg_score: 35.31,
     median_score: 36,
     best_score: 45,
@@ -110,6 +111,7 @@ export const gilchristDetail: ShooterDetail = {
   stats: {
     n_rounds: 11,
     n_events: 11,
+    n_excluded: 0,
     avg_score: 37.18,
     median_score: 37,
     best_score: 41,
@@ -282,11 +284,21 @@ export const hadleyRating: Rating = {
 };
 
 export const hadleySplitsByYear: SplitRow[] = [
-  { key: '2025', n_rounds: 44, n_events: 44, avg: 35.9, median: 36, best: 44, avg_adjusted: -0.8 },
+  {
+    key: '2025',
+    n_rounds: 44,
+    n_events: 44,
+    n_excluded: 0,
+    avg: 35.9,
+    median: 36,
+    best: 44,
+    avg_adjusted: -0.8,
+  },
   {
     key: '2026',
     n_rounds: 33,
     n_events: 33,
+    n_excluded: 0,
     avg: 35.14,
     median: 35.5,
     best: 44,
@@ -299,6 +311,7 @@ export const hadleySplitsByGauge: SplitRow[] = [
     key: 'unspecified',
     n_rounds: 267,
     n_events: 267,
+    n_excluded: 0,
     avg: 35.31,
     median: 36,
     best: 45,

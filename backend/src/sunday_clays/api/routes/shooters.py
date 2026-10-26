@@ -68,6 +68,7 @@ class ShooterSummaryOut(BaseModel):
 class ShooterStatsOut(BaseModel):
     n_rounds: int
     n_events: int
+    n_excluded: int
     avg_score: float | None
     median_score: float | None
     best_score: int | None
@@ -163,6 +164,7 @@ class SplitOut(BaseModel):
     key: str
     n_rounds: int
     n_events: int
+    n_excluded: int
     avg: float
     median: float
     best: int
@@ -193,13 +195,15 @@ def _mean(series: pd.Series) -> float | None:
 def shooter_stats(rounds: pd.DataFrame) -> ShooterStatsOut:
     """Stats over one shooter's (already filtered) rounds; ranks are full-field (C7)."""
     best = rounds.loc[rounds["is_best_round"]]
+    scored = frames.stat_rounds(rounds)
     return ShooterStatsOut(
         n_rounds=len(rounds),
         n_events=int(rounds["event_date"].nunique()),
-        avg_score=_mean(rounds["score"]),
-        median_score=None if rounds.empty else float(rounds["score"].median()),
-        best_score=None if rounds.empty else int(rounds["score"].max()),
-        avg_adjusted=_mean(rounds["adjusted"]),
+        n_excluded=len(rounds) - len(scored),
+        avg_score=_mean(scored["score"]),
+        median_score=None if scored.empty else float(scored["score"].median()),
+        best_score=None if scored.empty else int(scored["score"].max()),
+        avg_adjusted=_mean(scored["adjusted"]),
         wins=int((best["event_rank"] == 1).sum()),
         podiums=int((best["event_rank"] <= 3).sum()),
         avg_percentile=_mean(best["percentile"]),
@@ -214,6 +218,7 @@ def odometer(
 ) -> OdometerOut:
     """Lifetime counters (C12 odometer): clays from the scored rounds; Sundays, years and the
     favourite month from `sundays` (every Sunday shot, special ones included, Plan 17)."""
+    scored = frames.stat_rounds(rounds)
     thrown = len(rounds) * TARGETS_PER_ROUND
     broken = int(rounds["score"].sum())
     dates = sorted(set(rounds["event_date"]) if sundays is None else set(sundays))
@@ -223,7 +228,9 @@ def odometer(
     return OdometerOut(
         clays_thrown=thrown,
         clays_broken=broken,
-        hit_pct=None if thrown == 0 else broken / thrown,
+        hit_pct=(
+            None if scored.empty else int(scored["score"].sum()) / (len(scored) * TARGETS_PER_ROUND)
+        ),
         rounds=len(rounds),
         events=len(dates),
         years_active=len({d.year for d in dates}),
@@ -236,6 +243,7 @@ def odometer(
 
 def personal_bests(rounds: pd.DataFrame) -> list[PbOut]:
     """Best score overall and per calendar year, dated when first reached."""
+    rounds = frames.stat_rounds(rounds)
     ordered = rounds.sort_values(["score", "event_date", "ordinal"], ascending=[False, True, True])
     out: list[PbOut] = []
     if ordered.empty:
@@ -301,15 +309,19 @@ def splits(rounds: pd.DataFrame, by: SplitBy) -> list[SplitOut]:
     order = _split_order(by)
     out = []
     for key, group in keyed.groupby("key", sort=True):
+        scored = frames.stat_rounds(group)
+        if scored.empty:
+            continue
         out.append(
             SplitOut(
                 key=str(key),
                 n_rounds=len(group),
                 n_events=int(group["event_date"].nunique()),
-                avg=float(group["score"].mean()),
-                median=float(group["score"].median()),
-                best=int(group["score"].max()),
-                avg_adjusted=_mean(group["adjusted"]),
+                n_excluded=len(group) - len(scored),
+                avg=float(scored["score"].mean()),
+                median=float(scored["score"].median()),
+                best=int(scored["score"].max()),
+                avg_adjusted=_mean(scored["adjusted"]),
             )
         )
     if order:

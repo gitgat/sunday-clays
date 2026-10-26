@@ -191,6 +191,7 @@ export const meDetail: ShooterDetail = {
   stats: {
     n_rounds: 267,
     n_events: 267,
+    n_excluded: 0,
     avg_score: 35.31,
     median_score: 36,
     best_score: 45,
