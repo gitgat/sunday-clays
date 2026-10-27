@@ -280,7 +280,9 @@ def test_the_daily_loop_reports_a_sigterm_as_a_failure(
     stub = tmp_path / "bin" / "pg_isready"
     stub.write_text(SUCCEEDS)
     stub.chmod(0o755)
-    loop = subprocess.Popen(command[:-1], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    loop = subprocess.Popen(
+        command[:-1], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
     try:
         deadline = time.monotonic() + 30
         while not kept_dumps(tmp_path) and time.monotonic() < deadline:
@@ -294,4 +296,3 @@ def test_the_daily_loop_reports_a_sigterm_as_a_failure(
             loop.kill()
 
     assert returncode == 143
-
