@@ -63,7 +63,10 @@ if [[ "${1:-}" == "--once" ]]; then
   exit $?
 fi
 
-trap 'exit 0' TERM INT
+# A SIGTERM/INT is a failure, not a success: Swarm reads exit 0 as Complete and (under
+# on-failure) never replaces the task. 143 = 128 + SIGTERM. A deliberate stop/update is
+# unaffected, because Swarm has already set the desired state to shutdown.
+trap 'echo "backup: received SIGTERM/INT, exiting" >&2; exit 143' TERM INT
 for _ in $(seq 60); do
   pg_isready --quiet && break
   sleep 2

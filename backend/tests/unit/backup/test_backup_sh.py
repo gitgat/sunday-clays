@@ -265,3 +265,33 @@ def test_run_that_cannot_take_the_lock_in_time_is_a_failure(
     assert kept_dumps(tmp_path) == []
     assert not (tmp_path / "backups" / "last_success").exists()
     assert healthchecks.pings == ["/check-uuid/fail"]
+
+
+def test_the_daily_loop_reports_a_sigterm_as_a_failure(
+    tmp_path: Path, healthchecks: Healthchecks
+) -> None:
+    """A kill must not look like success: Swarm reads exit 0 as Complete and never replaces it."""
+    command, env = backup_command(
+        tmp_path,
+        pg_dump=WRITES_DUMP,
+        pg_restore=SUCCEEDS,
+        hc_url_file=healthchecks.url_file,
+    )
+    stub = tmp_path / "bin" / "pg_isready"
+    stub.write_text(SUCCEEDS)
+    stub.chmod(0o755)
+    loop = subprocess.Popen(command[:-1], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 30
+        while not kept_dumps(tmp_path) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert kept_dumps(tmp_path), "the startup dump never landed"
+        time.sleep(0.5)  # let the loop reach its sleep-until-02:30 wait
+        loop.terminate()
+        returncode = loop.wait(timeout=10)
+    finally:
+        if loop.poll() is None:
+            loop.kill()
+
+    assert returncode == 143
+

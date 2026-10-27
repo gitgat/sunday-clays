@@ -39,7 +39,7 @@ services:
       update_config: *update-rollback
       rollback_config: *rollback-stop-first
       restart_policy:
-        condition: on-failure
+        condition: any
       labels:
         - traefik.enable=true
         - traefik.swarm.network=traefik_public
@@ -70,7 +70,7 @@ services:
       update_config: *update-rollback
       rollback_config: *rollback-stop-first
       restart_policy:
-        condition: on-failure
+        condition: any
 
   worker:
     image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
@@ -100,7 +100,7 @@ services:
         order: stop-first
       placement: *db-node
       restart_policy:
-        condition: on-failure
+        condition: any
 
   backup:
     image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
@@ -115,7 +115,7 @@ services:
       rollback_config: *rollback-stop-first
       placement: *db-node
       restart_policy:
-        condition: on-failure
+        condition: any
 
   # Pull-based auto-deployer (Plan 13; deploy/README.md "Automatic deploys"). The only service
   # allowed the Docker socket and a manager placement (scripts/check_stack.py). It never updates
