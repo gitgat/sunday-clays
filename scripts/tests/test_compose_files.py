@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +32,20 @@ def test_caddy_still_starts_after_a_healthy_api_locally_and_in_ci() -> None:
 def test_swarm_restarts_the_worker_even_after_a_clean_exit() -> None:
     """An unhealthy task gets SIGTERM, finishes its job and exits 0; Swarm must restart it."""
     restart = service("compose.swarm.yaml", "worker")["deploy"]["restart_policy"]
+
+    assert restart["condition"] == "any"
+
+
+@pytest.mark.parametrize("name", ["caddy", "api", "db", "backup"])
+def test_swarm_restarts_every_long_running_service_even_after_a_clean_exit(name: str) -> None:
+    """A task that gets SIGTERM and exits 0 must come back: on-failure left db and backup at 0/1.
+
+    Postgres answers SIGTERM with a clean fast shutdown (exit 0), and so did backup.sh. With
+    condition on-failure, Swarm marked both tasks Complete and never replaced them (2026-10-26,
+    about 5.5 h without backups). A deliberate stop, scale or update still stops them, because
+    Swarm sets the desired state to shutdown first.
+    """
+    restart = service("compose.swarm.yaml", name)["deploy"]["restart_policy"]
 
     assert restart["condition"] == "any"
 
