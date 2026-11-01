@@ -173,3 +173,15 @@ def test_find_shooters_commas_ignored(fx_session: Session) -> None:
         shooter.display_name
     ]
     assert find_shooters(fx_session, ",") == []
+
+
+def test_find_shooters_with_no_rounds_anywhere_has_no_usual_status(session: Session) -> None:
+    assert session.scalar(select(func.count(Round.id))) == 0
+    session.add(Shooter(display_name="Nobody, Newcomer"))
+    session.flush()
+
+    hits = find_shooters(session, "newcomer")
+
+    assert [(h.display_name, h.rounds, h.usual_status) for h in hits] == [
+        ("Nobody, Newcomer", 0, None)
+    ]

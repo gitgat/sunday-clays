@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -20,6 +21,7 @@ from sunday_clays.config import database_url_from_env
 from sunday_clays.mcp import reads
 from sunday_clays.mcp.auth import BearerMiddleware
 from sunday_clays.mcp.schemas import (
+    MAX_JOB_ID,
     EventSummary,
     FindShootersInput,
     FindShootersResult,
@@ -27,6 +29,7 @@ from sunday_clays.mcp.schemas import (
     GetJobInput,
 )
 
+STATEMENT_TIMEOUT_MS = 10_000
 SessionFactoryFn = Callable[[], AbstractContextManager[Session]]
 
 
@@ -35,9 +38,13 @@ def default_session_factory() -> Iterator[Session]:
     """One session per tool call; commit on success, rollback on error (mirrors db.get_session)."""
     if db.SessionFactory.kw.get("bind") is None:
         # Only the database URL: the mcp service does not mount the login secrets Settings needs.
-        db.SessionFactory.configure(bind=db.make_engine(database_url_from_env()))
+        # Read-only until the write tools exist (phase 2).
+        engine = db.make_engine(database_url_from_env())
+        db.SessionFactory.configure(bind=engine.execution_options(postgresql_readonly=True))
     session = db.SessionFactory()
     try:
+        # A hung query must not block a tool call (and the event loop) indefinitely.
+        session.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
         yield session
     except BaseException:
         session.rollback()
@@ -102,7 +109,7 @@ def _register_reads(mcp: FastMCP, session_factory: SessionFactoryFn) -> None:
         return result.model_dump(mode="json", exclude=skip)
 
     @mcp.tool(description="Check the status of a background job (queued, running, done or failed).")
-    def get_job(id: Annotated[int, Field(ge=1)]) -> dict[str, Any]:
+    def get_job(id: Annotated[int, Field(ge=1, le=MAX_JOB_ID)]) -> dict[str, Any]:
         args = GetJobInput(id=id)
         with session_factory() as session:
             return reads.get_job(session, args.id).model_dump(mode="json")

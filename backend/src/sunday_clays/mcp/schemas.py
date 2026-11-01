@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+MAX_JOB_ID = 2**31 - 1  # jobs.id is a Postgres integer
+
 
 class _Input(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -29,7 +31,7 @@ class GetEventInput(_Input):
 
 
 class GetJobInput(_Input):
-    id: int = Field(ge=1)
+    id: int = Field(ge=1, le=MAX_JOB_ID)
 
 
 class ShooterHit(BaseModel):

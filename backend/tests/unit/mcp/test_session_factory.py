@@ -1,6 +1,7 @@
 """The mcp service mounts only the database URL, never the login secrets."""
 
 import pytest
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from sunday_clays import db
@@ -27,5 +28,7 @@ def _only_the_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_factory_configures_with_only_the_database_url() -> None:
-    with server.default_session_factory() as session:
-        assert session.get_bind() is not None
+    # Configuring must not need the login secrets: the only failure left is the unreachable
+    # database (a closed port), never a Settings ValidationError.
+    with pytest.raises(OperationalError), server.default_session_factory():
+        pass

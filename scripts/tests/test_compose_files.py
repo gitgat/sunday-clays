@@ -60,7 +60,7 @@ def test_swarm_restarts_the_worker_even_after_a_clean_exit() -> None:
     assert restart["condition"] == "any"
 
 
-@pytest.mark.parametrize("name", ["caddy", "api", "db", "backup"])
+@pytest.mark.parametrize("name", ["caddy", "api", "mcp", "db", "backup"])
 def test_swarm_restarts_every_long_running_service_even_after_a_clean_exit(name: str) -> None:
     """A task that gets SIGTERM and exits 0 must come back: on-failure left db and backup at 0/1.
 
