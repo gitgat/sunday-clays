@@ -69,7 +69,7 @@ def test_tools_listed(mcp_server: str, mcp_token: str) -> None:
 def test_find_shooters_over_mcp(mcp_server: str, mcp_token: str, fx_session: Session) -> None:
     name = fx_session.scalars(select(Shooter.display_name).limit(1)).one()
     last = name.split(",")[0]
-    hits = asyncio.run(call_tool(mcp_server, "find_shooters", {"query": last, "limit": 50}))
+    hits = asyncio.run(call_tool(mcp_server, "find_shooters", {"query": last, "limit": 25}))
     found = hits["shooters"]
     assert name in [h["display_name"] for h in found]
     assert set(found[0]) == {"display_name", "rounds", "last_shot", "usual_status"}
@@ -102,6 +102,8 @@ def test_get_event_over_mcp(mcp_server: str, fx_session: Session) -> None:
         ("find_shooters", {"query": "x", "limit": 500}),
         ("find_shooters", {"query": ""}),
         ("find_shooters", {"query": "x", "bogus": 1}),
+        ("find_shooters", {"query": "x", "limit": 26}),
+        ("find_shooters", {"query": "x" * 61}),
         ("get_event", {"date": "not-a-date"}),
         ("get_job", {"id": 0}),
     ],
@@ -113,6 +115,29 @@ def test_bad_input_is_tool_error(
     assert is_error is True
     ok, _ = asyncio.run(_raw(mcp_server, mcp_token, "get_job", {"id": 1}))
     assert ok is False  # server still healthy (a missing job is a normal result)
+
+
+@pytest.mark.parametrize("args", [{"query": "x", "limit": 25}, {"query": "x" * 60}])
+def test_boundary_input_is_accepted(mcp_server: str, mcp_token: str, args: dict[str, Any]) -> None:
+    is_error, _ = asyncio.run(_raw(mcp_server, mcp_token, "find_shooters", args))
+    assert is_error is False
+
+
+def test_advertised_schema_has_bounds(mcp_server: str, mcp_token: str) -> None:
+    async def schema() -> dict[str, Any]:
+        headers = {"Authorization": f"Bearer {mcp_token}"}
+        async with (
+            create_mcp_http_client(headers=headers) as http_client,
+            streamable_http_client(f"{mcp_server}/mcp", http_client=http_client) as (r, w, _),
+            ClientSession(r, w) as client,
+        ):
+            await client.initialize()
+            tools = {t.name: t for t in (await client.list_tools()).tools}
+        return tools["find_shooters"].inputSchema["properties"]
+
+    props = asyncio.run(schema())
+    assert props["query"]["maxLength"] == 60
+    assert props["limit"]["maximum"] == 25
 
 
 def test_tool_arguments_not_logged(

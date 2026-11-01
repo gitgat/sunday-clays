@@ -32,14 +32,21 @@ def _word_prefix(tokens: list[str], text: str) -> bool:
 
 def find_shooters(session: Session, query: str, limit: int = 10) -> list[ShooterHit]:
     """Shooters whose name (or alias) contains every whitespace-separated token, any order."""
-    tokens = [t.lower() for t in query.split()]
+    tokens = query.lower().replace(",", " ").split()
     if not tokens:
         return []
     patterns = [f"%{_escape_like(t)}%" for t in tokens]
     by_name = and_(*(Shooter.display_name.ilike(p, escape="\\") for p in patterns))
     by_alias = (
         select(ShooterAlias.shooter_id)
-        .where(and_(*(ShooterAlias.name_key.ilike(p, escape="\\") for p in patterns)))
+        .where(
+            and_(
+                *(
+                    func.split_part(ShooterAlias.name_key, "@", 1).ilike(p, escape="\\")
+                    for p in patterns
+                )
+            )
+        )
         .scalar_subquery()
     )
     totals = (

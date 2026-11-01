@@ -4,10 +4,11 @@ import datetime as dt
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import Field
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -79,7 +80,10 @@ def _register_reads(mcp: FastMCP, session_factory: SessionFactoryFn) -> None:
             'names to the exact stored "Last, First" spelling before reading or importing scores.'
         )
     )
-    def find_shooters(query: str, limit: int = 10) -> dict[str, Any]:
+    def find_shooters(
+        query: Annotated[str, Field(min_length=1, max_length=60)],
+        limit: Annotated[int, Field(ge=1, le=25)] = 10,
+    ) -> dict[str, Any]:
         args = FindShootersInput(query=query, limit=limit)
         with session_factory() as session:
             hits = reads.find_shooters(session, args.query, args.limit)
@@ -99,7 +103,7 @@ def _register_reads(mcp: FastMCP, session_factory: SessionFactoryFn) -> None:
         return result.model_dump(mode="json", exclude=skip)
 
     @mcp.tool(description="Check the status of a background job (queued, running, done or failed).")
-    def get_job(id: int) -> dict[str, Any]:
+    def get_job(id: Annotated[int, Field(ge=1)]) -> dict[str, Any]:
         args = GetJobInput(id=id)
         with session_factory() as session:
             return reads.get_job(session, args.id).model_dump(mode="json")

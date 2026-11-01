@@ -12,13 +12,13 @@ class _Input(BaseModel):
 
 
 class FindShootersInput(_Input):
-    query: str = Field(min_length=1, max_length=100)
-    limit: int = Field(default=10, ge=1, le=50)
+    query: str = Field(min_length=1, max_length=60)
+    limit: int = Field(default=10, ge=1, le=25)
 
     @field_validator("query")
     @classmethod
     def _has_a_token(cls, value: str) -> str:
-        if not value.split():
+        if not value.replace(",", " ").split():
             raise ValueError("query must contain at least one non-blank character")
         return value
 

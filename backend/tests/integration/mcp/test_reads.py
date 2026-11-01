@@ -150,3 +150,26 @@ def test_get_job(fx_session: Session) -> None:
     missing = get_job(fx_session, job.id + 10_000)
     assert isinstance(missing, NotFound)
     assert missing.found is False
+
+
+def test_find_shooters_alias_date_suffix_not_searchable(fx_session: Session) -> None:
+    shooter = _busiest(fx_session)
+    fx_session.add(ShooterAlias(name_key="zzqx@2026-09-27", shooter_id=shooter.id))
+    fx_session.flush()
+    for query in ("@", "2026-09", "-27", "zzqx@2026"):
+        names = [h.display_name for h in find_shooters(fx_session, query, limit=25)]
+        assert shooter.display_name not in names
+    assert [h.display_name for h in find_shooters(fx_session, "zzqx")] == [shooter.display_name]
+
+
+def test_find_shooters_commas_ignored(fx_session: Session) -> None:
+    shooter = _busiest(fx_session)
+    last, first = _last_first(shooter)
+    hits = find_shooters(fx_session, f"{last}, {first}")
+    assert hits[0].display_name == shooter.display_name
+    fx_session.add(ShooterAlias(name_key="zzqx nickname", shooter_id=shooter.id))
+    fx_session.flush()
+    assert [h.display_name for h in find_shooters(fx_session, "zzqx, nickname")] == [
+        shooter.display_name
+    ]
+    assert find_shooters(fx_session, ",") == []
