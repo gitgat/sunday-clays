@@ -43,12 +43,6 @@ def _fail_inside_a_session() -> None:
         raise RuntimeError("boom")
 
 
-def _fail_inside_a_session() -> None:
-    with server.default_session_factory() as session:
-        session.execute(text("SELECT 1"))
-        raise RuntimeError("boom")
-
-
 def test_an_error_rolls_the_session_back_and_reraises() -> None:
     with pytest.raises(RuntimeError, match="boom"):
         _fail_inside_a_session()
