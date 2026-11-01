@@ -94,6 +94,43 @@ services:
       restart_policy:
         condition: any
 
+  # Scores MCP server (deploy/README.md "Scores MCP"): the backend image with its own command. It is
+  # reachable only through the deployment's MCP gateway, over the external MCP network (alias
+  # sundayclays-mcp), never through the public edge. Read-only for now; the image has python but
+  # no curl, hence the urllib healthcheck.
+  mcp:
+    image: ${SC_REGISTRY:?SC_REGISTRY is required}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    command: ["python", "-m", "sunday_clays.mcp"]
+    environment:
+      MCP_AUTH_TOKEN_FILE: /run/secrets/mcp_token
+      DATABASE_URL_FILE: /run/secrets/database_url
+      MCP_PORT: "8080"
+    secrets:
+      - source: mcp_token
+        target: mcp_token
+      - database_url
+    networks:
+      default: {}
+      mcp_gateway:
+        aliases: [sundayclays-mcp]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      placement: *x86
+      update_config: *update-rollback
+      rollback_config: *rollback-stop-first
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+
   db:
     volumes:
       - /var/data/sunday-clays/db:/var/lib/postgresql/data
@@ -158,6 +195,10 @@ networks:
   # The infra repo's isolated public edge (cloudflared -> edge proxy -> caddy).
   edge_public:
     external: true
+  # The MCP gateway's network (external, created by the deployment); the name is a deploy-time setting.
+  mcp_gateway:
+    external: true
+    name: ${SC_MCP_NETWORK:-mcp_gateway}
 
 # Restated in full: `docker stack` replaces top-level secret entries rather than merging them.
 # Swarm secrets are immutable: rotate = new file content + bump SECRETS_REV + redeploy.
@@ -187,3 +228,7 @@ secrets:
   deployer_ghcr_token:
     file: ./secrets/deployer_ghcr_token
     name: sundayclays_deployer_ghcr_token_v${DEPLOYER_SECRETS_REV:-1}
+  # The MCP bearer token, created out of band (external); the name is a deploy-time setting.
+  mcp_token:
+    external: true
+    name: ${SC_MCP_TOKEN_SECRET:-sundayclays_mcp_token}

@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-REQUIRED_SERVICES = ("caddy", "api", "worker", "db", "backup", "deployer")
+REQUIRED_SERVICES = ("caddy", "api", "worker", "mcp", "db", "backup", "deployer")
 # Single-writer data services: pinned by hostname, all to the same node, one replica each.
 PINNED_SERVICES = ("db", "backup")
 HOSTNAME = "node.hostname=="
@@ -27,6 +27,7 @@ RELEASE_IMAGES = {
     "caddy": "frontend",
     "api": "backend",
     "worker": "backend",
+    "mcp": "backend",
     "backup": "backend",
     "deployer": "deployer",
 }
@@ -36,9 +37,9 @@ RELEASE_TAG = re.compile(r"^sha-[0-9a-f]{7}$")
 # a constraint on them pins a service to one architecture just as node.platform.arch does.
 ARCH_CONSTRAINT = re.compile(r"^node\.(platform\.arch|labels\.(arch|class|type))(==|!=)")
 # Every image is multi-arch, so no service needs an architecture constraint. The one exception
-# (2026-10-02): api and worker must run on the x86 nodes, because a 4-core arm64 Pi measured slow
+# (2026-10-02): api, worker and mcp must run on the x86 nodes, because a 4-core arm64 Pi measured slow
 # against the database on x86. They may carry exactly this constraint and no other architecture one.
-X86_ONLY_SERVICES: frozenset[str] = frozenset({"api", "worker"})
+X86_ONLY_SERVICES: frozenset[str] = frozenset({"api", "worker", "mcp"})
 X86_CONSTRAINT = "node.platform.arch==x86_64"
 # Plan 13: the pull-based deployer is the only service that holds the Docker socket, and it runs as
 # one task on a manager (any architecture: the Swarm's managers are Raspberry Pis).
@@ -51,6 +52,12 @@ DEPLOYER_STATE_SOURCE = DATA_ROOT + "deployer"
 DEPLOYER_STATE_TARGET = "/state"
 PUBLIC_EDGE = "edge_public"
 CLOUDFLARE_IP = "CF-Connecting-IP"
+# The scores MCP server is reachable only through the deployment's MCP gateway, over this external
+# network: no other service joins it, and mcp itself never joins a public-edge network.
+MCP = "mcp"
+MCP_NETWORK = "mcp_gateway"
+MCP_ALIAS = "sundayclays-mcp"
+MCP_FORBIDDEN_NETWORKS = ("traefik_public", PUBLIC_EDGE)
 ROUTER_LABEL = re.compile(r"^traefik\.http\.routers\.([^.]+)\.rule$")
 
 
@@ -92,6 +99,28 @@ def _public_edge_rules(stack: dict[str, Any], caddy: dict[str, Any]) -> list[str
                 f"caddy: router {router[1]} must strip {CLOUDFLARE_IP} "
                 "(a middleware with an empty customrequestheaders value)"
             )
+    return problems
+
+
+def _mcp_gateway_rules(stack: dict[str, Any], services: dict[str, dict[str, Any]]) -> list[str]:
+    problems = [
+        f"{name}: must not join {MCP_NETWORK}"
+        for name, service in sorted(services.items())
+        if name != MCP and MCP_NETWORK in _network_names(service)
+    ]
+    mcp = services.get(MCP)
+    if mcp is None:
+        return problems
+    networks = mcp.get("networks")
+    gateway = networks.get(MCP_NETWORK) if isinstance(networks, dict) else None
+    aliases = (gateway or {}).get("aliases") or []
+    if MCP_NETWORK not in _network_names(mcp) or MCP_ALIAS not in aliases:
+        problems.append(f"{MCP}: must join {MCP_NETWORK} with the alias {MCP_ALIAS}")
+    problems += [
+        f"{MCP}: must not join {n}" for n in MCP_FORBIDDEN_NETWORKS if n in _network_names(mcp)
+    ]
+    if not ((stack.get("networks") or {}).get(MCP_NETWORK) or {}).get("external"):
+        problems.append(f"network {MCP_NETWORK}: must be external")
     return problems
 
 
@@ -244,6 +273,7 @@ def violations(stack: dict[str, Any]) -> list[str]:
         problems.append("caddy: must not publish ports (Traefik reaches it over traefik_public)")
     if caddy:
         problems += _public_edge_rules(stack, caddy)
+    problems += _mcp_gateway_rules(stack, services)
     for key, secret in sorted((stack.get("secrets") or {}).items()):
         secret_name = str((secret or {}).get("name", ""))
         if not secret_name.startswith("sundayclays_"):

@@ -17,10 +17,13 @@ secrets, `secrets/deploy.env` in the server's checkout (gitignored, with the res
 | `SC_REGISTRY` | the private registry mirror every app image is pulled from (also the deployer's `REGISTRY`) |
 | `SC_DB_NODE` | hostname of the database node, where `db` and `backup` are pinned |
 | `SC_LAN_HOST` | LAN hostname of Caddy's `sundayclays-lan` router rule |
+| `SC_MCP_NETWORK` | name of the external overlay network shared with the MCP gateway (default `mcp_gateway`) |
+| `SC_MCP_TOKEN_SECRET` | name of the external Swarm secret holding the MCP bearer token (default `sundayclays_mcp_token`) |
 | `GHCR_USER` | GitHub login that owns the `read:packages` token |
 | `IMAGE_TAG` | the release to deploy (`sha-<7>`); set per deploy, not stored in the file |
 
-All but `IMAGE_TAG` are required (`${…:?}`) with no defaults. Every hand `docker stack deploy`
+All but `IMAGE_TAG`, `SC_MCP_NETWORK` and `SC_MCP_TOKEN_SECRET` are required (`${…:?}`) with no
+defaults; the two MCP names have neutral defaults that the deploy env overrides. Every hand `docker stack deploy`
 first runs `set -a; . secrets/deploy.env; set +a` from the checkout. CI renders the stack with
 placeholder values (`registry.example.internal`, `db-node`, `sundayclays.lan.example`).
 
@@ -190,6 +193,8 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    SC_REGISTRY=<registry-mirror-host>
    SC_DB_NODE=<database-node-hostname>
    SC_LAN_HOST=<lan-hostname>
+   SC_MCP_NETWORK=<mcp-gateway-network-name>
+   SC_MCP_TOKEN_SECRET=<mcp-token-secret-name>
    GHCR_USER=<github-login>
    ENV
    chmod 600 secrets/deploy.env
@@ -691,3 +696,17 @@ says: every stored answer is keyed by the data version, the local date and the r
   `restore.sh <dump> [db]` is all or nothing. In one transaction it drops and recreates the `public`
   schema and replays the dump, so tables a newer migration added are gone afterwards. A dump that
   fails part-way leaves the database exactly as it was.
+
+## Scores MCP
+
+The `mcp` service runs `python -m sunday_clays.mcp` from the backend image: a read-only
+[Model Context Protocol](https://modelcontextprotocol.io) server over the scores database. It
+listens on port 8080 (`GET /healthz` is open; everything else needs the bearer token) and is placed
+on the x86 nodes like `api`.
+
+- The gateway network and the token secret are external: the deployment creates them, and
+  `SC_MCP_NETWORK` / `SC_MCP_TOKEN_SECRET` in the deploy env ("Deploy-time settings") name them.
+  `mcp` joins the network with the alias `sundayclays-mcp`; no other service may, and `mcp` never
+  joins `traefik_public` or `edge_public` (`scripts/check_stack.py`).
+- Routing, hostnames and the gateway itself are the deployment's concern, not this repo's.
+- Commits are disabled until phase 3: the server offers no write tools yet.

@@ -59,6 +59,10 @@ VALID: dict[str, Any] = {
                 {"type": "bind", "source": "/var/data/sunday-clays/backups", "target": "/backups"}
             ],
         ),
+        "mcp": backend(
+            deploy={"placement": {"constraints": list(X86)}},
+            networks={"default": None, "mcp_gateway": {"aliases": ["sundayclays-mcp"]}},
+        ),
         "deployer": {
             "image": "registry.example.internal/sunday-clays-deployer:sha-0000000",
             "deploy": {"replicas": 1, "placement": {"constraints": list(MANAGER)}},
@@ -68,7 +72,10 @@ VALID: dict[str, Any] = {
             ],
         },
     },
-    "networks": {"edge_public": {"name": "edge_public", "external": True}},
+    "networks": {
+        "edge_public": {"name": "edge_public", "external": True},
+        "mcp_gateway": {"name": "mcp_gateway", "external": True},
+    },
     "secrets": {
         "db_password": {"name": "sundayclays_db_password_v1", "file": "/x/secrets/db_password"},
     },
@@ -97,7 +104,7 @@ def run(
 
 def test_x86_on_api_and_worker_is_allowed_even_with_spaces() -> None:
     stack = copy.deepcopy(VALID)
-    for name in ("api", "worker"):
+    for name in ("api", "worker", "mcp"):
         stack["services"][name]["deploy"]["placement"]["constraints"] = [
             "node.platform.arch == x86_64"
         ]
@@ -111,7 +118,7 @@ def test_valid_stack_passes() -> None:
     result = run(VALID)
 
     assert result.returncode == 0, result.stderr
-    assert "6 services ok" in result.stdout
+    assert "7 services ok" in result.stdout
 
 
 def caddy_off_the_public_edge(stack: dict[str, Any]) -> None:
@@ -164,6 +171,40 @@ def x86_on_caddy(stack: dict[str, Any]) -> None:
 
 def x86_on_backup(stack: dict[str, Any]) -> None:
     stack["services"]["backup"]["deploy"]["placement"]["constraints"].append(X86[0])
+
+
+def mcp_missing(stack: dict[str, Any]) -> None:
+    del stack["services"]["mcp"]
+
+
+def mcp_on_traefik_public(stack: dict[str, Any]) -> None:
+    stack["services"]["mcp"]["networks"]["traefik_public"] = None
+
+
+def mcp_on_edge_public(stack: dict[str, Any]) -> None:
+    stack["services"]["mcp"]["networks"]["edge_public"] = None
+
+
+def mcp_missing_alias(stack: dict[str, Any]) -> None:
+    stack["services"]["mcp"]["networks"]["mcp_gateway"] = {"aliases": ["other"]}
+
+
+def mcp_off_the_gateway(stack: dict[str, Any]) -> None:
+    del stack["services"]["mcp"]["networks"]["mcp_gateway"]
+
+
+def mcp_gateway_not_external(stack: dict[str, Any]) -> None:
+    stack["networks"]["mcp_gateway"] = {"name": "mcp_gateway"}
+
+
+def api_on_mcp_gateway(stack: dict[str, Any]) -> None:
+    stack["services"]["api"]["networks"] = {"default": None, "mcp_gateway": None}
+
+
+def arm_on_mcp(stack: dict[str, Any]) -> None:
+    stack["services"]["mcp"]["deploy"]["placement"]["constraints"] = [
+        "node.platform.arch==aarch64"
+    ]
 
 
 def arm_label_on_caddy(stack: dict[str, Any]) -> None:
@@ -421,6 +462,17 @@ def missing_deployer(stack: dict[str, Any]) -> None:
         (
             x86_on_backup,
             "backup: must not be constrained to an architecture (node.platform.arch==x86_64)",
+        ),
+        (mcp_missing, "mcp: service missing"),
+        (mcp_on_traefik_public, "mcp: must not join traefik_public"),
+        (mcp_on_edge_public, "mcp: must not join edge_public"),
+        (mcp_missing_alias, "mcp: must join mcp_gateway with the alias sundayclays-mcp"),
+        (mcp_off_the_gateway, "mcp: must join mcp_gateway with the alias sundayclays-mcp"),
+        (mcp_gateway_not_external, "network mcp_gateway: must be external"),
+        (api_on_mcp_gateway, "api: must not join mcp_gateway"),
+        (
+            arm_on_mcp,
+            "mcp: must not be constrained to an architecture (node.platform.arch==aarch64)",
         ),
         (
             arm_label_on_caddy,
