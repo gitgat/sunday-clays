@@ -31,11 +31,14 @@ class BearerMiddleware:
         self._token = None if token is None else token.encode("utf-8")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or self._token is None or scope["path"] in OPEN_PATHS:
+        if scope["type"] == "lifespan" or self._token is None or scope.get("path") in OPEN_PATHS:
             await self.app(scope, receive, send)
             return
         if self._authorized(scope, self._token):
             await self.app(scope, receive, send)
+            return
+        if scope["type"] != "http":
+            await send({"type": "websocket.close", "code": 1008})
             return
         await send(
             {

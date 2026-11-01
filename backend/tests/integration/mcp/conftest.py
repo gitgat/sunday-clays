@@ -80,3 +80,4 @@ def mcp_server(session_factory: Callable[[], AbstractContextManager[Session]]) -
     finally:
         server.should_exit = True
         thread.join(timeout=10)
+        assert not thread.is_alive()

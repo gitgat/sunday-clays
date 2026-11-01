@@ -48,4 +48,29 @@ def test_initialize_and_list_tools(mcp_server: str, mcp_token: str) -> None:
             await client.initialize()
             return len((await client.list_tools()).tools)
 
-    assert asyncio.run(run()) >= 0
+    assert asyncio.run(run()) == 0
+
+
+def test_gateway_host_header_accepted(mcp_server: str, mcp_token: str) -> None:
+    """Gateway requests carry a service-alias Host; DNS-rebinding protection must be off."""
+    response = httpx.post(
+        f"{mcp_server}/mcp",
+        headers={
+            "Host": "sundayclays-mcp:8080",
+            "Authorization": f"Bearer {mcp_token}",
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        },
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "host-test", "version": "0"},
+            },
+        },
+    )
+    assert response.status_code == 200
+    assert '"result"' in response.text
