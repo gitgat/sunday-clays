@@ -3708,7 +3708,7 @@ with
 and replace
 
 ```markdown
-On the LAN the site answers at `https://sundayclays.thehalf.io` (router `sundayclays-lan`, the
+On the LAN the site answers at `https://sundayclays.lan.example` (router `sundayclays-lan`, the
 ```
 
 with
@@ -3746,7 +3746,7 @@ the app's share prefix: crawlers get the preview, people get a 302 to `/<path>`.
 4. Leave Bot Fight Mode off (it is off today). It challenges unverified preview fetchers such as
    WhatsApp's.
 
-On the LAN the site answers at `https://sundayclays.thehalf.io` (router `sundayclays-lan`, the
+On the LAN the site answers at `https://sundayclays.lan.example` (router `sundayclays-lan`, the
 ```
 
 - [ ] **Step 11: Run the gates and commit**

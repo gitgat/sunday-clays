@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 SCRIPT = Path(__file__).resolve().parents[1] / "check_stack.py"
-DB_NODE = ["node.hostname==autopirate"]
+DB_NODE = ["node.hostname==db-node"]
 MANAGER = ["node.role==manager"]
 X86 = ["node.platform.arch==x86_64"]
 SOCKET = {"type": "bind", "source": "/var/run/docker.sock", "target": "/var/run/docker.sock"}
@@ -27,7 +27,7 @@ CADDY_LABELS = {
 
 def backend(**extra: Any) -> dict[str, Any]:
     return {
-        "image": "registry.thehalf.io/sunday-clays-backend:sha-0000000",
+        "image": "registry.example.internal/sunday-clays-backend:sha-0000000",
         "deploy": {"placement": {"constraints": []}},
         **extra,
     }
@@ -36,7 +36,7 @@ def backend(**extra: Any) -> dict[str, Any]:
 VALID: dict[str, Any] = {
     "services": {
         "caddy": {
-            "image": "registry.thehalf.io/sunday-clays-frontend:sha-0000000",
+            "image": "registry.example.internal/sunday-clays-frontend:sha-0000000",
             "deploy": {"placement": {"constraints": []}, "labels": dict(CADDY_LABELS)},
             "networks": {"default": None, "traefik_public": None, "edge_public": None},
         },
@@ -60,7 +60,7 @@ VALID: dict[str, Any] = {
             ],
         ),
         "deployer": {
-            "image": "registry.thehalf.io/sunday-clays-deployer:sha-0000000",
+            "image": "registry.example.internal/sunday-clays-deployer:sha-0000000",
             "deploy": {"replicas": 1, "placement": {"constraints": list(MANAGER)}},
             "volumes": [
                 dict(SOCKET),
@@ -75,9 +75,15 @@ VALID: dict[str, Any] = {
 }
 
 
-def run(stack: dict[str, Any], sc_registry: str = "") -> subprocess.CompletedProcess[str]:
+TEST_REGISTRY = "registry.example.internal"
+
+
+def run(
+    stack: dict[str, Any], sc_registry: str | None = TEST_REGISTRY
+) -> subprocess.CompletedProcess[str]:
+    """The fleet registry comes from SC_REGISTRY, as exported for the render; None leaves it unset."""
     env = {k: v for k, v in os.environ.items() if k != "SC_REGISTRY"}
-    if sc_registry:
+    if sc_registry is not None:
         env["SC_REGISTRY"] = sc_registry
     return subprocess.run(
         [sys.executable, str(SCRIPT)],
@@ -183,11 +189,11 @@ def backup_on_another_node(stack: dict[str, Any]) -> None:
 
 
 def api_on_a_ci_tag(stack: dict[str, Any]) -> None:
-    stack["services"]["api"]["image"] = "registry.thehalf.io/sunday-clays-backend:ci"
+    stack["services"]["api"]["image"] = "registry.example.internal/sunday-clays-backend:ci"
 
 
 def caddy_runs_the_backend(stack: dict[str, Any]) -> None:
-    stack["services"]["caddy"]["image"] = "registry.thehalf.io/sunday-clays-backend:sha-0000000"
+    stack["services"]["caddy"]["image"] = "registry.example.internal/sunday-clays-backend:sha-0000000"
 
 
 def worker_from_another_registry(stack: dict[str, Any]) -> None:
@@ -195,7 +201,7 @@ def worker_from_another_registry(stack: dict[str, Any]) -> None:
 
 
 def backup_runs_the_frontend(stack: dict[str, Any]) -> None:
-    stack["services"]["backup"]["image"] = "registry.thehalf.io/sunday-clays-frontend:sha-0000000"
+    stack["services"]["backup"]["image"] = "registry.example.internal/sunday-clays-frontend:sha-0000000"
 
 
 def spaced_arm_on_worker(stack: dict[str, Any]) -> None:
@@ -210,7 +216,7 @@ def api_pinned_to_a_node(stack: dict[str, Any]) -> None:
 
 def db_on_two_nodes(stack: dict[str, Any]) -> None:
     stack["services"]["db"]["deploy"]["placement"]["constraints"] = [
-        "node.hostname==autopirate",
+        "node.hostname==db-node",
         "node.hostname==pi-two",
     ]
 
@@ -238,11 +244,11 @@ def caddy_ports(stack: dict[str, Any]) -> None:
 
 
 def latest_image(stack: dict[str, Any]) -> None:
-    stack["services"]["api"]["image"] = "registry.thehalf.io/sunday-clays-backend:latest"
+    stack["services"]["api"]["image"] = "registry.example.internal/sunday-clays-backend:latest"
 
 
 def untagged_image(stack: dict[str, Any]) -> None:
-    stack["services"]["api"]["image"] = "registry.thehalf.io/sunday-clays-backend"
+    stack["services"]["api"]["image"] = "registry.example.internal/sunday-clays-backend"
 
 
 def missing_backup(stack: dict[str, Any]) -> None:
@@ -334,11 +340,11 @@ def deployer_publishes_a_port(stack: dict[str, Any]) -> None:
 
 
 def deployer_on_latest(stack: dict[str, Any]) -> None:
-    stack["services"]["deployer"]["image"] = "registry.thehalf.io/sunday-clays-deployer:latest"
+    stack["services"]["deployer"]["image"] = "registry.example.internal/sunday-clays-deployer:latest"
 
 
 def deployer_runs_another_image(stack: dict[str, Any]) -> None:
-    stack["services"]["deployer"]["image"] = "registry.thehalf.io/sunday-clays-backend:sha-0000000"
+    stack["services"]["deployer"]["image"] = "registry.example.internal/sunday-clays-backend:sha-0000000"
 
 
 def api_on_ghcr(stack: dict[str, Any]) -> None:
@@ -351,7 +357,7 @@ def deployer_on_ghcr(stack: dict[str, Any]) -> None:
 
 def caddy_on_a_per_arch_tag(stack: dict[str, Any]) -> None:
     stack["services"]["caddy"]["image"] = (
-        "registry.thehalf.io/sunday-clays-frontend:sha-0000000-arm64"
+        "registry.example.internal/sunday-clays-frontend:sha-0000000-arm64"
     )
 
 
@@ -377,23 +383,23 @@ def missing_deployer(stack: dict[str, Any]) -> None:
         (deployer_without_the_socket, "deployer: needs a bind mount of /var/run/docker.sock"),
         (deployer_binds_the_host, "deployer: bind mount '/etc' is not allowed"),
         (deployer_publishes_a_port, "deployer: must not publish ports"),
-        (deployer_on_latest, "deployer: image 'registry.thehalf.io/sunday-clays-deployer:latest'"),
+        (deployer_on_latest, "deployer: image 'registry.example.internal/sunday-clays-deployer:latest'"),
         (
             deployer_runs_another_image,
-            "deployer: image must be registry.thehalf.io/sunday-clays-deployer:sha-<7>",
+            "deployer: image must be registry.example.internal/sunday-clays-deployer:sha-<7>",
         ),
-        (api_on_ghcr, "api: image must be registry.thehalf.io/sunday-clays-backend:sha-<7>"),
+        (api_on_ghcr, "api: image must be registry.example.internal/sunday-clays-backend:sha-<7>"),
         (
             deployer_on_ghcr,
-            "deployer: image must be registry.thehalf.io/sunday-clays-deployer:sha-<7>",
+            "deployer: image must be registry.example.internal/sunday-clays-deployer:sha-<7>",
         ),
         (
             caddy_on_a_per_arch_tag,
-            "caddy: image must be registry.thehalf.io/sunday-clays-frontend:sha-<7>",
+            "caddy: image must be registry.example.internal/sunday-clays-frontend:sha-<7>",
         ),
         (
             worker_on_another_fleet_registry,
-            "worker: image must be registry.thehalf.io/sunday-clays-backend:sha-<7>",
+            "worker: image must be registry.example.internal/sunday-clays-backend:sha-<7>",
         ),
         (missing_deployer, "deployer: service missing"),
         (
@@ -429,24 +435,24 @@ def missing_deployer(stack: dict[str, Any]) -> None:
             "db: must not be constrained to an architecture (node.platform.arch!=aarch64)",
         ),
         (backup_on_another_node, "db and backup must be pinned to one node"),
-        (api_on_a_ci_tag, "api: image must be registry.thehalf.io/sunday-clays-backend:sha-<7>"),
+        (api_on_a_ci_tag, "api: image must be registry.example.internal/sunday-clays-backend:sha-<7>"),
         (
             caddy_runs_the_backend,
-            "caddy: image must be registry.thehalf.io/sunday-clays-frontend:sha-<7>",
+            "caddy: image must be registry.example.internal/sunday-clays-frontend:sha-<7>",
         ),
         (
             worker_from_another_registry,
-            "worker: image must be registry.thehalf.io/sunday-clays-backend:sha-<7>",
+            "worker: image must be registry.example.internal/sunday-clays-backend:sha-<7>",
         ),
         (
             backup_runs_the_frontend,
-            "backup: image must be registry.thehalf.io/sunday-clays-backend:sha-<7>",
+            "backup: image must be registry.example.internal/sunday-clays-backend:sha-<7>",
         ),
         (
             spaced_arm_on_worker,
             "worker: must not be constrained to an architecture (node.platform.arch==aarch64)",
         ),
-        (api_pinned_to_a_node, "api: must not be pinned to a node (node.hostname==autopirate)"),
+        (api_pinned_to_a_node, "api: must not be pinned to a node (node.hostname==db-node)"),
         (db_on_two_nodes, "db: more than one node.hostname== constraint"),
         (missing_worker, "worker: service missing"),
         (drop_hostname, "db: missing node.hostname== placement constraint"),
@@ -469,8 +475,8 @@ def missing_deployer(stack: dict[str, Any]) -> None:
             strip_middleware_not_declared,
             "caddy: router sundayclays must strip CF-Connecting-IP",
         ),
-        (latest_image, "api: image 'registry.thehalf.io/sunday-clays-backend:latest'"),
-        (untagged_image, "api: image 'registry.thehalf.io/sunday-clays-backend'"),
+        (latest_image, "api: image 'registry.example.internal/sunday-clays-backend:latest'"),
+        (untagged_image, "api: image 'registry.example.internal/sunday-clays-backend'"),
         (missing_backup, "backup: service missing"),
         (short_named_volume, "db: needs a bind mount under /var/data/sunday-clays/"),
         (short_named_volume, "db: named volume 'db-data' is not allowed"),
@@ -547,8 +553,8 @@ def test_equivalent_spellings_of_a_valid_stack_pass(
 def _on_registry(stack: dict[str, Any], registry: str) -> None:
     for service in stack["services"].values():
         image = service.get("image", "")
-        if image.startswith("registry.thehalf.io/"):
-            service["image"] = registry + image.removeprefix("registry.thehalf.io")
+        if image.startswith("registry.example.internal/"):
+            service["image"] = registry + image.removeprefix("registry.example.internal")
 
 
 def test_sc_registry_moves_the_pull_registry_for_every_release_image() -> None:
@@ -556,9 +562,17 @@ def test_sc_registry_moves_the_pull_registry_for_every_release_image() -> None:
     _on_registry(stack, "reg.lan:5000")
 
     assert run(stack, sc_registry="reg.lan:5000").returncode == 0
-    refused = run(stack)  # the render used SC_REGISTRY but the check was told nothing
+    refused = run(stack)  # the render used another SC_REGISTRY than the check was told
     assert refused.returncode == 1
-    assert "must be registry.thehalf.io/sunday-clays-backend:sha-<7>" in refused.stderr
+    assert "must be registry.example.internal/sunday-clays-backend:sha-<7>" in refused.stderr
+
+
+def test_sc_registry_is_required() -> None:
+    for unset in (None, ""):
+        result = run(VALID, sc_registry=unset)
+
+        assert result.returncode == 2
+        assert "SC_REGISTRY" in result.stderr
 
 
 def test_ghcr_is_refused_even_when_sc_registry_names_it() -> None:
@@ -576,7 +590,11 @@ def test_reads_a_file_argument(tmp_path: Path) -> None:
     rendered.write_text(yaml.safe_dump(VALID))
 
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), str(rendered)], capture_output=True, text=True, check=False
+        [sys.executable, str(SCRIPT), str(rendered)],
+        env={**os.environ, "SC_REGISTRY": TEST_REGISTRY},
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
     assert result.returncode == 0, result.stderr

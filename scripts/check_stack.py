@@ -2,7 +2,7 @@
 """Fleet rules for the rendered Swarm stack (C11 `stack-config`, amended by Plan 13 for the
 multi-arch fleet: Raspberry Pis (arm64) and Proxmox VMs (amd64)).
 
-IMAGE_TAG=sha-0000000 docker stack config -c compose.yaml -c compose.swarm.yaml \
+IMAGE_TAG=sha-0000000 SC_REGISTRY=... SC_DB_NODE=... SC_LAN_HOST=... docker stack config -c compose.yaml -c compose.swarm.yaml \
     | uv run --no-project --with pyyaml python scripts/check_stack.py [rendered.yaml]
 """
 
@@ -30,7 +30,7 @@ RELEASE_IMAGES = {
     "backup": "backend",
     "deployer": "deployer",
 }
-FLEET_REGISTRY = "registry.thehalf.io"  # `SC_REGISTRY` in compose.swarm.yaml overrides it
+REGISTRY_ENV = "SC_REGISTRY"  # the registry the stack was rendered with; required, never defaulted
 RELEASE_TAG = re.compile(r"^sha-[0-9a-f]{7}$")
 # node.labels.class (rpi4/rpi5) and node.labels.type (vm/physical) are the fleet's hardware labels:
 # a constraint on them pins a service to one architecture just as node.platform.arch does.
@@ -144,8 +144,11 @@ def _deployer_state_rule(service: dict[str, Any]) -> list[str]:
 
 
 def _release_registry() -> str:
-    """The registry the stack pulls from: SC_REGISTRY (as exported for the render) or the fleet's."""
-    return os.environ.get("SC_REGISTRY") or FLEET_REGISTRY
+    """The registry the stack pulls from: SC_REGISTRY, as exported for the render."""
+    registry = os.environ.get(REGISTRY_ENV, "")
+    if not registry:
+        raise ValueError(f"{REGISTRY_ENV} is not set (export the value the stack was rendered with)")
+    return registry
 
 
 def _release_image_rule(name: str, image: str) -> list[str]:
@@ -254,7 +257,11 @@ def main(argv: Sequence[str]) -> int:
     if not isinstance(stack, dict):
         print("check_stack: input is not a rendered stack", file=sys.stderr)
         return 2
-    problems = violations(stack)
+    try:
+        problems = violations(stack)
+    except ValueError as exc:
+        print(f"check_stack: {exc}", file=sys.stderr)
+        return 2
     for problem in problems:
         print(f"check_stack: {problem}", file=sys.stderr)
     if not problems:

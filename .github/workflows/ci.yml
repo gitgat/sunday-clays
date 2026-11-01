@@ -280,8 +280,14 @@ jobs:
           enable-cache: false
       - name: Swarm stack renders and satisfies the fleet rules
         shell: bash
+        env:
+          IMAGE_TAG: sha-0000000
+          GHCR_USER: ci
+          SC_REGISTRY: registry.example.internal
+          SC_DB_NODE: db-node
+          SC_LAN_HOST: sundayclays.lan.example
         run: |
-          IMAGE_TAG=sha-0000000 GHCR_USER=ci docker stack config -c compose.yaml -c compose.swarm.yaml \
+          docker stack config -c compose.yaml -c compose.swarm.yaml \
             | uv run --no-project --with pyyaml python scripts/check_stack.py
 
   e2e:
