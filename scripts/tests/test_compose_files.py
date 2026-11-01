@@ -208,6 +208,7 @@ def test_stack_has_mcp_service() -> None:
     assert mcp["environment"]["MCP_PORT"] == "8080"
     assert mcp["networks"]["mcp_gateway"] == {"aliases": ["sundayclays-mcp"]}
     assert "traefik_public" not in mcp["networks"]
+    assert "edge_public" not in mcp["networks"]
     assert "healthcheck" in mcp and "/healthz" in " ".join(mcp["healthcheck"]["test"])
     assert overlay["networks"]["mcp_gateway"] == {
         "external": True,

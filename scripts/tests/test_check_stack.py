@@ -663,3 +663,22 @@ def test_non_mapping_input_is_rejected() -> None:
 
     assert result.returncode == 2
     assert "not a rendered stack" in result.stderr
+
+
+def test_an_external_secret_may_carry_the_deployments_own_name() -> None:
+    stack = copy.deepcopy(VALID)
+    stack["secrets"]["mcp_token"] = {"name": "gateway_token", "external": True}
+
+    result = run(stack)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_a_file_secret_must_still_start_with_sundayclays() -> None:
+    stack = copy.deepcopy(VALID)
+    stack["secrets"]["x"] = {"name": "other", "file": "/x"}
+
+    result = run(stack)
+
+    assert result.returncode == 1
+    assert "secret x: name 'other' must start with sundayclays_" in result.stderr

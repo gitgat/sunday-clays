@@ -4,7 +4,7 @@
 Every POLL_INTERVAL seconds it reads main's SHA with `git ls-remote`. Once CI has published
 ghcr.io/gitgat/sunday-clays-{backend,frontend,deployer}:sha-<7>, it mirrors the three multi-arch
 indexes into the fleet registry (registry.example.internal), then updates api (and waits until api
-reports that version), then worker, caddy and backup, and only then records the SHA in STATE_DIR. A failed
+reports that version), then worker, mcp, caddy and backup, and only then records the SHA in STATE_DIR. A failed
 step rolls the services this run already updated back to their previous image, so the stack stays
 on one coherent release. While main is unchanged it checks that the services still run the
 recorded tag and redeploys it if they drifted. db and the deployer itself are never updated here
@@ -36,10 +36,11 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
-ORDER = ("api", "worker", "caddy", "backup")
+ORDER = ("api", "worker", "mcp", "caddy", "backup")
 IMAGE_OF = {
     "api": "backend",
     "worker": "backend",
+    "mcp": "backend",
     "caddy": "frontend",
     "backup": "backend",
 }
@@ -359,7 +360,7 @@ def wait_for_version(cfg: Config, tag: str, deps: Deps) -> None:
 
 
 def deploy(cfg: Config, tag: str, deps: Deps) -> None:
-    """Update the four app services in ORDER. On a failure, roll the ones this run updated back
+    """Update the five app services in ORDER. On a failure, roll the ones this run updated back
     (reverse ORDER), so the stack never stays split between two releases. db is never touched."""
     updated: list[str] = []
     try:

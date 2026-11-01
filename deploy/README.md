@@ -341,7 +341,7 @@ curl -fsS https://sundayclays.claysmasher.com/api/health   # {"status":"ok","ver
   and the site is briefly down while the new `api` migrates and starts.
 - Services update independently, so the previous release's `worker` can still run against the
   migrated schema until its own update; expand/contract migrations keep that safe.
-- `api`, `worker`, `caddy` and `backup` roll back by themselves (`failure_action: rollback`): a new
+- `api`, `worker`, `mcp`, `caddy` and `backup` roll back by themselves (`failure_action: rollback`): a new
   task that never turns healthy, or fails within 60 s of starting, puts that service back on its
   previous image. `db` never rolls back automatically.
 - `worker`, `db` and `backup` run one replica each; the worker gets 5 minutes to finish its current
@@ -363,7 +363,7 @@ The `deployer` service (`deploy/deployer/deployer.py`, one task on a Swarm manag
 `sunday-clays-backend`, `-frontend` and `-deployer` at `sha-<7>` to GHCR (the `publish` job runs only
 after `ci-ok` passes on `main`), it mirrors the three into the registry mirror (`SC_REGISTRY`), then runs
 `docker service update --image $SC_REGISTRY/…:sha-<7>` on `api`, waits until `/api/health`
-reports `sha-<7>`, then updates `worker`, `caddy` and `backup`, and records the SHA in its
+reports `sha-<7>`, then updates `worker`, `mcp`, `caddy` and `backup`, and records the SHA in its
 state directory, `/var/data/sunday-clays/deployer` (mounted at `/state`). A service already on that image is skipped.
 
 - **Mirroring.** For each image the deployer runs
@@ -522,7 +522,7 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   `rollback` mirrors the tag again first, so the tag must still be published in GHCR. If GHCR no
   longer has it, use the manual loop below from what the registry mirror (`SC_REGISTRY`) still holds.
 
-  This updates `api`, `worker`, `caddy` and `backup` in the usual order (skipping any already on
+  This updates `api`, `worker`, `mcp`, `caddy` and `backup` in the usual order (skipping any already on
   that tag) and **pauses** automatic deploys, because otherwise the next poll would put `main`
   straight back. Once `main` has the fix, run `resume`. Roll back only to a tag in the `history`,
   for two reasons: those were all built after the rollback-safe start-up (Plan 13 Task 3), and an
@@ -558,7 +558,7 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
     docker buildx imagetools create --tag "$SC_REGISTRY/sunday-clays-$i:$TAG" \
       "ghcr.io/gitgat/sunday-clays-$i:$TAG"
   done
-  for s in api worker caddy backup; do
+  for s in api worker mcp caddy backup; do
     kind=backend; [ "$s" = caddy ] && kind=frontend
     docker service update --image "$SC_REGISTRY/sunday-clays-$kind:$TAG" \
       "sundayclays_$s" || { echo "stopped at $s"; break; }

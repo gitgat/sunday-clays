@@ -16,7 +16,7 @@ from starlette.routing import Route
 from starlette.types import ASGIApp
 
 from sunday_clays import db
-from sunday_clays.config import get_settings
+from sunday_clays.config import database_url_from_env
 from sunday_clays.mcp import reads
 from sunday_clays.mcp.auth import BearerMiddleware
 from sunday_clays.mcp.schemas import (
@@ -34,9 +34,8 @@ SessionFactoryFn = Callable[[], AbstractContextManager[Session]]
 def default_session_factory() -> Iterator[Session]:
     """One session per tool call; commit on success, rollback on error (mirrors db.get_session)."""
     if db.SessionFactory.kw.get("bind") is None:
-        db.SessionFactory.configure(
-            bind=db.make_engine(get_settings().database_url.get_secret_value())
-        )
+        # Only the database URL: the mcp service does not mount the login secrets Settings needs.
+        db.SessionFactory.configure(bind=db.make_engine(database_url_from_env()))
     session = db.SessionFactory()
     try:
         yield session

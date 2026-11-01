@@ -276,7 +276,7 @@ def violations(stack: dict[str, Any]) -> list[str]:
     problems += _mcp_gateway_rules(stack, services)
     for key, secret in sorted((stack.get("secrets") or {}).items()):
         secret_name = str((secret or {}).get("name", ""))
-        if not secret_name.startswith("sundayclays_"):
+        if not (secret or {}).get("external") and not secret_name.startswith("sundayclays_"):
             problems.append(f"secret {key}: name {secret_name!r} must start with sundayclays_")
     return problems
 
