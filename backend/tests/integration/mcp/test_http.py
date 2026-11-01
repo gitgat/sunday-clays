@@ -34,7 +34,7 @@ def test_mcp_requires_bearer(mcp_server: str, method: str, path: str, auth: str 
 
 
 def test_initialize_and_list_tools(mcp_server: str, mcp_token: str) -> None:
-    async def run() -> int:
+    async def run() -> set[str]:
         headers = {"Authorization": f"Bearer {mcp_token}"}
         async with (
             create_mcp_http_client(headers=headers) as http_client,
@@ -46,9 +46,9 @@ def test_initialize_and_list_tools(mcp_server: str, mcp_token: str) -> None:
             ClientSession(read, write) as client,
         ):
             await client.initialize()
-            return len((await client.list_tools()).tools)
+            return {t.name for t in (await client.list_tools()).tools}
 
-    assert asyncio.run(run()) == 0
+    assert asyncio.run(run()) == {"find_shooters", "get_event", "get_job"}
 
 
 def test_gateway_host_header_accepted(mcp_server: str, mcp_token: str) -> None:
