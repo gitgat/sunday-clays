@@ -124,7 +124,7 @@ class Config:
     mirror_timeout: float = 600.0  # per image copy
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str]) -> Config:
+    def from_env(cls, env: Mapping[str, str], require_registry: bool = True) -> Config:
         d = cls()
         try:
             poll = float(env.get("POLL_INTERVAL", d.poll_interval))
@@ -132,7 +132,7 @@ class Config:
             update_timeout = float(env.get("UPDATE_TIMEOUT", d.update_timeout))
         except ValueError as exc:
             raise DeployError(f"bad number in the environment: {exc}") from None
-        if not env.get("REGISTRY"):
+        if require_registry and not env.get("REGISTRY"):
             raise DeployError("REGISTRY is not set (the registry the stack pulls from)")
         if poll < MIN_POLL_INTERVAL:
             raise DeployError(f"POLL_INTERVAL must be at least {MIN_POLL_INTERVAL:.0f} seconds")
@@ -140,7 +140,7 @@ class Config:
             repo_url=env.get("REPO_URL", d.repo_url),
             branch=env.get("BRANCH", d.branch),
             stack=env.get("STACK", d.stack),
-            registry=env["REGISTRY"],
+            registry=env.get("REGISTRY", d.registry),
             source_registry=env.get("SOURCE_REGISTRY", d.source_registry),
             ghcr_user=env.get("GHCR_USER", d.ghcr_user),
             github_token_file=Path(env.get("GITHUB_TOKEN_FILE", str(d.github_token_file))),
@@ -571,7 +571,10 @@ def main(argv: Sequence[str], env: Mapping[str, str] = os.environ, deps: Deps | 
     args = parser.parse_args(argv)
     deps = deps or Deps()
     try:
-        cfg = Config.from_env(env)
+        # Only the commands that deploy or mirror need the registry; state commands do not.
+        cfg = Config.from_env(
+            env, require_registry=args.command in ("run", "once", "mirror", "rollback")
+        )
         if args.command in ("run", "once", "rollback", "mirror") and not cfg.ghcr_user:
             raise DeployError("GHCR_USER is not set")
         if args.command == "run":

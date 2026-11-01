@@ -179,8 +179,22 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    `docker stack deploy` below runs from that directory. `scripts/dev-secrets.sh` needs `uv` and `openssl`. Type the real passwords and the
    ping URL at a silent prompt, so they never land in shell history or `ps` output. (Once Plan 04 has
    landed you can instead write the two hashes with
-   `docker run --rm -it registry.example.internal/sunday-clays-backend:sha-<7> python -m sunday_clays.auth.hashpw`
+   `docker run --rm -it "$SC_REGISTRY/sunday-clays-backend:sha-<7>" python -m sunday_clays.auth.hashpw`
    once that tag is mirrored, see "Turn it on".)
+
+   Create the deploy-time settings file ("Deploy-time settings") with the real values of your
+   fleet. They live only in this untracked file, never in the repo:
+
+   ```bash
+   cat > secrets/deploy.env <<'ENV'
+   SC_REGISTRY=<registry-mirror-host>
+   SC_DB_NODE=<database-node-hostname>
+   SC_LAN_HOST=<lan-hostname>
+   GHCR_USER=<github-login>
+   ENV
+   chmod 600 secrets/deploy.env
+   set -a; . secrets/deploy.env; set +a
+   ```
 
    ```bash
    read -rsp 'Viewer password: ' VIEWER_PASSWORD && echo && export VIEWER_PASSWORD
@@ -333,7 +347,7 @@ curl -fsS https://sundayclays.claysmasher.com/api/health   # {"status":"ok","ver
   deployer.
 - `docker stack deploy` needs no `--with-registry-auth`: the fleet registry takes no credentials.
 - If `docker stack deploy` prints `could not be accessed on a registry to record its digest`, stop
-  and make `registry.example.internal` reachable: without the index, Swarm gets no platform list and may
+  and make the registry mirror (`SC_REGISTRY`) reachable: without the index, Swarm gets no platform list and may
   put an image on a node of the wrong architecture. Tags published before Plan 13 are amd64-only and are
   not supported on this fleet ("Preconditions").
 
@@ -342,13 +356,13 @@ curl -fsS https://sundayclays.claysmasher.com/api/health   # {"status":"ok","ver
 The `deployer` service (`deploy/deployer/deployer.py`, one task on a Swarm manager) asks GitHub for
 `main`'s SHA every 2 minutes (`git ls-remote`). When `main` has moved and CI has published
 `sunday-clays-backend`, `-frontend` and `-deployer` at `sha-<7>` to GHCR (the `publish` job runs only
-after `ci-ok` passes on `main`), it mirrors the three into `registry.example.internal`, then runs
-`docker service update --image registry.example.internal/…:sha-<7>` on `api`, waits until `/api/health`
+after `ci-ok` passes on `main`), it mirrors the three into the registry mirror (`SC_REGISTRY`), then runs
+`docker service update --image $SC_REGISTRY/…:sha-<7>` on `api`, waits until `/api/health`
 reports `sha-<7>`, then updates `worker`, `caddy` and `backup`, and records the SHA in its
 state directory, `/var/data/sunday-clays/deployer` (mounted at `/state`). A service already on that image is skipped.
 
 - **Mirroring.** For each image the deployer runs
-  `docker buildx imagetools create --tag registry.example.internal/sunday-clays-<image>:sha-<7> ghcr.io/gitgat/sunday-clays-<image>:sha-<7>`,
+  `docker buildx imagetools create --tag $SC_REGISTRY/sunday-clays-<image>:sha-<7> ghcr.io/gitgat/sunday-clays-<image>:sha-<7>`,
   which copies the whole multi-arch index from registry to registry (nothing is pulled onto the
   node), then reads the copy back and refuses the release unless it lists exactly `linux/amd64` and
   `linux/arm64` (one platform only, or an `unknown/unknown` attestation entry, fails). Never push
@@ -421,21 +435,21 @@ images, is published for both `linux/arm64` and `linux/amd64`.
    then also runs the `publish` jobs (one cached build per image and architecture, then a merge;
    a few Actions minutes).
 2. Wait for the `publish` run of the newest `main` commit. The stack pulls the deployer's own
-   image from the fleet registry too, so bootstrap by hand: on a manager with the GHCR login
+   image from the registry mirror (`SC_REGISTRY`) too, so bootstrap by hand: on a manager with the GHCR login
    ("One-time setup" step 1), mirror all three images, check them, then deploy the tag once
    (there is no deployer to pause yet):
 
    ```bash
    docker buildx version   # precheck: the buildx plugin must be installed on this manager
+   set -a; . secrets/deploy.env; set +a   # SC_REGISTRY etc. ("Deploy-time settings")
    TAG=sha-<7>
    for i in backend frontend deployer; do
-     docker buildx imagetools create --tag "registry.example.internal/sunday-clays-$i:$TAG" \
+     docker buildx imagetools create --tag "$SC_REGISTRY/sunday-clays-$i:$TAG" \
        "ghcr.io/gitgat/sunday-clays-$i:$TAG"
    done
    for i in backend frontend deployer; do   # each must list linux/amd64 and linux/arm64
-     docker buildx imagetools inspect "registry.example.internal/sunday-clays-$i:$TAG"
+     docker buildx imagetools inspect "$SC_REGISTRY/sunday-clays-$i:$TAG"
    done
-   set -a; . secrets/deploy.env; set +a
    IMAGE_TAG=$TAG docker stack deploy -c compose.yaml -c compose.swarm.yaml sundayclays
    ```
 
@@ -470,7 +484,7 @@ dep status          # live SHA and tag, pause, last failure, last 20 deploys
 dep tag             # just the live tag
 dep pause "club shoot"
 dep resume
-dep_exec mirror sha-<7>  # copy a release into registry.example.internal, deploy nothing
+dep_exec mirror sha-<7>  # copy a release into the registry mirror (SC_REGISTRY), deploy nothing
 ```
 
 The image's entrypoint is already `python3 /app/deployer.py`, so `dep` takes the subcommand directly.
@@ -501,7 +515,7 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   ```
 
   `rollback` mirrors the tag again first, so the tag must still be published in GHCR. If GHCR no
-  longer has it, use the manual loop below from what `registry.example.internal` still holds.
+  longer has it, use the manual loop below from what the registry mirror (`SC_REGISTRY`) still holds.
 
   This updates `api`, `worker`, `caddy` and `backup` in the usual order (skipping any already on
   that tag) and **pauses** automatic deploys, because otherwise the next poll would put `main`
@@ -533,14 +547,15 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   split between two releases.
 
   ```bash
+  set -a; . secrets/deploy.env; set +a   # SC_REGISTRY ("Deploy-time settings")
   TAG=sha-<7>   # a tag from the deployer's history; stop if an update prints "could not be accessed"
   for i in backend frontend; do   # only if a registry GC removed the tag; needs the GHCR login
-    docker buildx imagetools create --tag "registry.example.internal/sunday-clays-$i:$TAG" \
+    docker buildx imagetools create --tag "$SC_REGISTRY/sunday-clays-$i:$TAG" \
       "ghcr.io/gitgat/sunday-clays-$i:$TAG"
   done
   for s in api worker caddy backup; do
     kind=backend; [ "$s" = caddy ] && kind=frontend
-    docker service update --image "registry.example.internal/sunday-clays-$kind:$TAG" \
+    docker service update --image "$SC_REGISTRY/sunday-clays-$kind:$TAG" \
       "sundayclays_$s" || { echo "stopped at $s"; break; }
   done
   ```
@@ -561,8 +576,8 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
 
 - `deploy sha-<7>: updating sundayclays_<service>` … `deploy sha-<7>: done`: a rollout
   (`… already on sha-<7>` for a service that needed nothing).
-- `mirror sha-<7>: ghcr.io/… -> registry.example.internal/…` (or `… already there`): the release copied
-  into the fleet registry before the rollout. `deploy sha-<7> FAILED: mirror: …` means the copy
+- `mirror sha-<7>: ghcr.io/… -> <SC_REGISTRY>/…` (or `… already there`): the release copied
+  into the registry mirror (`SC_REGISTRY`) before the rollout. `deploy sha-<7> FAILED: mirror: …` means the copy
   failed or the index was not exactly amd64 + arm64; nothing was updated.
 - `sha-<7>: waiting for …`: CI has not finished publishing that commit (or it failed CI). Logged
   once per commit.

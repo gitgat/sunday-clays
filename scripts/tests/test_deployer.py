@@ -849,6 +849,14 @@ def test_cli_once_tag_and_rollback(cfg: Any, deps: Any, capsys: pytest.CaptureFi
     assert "not a sha-<7> tag" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("command", [["status"], ["tag"], ["pause", "why"], ["resume"]])
+def test_state_commands_work_without_registry(
+    cfg: Any, deps: Any, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    assert d.main(command, {"STATE_DIR": str(cfg.state_dir)}, deps) in (0, 1)
+    assert "REGISTRY" not in capsys.readouterr().err
+
+
 def test_cli_rejects_a_bad_environment(deps: Any, capsys: pytest.CaptureFixture[str]) -> None:
     assert d.main(["status"], {"REGISTRY": REG, "POLL_INTERVAL": "1"}, deps) == 1
     assert "POLL_INTERVAL" in capsys.readouterr().err
