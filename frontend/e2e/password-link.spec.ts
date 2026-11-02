@@ -35,11 +35,12 @@ test('an admin password in a link is treated as wrong', async ({ page }) => {
 test('a doubled-slash path with p still cleans the address bar and logs in', async ({
   page,
   baseURL,
+  isMobile,
 }) => {
   // page.goto('//?p=') would resolve against baseURL as a protocol-relative URL and throw.
   const origin = (baseURL ?? '').replace(/\/+$/, '');
   await page.goto(`${origin}//?p=${encodeURIComponent(e2ePassword('viewer'))}`);
-  await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: isMobile ? 'Tabs' : 'Main' })).toBeVisible();
   await expect(page).toHaveURL(/\/$/);
   expect(page.url()).not.toContain('p=');
   await expect(page.getByText(/link's password didn't work/)).toHaveCount(0);
