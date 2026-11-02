@@ -8,9 +8,12 @@ those before the refusal is raised to the caller. Names and arguments are never 
 import datetime as dt
 import hashlib
 import os
+import re
+import uuid
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from typing import TypeVar
+from pathlib import Path
+from typing import Any, TypeVar
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
@@ -18,16 +21,23 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from sunday_clays.auth.deps import record_audit
+from sunday_clays.config import database_url_from_env
 from sunday_clays.domain.errors import ConflictError
 from sunday_clays.domain.imports import (
+    IMPORT_LIFECYCLE_LOCK_KEY,
     active_scores_import,
+    active_station_sources,
+    commit_import,
     discard_import,
     load_staged_scores,
+    rollback_import,
     stage_import,
 )
 from sunday_clays.domain.schemas import FindingOut, ImportPreview, ScoresDiff, StationsDiff
 from sunday_clays.ingest.names import name_key
 from sunday_clays.ingest.types import ParseError
+from sunday_clays.jobs.queue import enqueue
+from sunday_clays.mcp import backup
 from sunday_clays.mcp.build import (
     BuildError,
     CorrectionInput,
@@ -36,7 +46,7 @@ from sunday_clays.mcp.build import (
     build_scores,
     build_stations,
 )
-from sunday_clays.models import Event, Import, McpOperation, Round
+from sunday_clays.models import Event, Import, ImportStationSheet, McpOperation, Round
 
 DEFAULT_PREVIEW_TTL_SECONDS = 3600
 # pg_advisory_xact_lock key serializing previews. Taken elsewhere: 7263001 migrations,
@@ -131,9 +141,10 @@ def _expire(session: Session, op: McpOperation) -> None:
 
 def _sweep(session: Session, now: dt.datetime, ttl: dt.timedelta) -> None:
     stale = session.scalars(
-        select(McpOperation).where(
-            McpOperation.status == "previewed", McpOperation.created_at < now - ttl
-        )
+        select(McpOperation)
+        .where(McpOperation.status == "previewed", McpOperation.created_at < now - ttl)
+        # A row another transaction holds (a commit mid-dump) is not ours to expire.
+        .with_for_update(skip_locked=True)
     ).all()
     for op in stale:
         _expire(session, op)
@@ -494,3 +505,397 @@ def preview_correction(
     except Refusal as exc:
         _refuse(session, "correction", c.date, now, exc, staged)
         raise
+
+
+# --- commit_week / rollback_week -------------------------------------------------------------
+DEFAULT_BACKUP_DIR = "/backups"
+TOOL_DUMP_LOCK_TIMEOUT_S = 30.0
+KEY_PATTERN = re.compile(r"^[A-Za-z0-9._-]{8,100}$")
+APPROVE_COMMAND = "python -m sunday_clays.mcp.approve"
+DumpFn = Callable[..., Path]
+
+
+def commits_enabled() -> bool:
+    """``MCP_COMMIT_ENABLED``: only "true" or "1" turn it on; anything else (or unset) is off."""
+    return os.environ.get("MCP_COMMIT_ENABLED", "").strip().lower() in {"true", "1"}
+
+
+def backup_dir() -> Path:
+    return Path(os.environ.get("MCP_BACKUP_DIR") or DEFAULT_BACKUP_DIR)
+
+
+def _parse_id(raw: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(raw)
+    except ValueError:
+        return None
+
+
+def _audit_refusal(session: Session, action: str, preview_id: uuid.UUID | None, code: str) -> None:
+    """An audit row only: the operation (if any) keeps its status so it stays retryable."""
+    details: dict[str, Any] = {"action": action, "code": code}
+    if preview_id is not None:
+        details["preview_id"] = str(preview_id)
+    record_audit(session, None, "mcp", "mcp.refuse", details)
+    session.flush()
+
+
+def _find_by_key(session: Session, key: str) -> tuple[McpOperation, str] | None:
+    """The operation that already used ``key``, and whether as its commit or rollback key."""
+    committed = session.scalars(
+        select(McpOperation).where(McpOperation.idempotency_key == key).limit(1)
+    ).first()
+    if committed is not None:
+        return committed, "commit"
+    rolled = session.scalars(
+        select(McpOperation)
+        .where(McpOperation.result["rollback"]["idempotency_key"].astext == key)
+        .limit(1)
+    ).first()
+    return (rolled, "rollback") if rolled is not None else None
+
+
+def _check_key(key: str) -> None:
+    if not KEY_PATTERN.fullmatch(key):
+        raise Refusal(
+            "invalid_idempotency_key",
+            "the idempotency key must be 8-100 characters of A-Za-z0-9._-",
+        )
+
+
+def _lock_op(session: Session, preview_id: str) -> McpOperation:
+    parsed = _parse_id(preview_id)
+    op = (
+        session.get(McpOperation, parsed, with_for_update=True, populate_existing=True)
+        if parsed is not None
+        else None
+    )
+    if op is None:
+        raise Refusal("unknown_preview", "no such preview")
+    return op
+
+
+def _linked(op: McpOperation) -> list[int]:
+    return [i for i in (op.scores_import_id, op.stations_import_id) if i is not None]
+
+
+def _require_status(session: Session, op: McpOperation, import_ids: list[int], status: str) -> None:
+    code = "import_not_pending" if status == "pending" else "import_not_committed"
+    for import_id in import_ids:
+        if session.scalar(select(Import.status).where(Import.id == import_id)) != status:
+            raise Refusal(code, f"a staged import is no longer {status} (an admin changed it)")
+
+
+def _stale_base(session: Session, op: McpOperation) -> None:
+    """The preview's workbook is a full history built on ``base_import_id``; it must still be live.
+
+    Committing it over a newer base would silently revert whatever changed since. The preview
+    can never become committable again, so it is expired and its staged imports discarded.
+    """
+    if active_scores_import(session) != op.result.get("base_import_id"):
+        _expire(session, op)
+        op.result = {**op.result, "expired_reason": "base_changed"}
+        session.flush()
+        raise Refusal(
+            "base_changed", "the stored scores changed since this preview; stage it again"
+        )
+
+
+def _lifecycle_lock(session: Session) -> None:
+    session.execute(select(func.pg_advisory_xact_lock(IMPORT_LIFECYCLE_LOCK_KEY)))
+
+
+def _take_dump(session: Session, op: McpOperation, dump: DumpFn | None) -> str:
+    """The verified pre-write dump's file name; a failure refuses and changes nothing."""
+    take = dump or backup.pre_import_dump
+    try:
+        path = take(
+            op.id,
+            backup_dir=backup_dir(),
+            database_url=database_url_from_env(),
+            lock_timeout_s=TOOL_DUMP_LOCK_TIMEOUT_S,
+        )
+    except backup.BackupError as exc:
+        raise Refusal(
+            "backup_failed", f"the pre-import backup failed, nothing changed: {exc}"
+        ) from exc
+    return Path(path).name
+
+
+def _translate(exc: ConflictError) -> Refusal:
+    if exc.code == "not_pending":
+        return Refusal("import_not_pending", "a staged import is no longer pending")
+    if exc.code == "not_committed":
+        return Refusal("import_not_committed", "a staged import is no longer committed")
+    return Refusal(exc.code, exc.message)
+
+
+def _replay(op: McpOperation, owner: tuple[McpOperation, str] | None, which: str) -> dict[str, Any]:
+    """The stored result for a repeated key on the same operation; any other use is reuse."""
+    if owner is None or owner[0].id != op.id or owner[1] != which:
+        raise Refusal("key_reused", "that idempotency key was already used for something else")
+    return {k: v for k, v in op.result[which].items() if k != "idempotency_key"}
+
+
+def commit_operation(
+    session: Session,
+    preview_id: str,
+    *,
+    idempotency_key: str,
+    commit_path: str,
+    allow_correction: bool,
+    now: dt.datetime,
+    dump: DumpFn | None = None,
+) -> dict[str, Any]:
+    """Commit a previewed operation (scores then stations) after a verified dump; fail closed."""
+    _check_key(idempotency_key)
+    parsed = _parse_id(preview_id)
+    try:
+        return _commit(
+            session, preview_id, idempotency_key, commit_path, allow_correction, now, dump
+        )
+    except Refusal as exc:
+        _audit_refusal(session, "commit", parsed, exc.code)
+        raise
+
+
+def _commit(
+    session: Session,
+    preview_id: str,
+    key: str,
+    commit_path: str,
+    allow_correction: bool,
+    now: dt.datetime,
+    dump: DumpFn | None,
+) -> dict[str, Any]:
+    _sweep(session, now, preview_ttl())
+    op = _lock_op(session, preview_id)
+    owner = _find_by_key(session, key)
+    if owner is not None:
+        return _replay(op, owner, "commit")
+    if op.status == "expired":
+        raise Refusal("expired", "this preview expired; stage it again")
+    if op.status != "previewed":
+        code = "already_committed" if op.status in {"committed", "rolled_back"} else "not_previewed"
+        raise Refusal(code, f"this preview is {op.status}")
+    if op.created_at < now - preview_ttl():
+        raise Refusal("expired", "this preview expired; stage it again")
+    if op.kind == "correction" and not allow_correction:
+        raise Refusal(
+            "correction_needs_human",
+            f"a human must approve a correction: {APPROVE_COMMAND} {op.id}",
+        )
+    _require_status(session, op, _linked(op), "pending")
+    _stale_base(session, op)  # early, so a stale preview does not waste a dump
+    backup_file = _take_dump(session, op, dump)
+    _lifecycle_lock(session)
+    _require_status(session, op, _linked(op), "pending")
+    _stale_base(session, op)
+    if _find_by_key(session, key) is not None:
+        raise Refusal("key_reused", "that idempotency key was already used for something else")
+    try:
+        with session.begin_nested():  # all or nothing: never scores without stations
+            for import_id in _linked(op):  # scores first, then stations
+                commit_import(session, import_id)
+            job_id = enqueue(session, "rebuild", dedupe_key="rebuild")
+    except ConflictError as exc:
+        raise _translate(exc) from exc
+    result = {
+        "preview_id": str(op.id),
+        "kind": op.kind,
+        "date": op.event_date.isoformat(),
+        "status": "committed",
+        "scores_import_id": op.scores_import_id,
+        "stations_import_id": op.stations_import_id,
+        "job_id": job_id,
+        "backup_file": backup_file,
+        "commit_path": commit_path,
+        "committed_at": now.isoformat(),
+    }
+    op.status = "committed"
+    op.commit_path = commit_path
+    op.idempotency_key = key
+    op.backup_file = backup_file
+    op.job_id = job_id
+    op.committed_at = now
+    op.result = {**op.result, "commit": result}
+    session.flush()
+    record_audit(
+        session,
+        None,
+        "mcp",
+        "mcp.commit",
+        {
+            "preview_id": str(op.id),
+            "kind": op.kind,
+            "date": op.event_date,
+            "commit_path": commit_path,
+            "job_id": job_id,
+            "backup_file": backup_file,
+        },
+    )
+    session.flush()
+    return result
+
+
+def _station_import_is_live(session: Session, op: McpOperation) -> bool:
+    """True while the station sheet for this date still comes from this operation's import."""
+    if op.stations_import_id is None:
+        return False
+    live = active_station_sources(session).get(op.event_date)
+    mine = session.scalars(
+        select(ImportStationSheet.id).where(
+            ImportStationSheet.import_id == op.stations_import_id,
+            ImportStationSheet.event_date == op.event_date,
+        )
+    ).all()
+    return live is not None and live in mine
+
+
+def _require_latest(session: Session, op: McpOperation) -> None:
+    if (
+        active_scores_import(session) != op.scores_import_id
+        or _active_last(session) != op.event_date
+    ):
+        raise Refusal("not_latest", "only the most recent committed import can be rolled back")
+
+
+def rollback_operation(
+    session: Session,
+    preview_id: str,
+    *,
+    idempotency_key: str,
+    now: dt.datetime,
+    dump: DumpFn | None = None,
+) -> dict[str, Any]:
+    """Undo the latest committed operation (after a verified dump); fail closed."""
+    _check_key(idempotency_key)
+    parsed = _parse_id(preview_id)
+    try:
+        return _rollback(session, preview_id, idempotency_key, now, dump)
+    except Refusal as exc:
+        _audit_refusal(session, "rollback", parsed, exc.code)
+        raise
+
+
+def _rollback(
+    session: Session, preview_id: str, key: str, now: dt.datetime, dump: DumpFn | None
+) -> dict[str, Any]:
+    _sweep(session, now, preview_ttl())
+    op = _lock_op(session, preview_id)
+    owner = _find_by_key(session, key)
+    if owner is not None:
+        return _replay(op, owner, "rollback")
+    if op.status == "rolled_back":
+        raise Refusal("already_rolled_back", "this operation was already rolled back")
+    if op.status != "committed":
+        raise Refusal("not_committed", f"this preview is {op.status}, not committed")
+    _require_latest(session, op)
+    backup_file = _take_dump(session, op, dump)
+    _lifecycle_lock(session)
+    _require_latest(session, op)
+    _require_status(session, op, [i for i in [op.scores_import_id] if i is not None], "committed")
+    if _find_by_key(session, key) is not None:
+        raise Refusal("key_reused", "that idempotency key was already used for something else")
+    stations_rolled_back = _station_import_is_live(session, op)
+    try:
+        with session.begin_nested():
+            targets = [op.scores_import_id, op.stations_import_id if stations_rolled_back else None]
+            for import_id in targets:
+                if import_id is not None:
+                    rollback_import(session, import_id)
+            job_id = enqueue(session, "rebuild", dedupe_key="rebuild")
+    except ConflictError as exc:
+        raise _translate(exc) from exc
+    result: dict[str, Any] = {
+        "preview_id": str(op.id),
+        "kind": op.kind,
+        "date": op.event_date.isoformat(),
+        "status": "rolled_back",
+        "scores_import_id": op.scores_import_id,
+        "stations_import_id": op.stations_import_id,
+        "stations_rolled_back": stations_rolled_back,
+        "job_id": job_id,
+        "backup_file": backup_file,
+        "rolled_back_at": now.isoformat(),
+        "idempotency_key": key,
+    }
+    if op.stations_import_id is not None and not stations_rolled_back:
+        result["note"] = (
+            "the station sheet for this date no longer comes from this operation, so it was left"
+        )
+    op.status = "rolled_back"
+    op.rolled_back_at = now
+    op.result = {**op.result, "rollback": result}
+    session.flush()
+    record_audit(
+        session,
+        None,
+        "mcp",
+        "mcp.rollback",
+        {
+            "preview_id": str(op.id),
+            "kind": op.kind,
+            "date": op.event_date,
+            "job_id": job_id,
+            "backup_file": backup_file,
+            "stations_rolled_back": stations_rolled_back,
+        },
+    )
+    session.flush()
+    return {k: v for k, v in result.items() if k != "idempotency_key"}
+
+
+# --- the tool-facing wrappers ----------------------------------------------------------------
+def _gate(session: Session, action: str, preview_id: str) -> None:
+    if not commits_enabled():
+        _audit_refusal(session, action, _parse_id(preview_id), "commits_disabled")
+        raise Refusal(
+            "commits_disabled",
+            "commits through this server are off; a human commits during the preview-only "
+            f"period with: {APPROVE_COMMAND} {preview_id}",
+        )
+
+
+def commit_week(
+    session: Session,
+    preview_id: str,
+    *,
+    idempotency_key: str,
+    now: dt.datetime,
+    dump: DumpFn | None = None,
+) -> dict[str, Any]:
+    """The ``commit_week`` tool: gated, never a correction."""
+    _gate(session, "commit", preview_id)
+    return commit_operation(
+        session,
+        preview_id,
+        idempotency_key=idempotency_key,
+        commit_path="mcp-auto",
+        allow_correction=False,
+        now=now,
+        dump=dump,
+    )
+
+
+def rollback_week(
+    session: Session,
+    preview_id: str,
+    *,
+    idempotency_key: str,
+    now: dt.datetime,
+    dump: DumpFn | None = None,
+) -> dict[str, Any]:
+    """The ``rollback_week`` tool: gated, and a correction needs a human here too."""
+    _gate(session, "rollback", preview_id)
+    parsed = _parse_id(preview_id)
+    op = session.get(McpOperation, parsed) if parsed is not None else None
+    if op is not None and op.kind == "correction":
+        _audit_refusal(session, "rollback", parsed, "correction_needs_human")
+        raise Refusal(
+            "correction_needs_human",
+            f"a human must roll back a correction: use the imports page or {APPROVE_COMMAND}",
+        )
+    return rollback_operation(
+        session, preview_id, idempotency_key=idempotency_key, now=now, dump=dump
+    )

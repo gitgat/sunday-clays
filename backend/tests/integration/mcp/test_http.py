@@ -54,6 +54,8 @@ def test_initialize_and_list_tools(mcp_server: str, mcp_token: str) -> None:
         "get_job",
         "preview_week",
         "preview_correction",
+        "commit_week",
+        "rollback_week",
     }
 
 

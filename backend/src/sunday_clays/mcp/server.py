@@ -161,6 +161,9 @@ def _register_reads(mcp: FastMCP, session_factory: SessionFactoryFn) -> None:
             return reads.get_job(session, args.id).model_dump(mode="json")
 
 
+_PreviewId = Annotated[str, Field(min_length=1, max_length=36)]
+_IdemKey = Annotated[str, Field(min_length=8, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")]
+
 _RULES = (
     "Rules: count marks, not the row totals printed on the card. A thrown-out station is "
     "credited perfect for everyone. Drop a card's hits if they cannot be reconciled with its "
@@ -215,6 +218,47 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
         except writes.Refusal as exc:
             raise ToolError(f"{exc.code}: {exc.message}") from None
         return result.model_dump(mode="json")
+
+    @mcp.tool(
+        description=(
+            "Commit a previewed Sunday's scores after a verified database backup. Needs the "
+            "preview_id from preview_week and an idempotency_key (8-100 characters of "
+            "A-Za-z0-9._-); repeating the same key with the same preview returns the first "
+            "result. Corrections are never committed here. Errors begin with a code."
+        )
+    )
+    async def commit_week(preview_id: _PreviewId, idempotency_key: _IdemKey) -> dict[str, Any]:
+        return await _run_op(
+            write_factory,
+            lambda s: writes.commit_week(
+                s, preview_id, idempotency_key=idempotency_key, now=clock()
+            ),
+        )
+
+    @mcp.tool(
+        description=(
+            "Roll back the most recently committed Sunday (after a verified database backup). "
+            "Only the latest committed import can be rolled back. Needs the preview_id and an "
+            "idempotency_key (8-100 characters of A-Za-z0-9._-). Errors begin with a code."
+        )
+    )
+    async def rollback_week(preview_id: _PreviewId, idempotency_key: _IdemKey) -> dict[str, Any]:
+        return await _run_op(
+            write_factory,
+            lambda s: writes.rollback_week(
+                s, preview_id, idempotency_key=idempotency_key, now=clock()
+            ),
+        )
+
+
+async def _run_op(
+    write_factory: SessionFactoryFn, fn: Callable[[Session], dict[str, Any]]
+) -> dict[str, Any]:
+    work = functools.partial(writes.run_write, write_factory, fn)
+    try:
+        return await anyio.to_thread.run_sync(work)
+    except writes.Refusal as exc:
+        raise ToolError(f"{exc.code}: {exc.message}") from None
 
 
 async def _healthz(_request: Request) -> JSONResponse:

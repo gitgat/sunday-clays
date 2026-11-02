@@ -70,6 +70,8 @@ def test_tools_listed(mcp_server: str, mcp_token: str) -> None:
         "get_job",
         "preview_week",
         "preview_correction",
+        "commit_week",
+        "rollback_week",
     }
     assert "Last, First" in tools["find_shooters"]
 
