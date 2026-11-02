@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from sunday_clays.domain.imports import (
@@ -79,7 +79,7 @@ def _preview(session: Session, week: WeekInput | None = None, now: dt.datetime =
     return writes.preview_week(session, week or _week(), now=now).preview_id
 
 
-def _correction(session: Session) -> str:
+def _correction(session: Session, now: dt.datetime = NOW) -> str:
     from sunday_clays.models import Round, Shooter
 
     last = dt.date(2026, 9, 27)
@@ -97,7 +97,7 @@ def _correction(session: Session) -> str:
     )
     new = 7 if stored != 7 else 8
     c = CorrectionInput.model_validate({"date": last, "rows": [{"name": name, "score": new}]})
-    return writes.preview_correction(session, c, now=NOW).preview_id
+    return writes.preview_correction(session, c, now=now).preview_id
 
 
 def _op(session: Session, preview_id: str) -> McpOperation:
@@ -564,7 +564,7 @@ def test_sweep_expired_runs_for_other_previews(fx_session: Session) -> None:
 
 def test_commit_does_not_sweep_inside_its_own_transaction(fx_session: Session) -> None:
     old = _preview(fx_session)
-    fresh = writes.preview_week(fx_session, _week(AFTER, 40), now=LATER, sweep=False).preview_id
+    fresh = writes.preview_week(fx_session, _week(AFTER, 40), now=LATER).preview_id
     writes.commit_operation(
         fx_session,
         fresh,
@@ -659,12 +659,119 @@ def test_lock_waits_and_deadlocks_become_a_coded_busy_refusal(
     assert "SELECT" not in exc.value.message
 
 
-def test_other_database_errors_are_not_masked(fx_session: Session) -> None:
+def test_non_database_errors_are_not_masked(fx_session: Session) -> None:
+    def boom(_s: Session) -> None:
+        raise RuntimeError("a genuine bug")
+
+    with pytest.raises(RuntimeError):
+        writes.run_write(_factory(fx_session), boom)
+
+
+# --- fix round 2 -------------------------------------------------------------------------------
+def _lifecycle_lock_mine(session: Session) -> int:
+    from sunday_clays.domain.imports import IMPORT_LIFECYCLE_LOCK_KEY
+
+    return int(
+        session.execute(
+            text(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid = :k "
+                "AND pid = pg_backend_pid() AND granted"
+            ),
+            {"k": IMPORT_LIFECYCLE_LOCK_KEY},
+        ).scalar_one()
+    )
+
+
+def test_previews_never_sweep(fx_session: Session) -> None:
+    stale = _preview(fx_session)
+    writes.preview_week(fx_session, _week(AFTER, 40), now=LATER)
+    assert _op(fx_session, stale).status == "previewed"  # untouched
+    assert _statuses(fx_session, stale) == ["pending", "pending"]
+    assert _lifecycle_lock_mine(fx_session) == 0
+
+
+def test_correction_previews_never_sweep(fx_session: Session) -> None:
+    stale = _preview(fx_session)
+    _correction(fx_session, now=LATER)
+    assert _op(fx_session, stale).status == "previewed"
+    assert _statuses(fx_session, stale) == ["pending", "pending"]
+    assert _lifecycle_lock_mine(fx_session) == 0
+
+
+def test_the_preview_tools_sweep_first(fx_session: Session) -> None:
+    stale = _preview(fx_session)
+    writes.preview_week_tool(_factory(fx_session), _week(AFTER, 40), now=LATER)
+    assert _op(fx_session, stale).status == "expired"
+
+
+def test_the_correction_preview_tool_sweeps_first(fx_session: Session) -> None:
+    from sunday_clays.models import Round, Shooter
+
+    stale = _preview(fx_session)
+    last = dt.date(2026, 9, 27)
+    name, stored = fx_session.execute(
+        select(Shooter.display_name, Round.score)
+        .join(Round, Round.shooter_id == Shooter.id)
+        .where(Round.event_date == last)
+        .order_by(Shooter.display_name)
+        .limit(1)
+    ).one()
+    c = CorrectionInput.model_validate(
+        {"date": last, "rows": [{"name": name, "score": 7 if stored != 7 else 8}]}
+    )
+    writes.preview_correction_tool(_factory(fx_session), c, now=LATER)
+    assert _op(fx_session, stale).status == "expired"
+
+
+@pytest.mark.parametrize("tool", ["commit_week_tool", "rollback_week_tool"])
+def test_the_gate_comes_before_the_sweep_and_the_dump(fx_session: Session, tool: str) -> None:
+    stale = _preview(fx_session)
+    dump = FakeDump()
+    with pytest.raises(Refusal) as exc:
+        getattr(writes, tool)(
+            _factory(fx_session), stale, idempotency_key=KEY, now=LATER, dump=dump
+        )
+    assert exc.value.code == "commits_disabled"
+    assert _op(fx_session, stale).status == "previewed"  # not swept: nothing changed
+    assert _statuses(fx_session, stale) == ["pending", "pending"]
+    assert dump.calls == []
+
+
+def _boom_real_statement(session: Session) -> None:
+    session.execute(text("SELECT secret_col FROM no_such_table WHERE name = :n"), {"n": "Zzname"})
+
+
+def test_a_real_failing_statement_reaches_the_caller_as_db_error(fx_session: Session) -> None:
+    with pytest.raises(Refusal) as exc:
+        writes.run_write(_factory(fx_session), _boom_real_statement)
+    assert exc.value.code == "db_error"
+    assert exc.value.sqlstate == "42P01"
+    for leaked in ("SELECT", "secret_col", "no_such_table", "Zzname", "parameters", "SQL"):
+        assert leaked not in exc.value.message
+
+
+def test_an_integrity_error_is_a_db_error_too(fx_session: Session) -> None:
+    import psycopg.errors
+    from sqlalchemy.exc import IntegrityError
+
+    def boom(_s: Session) -> None:
+        raise IntegrityError("INSERT ...", {"n": "Zzname"}, psycopg.errors.UniqueViolation("x"))
+
+    with pytest.raises(Refusal) as exc:
+        writes.run_write(_factory(fx_session), boom)
+    assert (exc.value.code, exc.value.sqlstate) == ("db_error", "23505")
+    assert "Zzname" not in exc.value.message
+
+
+def test_busy_message_is_precise(fx_session: Session) -> None:
     import psycopg.errors
     from sqlalchemy.exc import OperationalError
 
     def boom(_s: Session) -> None:
-        raise OperationalError("SELECT 1", {}, psycopg.errors.UndefinedTable("x"))
+        raise OperationalError("x", {}, psycopg.errors.DeadlockDetected("d"))
 
-    with pytest.raises(OperationalError):
+    with pytest.raises(Refusal) as exc:
         writes.run_write(_factory(fx_session), boom)
+    assert exc.value.message == (
+        "the database was busy; the scores were not changed; retry with the same idempotency key"
+    )

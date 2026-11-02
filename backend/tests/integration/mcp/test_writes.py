@@ -244,12 +244,22 @@ def test_identical_bytes_for_a_changed_preview_refuse_duplicate(
     assert _pending(fx_session) == 2  # the first preview's imports are untouched
 
 
+def _factory(session: Session) -> Any:
+    from contextlib import contextmanager
+
+    @contextmanager
+    def f() -> Any:
+        yield session
+
+    return f
+
+
 def test_expiry_sweep(fx_session: Session) -> None:
     first = writes.preview_week(fx_session, _week(), now=NOW)
     assert _pending(fx_session) == 2
     later = NOW + TTL + dt.timedelta(seconds=1)
     with pytest.raises(Refusal):  # the sweep runs even when the new request is refused
-        writes.preview_week(fx_session, _week(date=dt.date(2026, 10, 5)), now=later)
+        writes.preview_week_tool(_factory(fx_session), _week(date=dt.date(2026, 10, 5)), now=later)
     op = fx_session.get(McpOperation, first.preview_id)
     assert op is not None
     assert op.status == "expired"
@@ -259,8 +269,10 @@ def test_expiry_sweep(fx_session: Session) -> None:
 def test_a_fresh_preview_is_not_swept(fx_session: Session) -> None:
     first = writes.preview_week(fx_session, _week(), now=NOW)
     with pytest.raises(Refusal):
-        writes.preview_week(
-            fx_session, _week(date=dt.date(2026, 10, 5)), now=NOW + TTL - dt.timedelta(seconds=1)
+        writes.preview_week_tool(
+            _factory(fx_session),
+            _week(date=dt.date(2026, 10, 5)),
+            now=NOW + TTL - dt.timedelta(seconds=1),
         )
     assert fx_session.get(McpOperation, first.preview_id).status == "previewed"  # type: ignore[union-attr]
 
@@ -515,7 +527,7 @@ def test_sweeping_an_op_whose_import_an_admin_discarded_does_not_error(fx_sessio
     discard_import(fx_session, op.scores_import_id)
     later = NOW + TTL + dt.timedelta(seconds=1)
     with pytest.raises(Refusal):
-        writes.preview_week(fx_session, _week(date=dt.date(2026, 10, 5)), now=later)
+        writes.preview_week_tool(_factory(fx_session), _week(date=dt.date(2026, 10, 5)), now=later)
     assert op.status == "expired"
 
 

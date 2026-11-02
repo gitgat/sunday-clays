@@ -172,6 +172,16 @@ _RULES = (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
+def _tool_error(tool: str, exc: writes.Refusal) -> ToolError:
+    """A refusal as a tool error; a database error is logged by tool and sqlstate only."""
+    if exc.code == "db_error":
+        logger.warning("tool=%s code=db_error sqlstate=%s", tool, exc.sqlstate)
+    return ToolError(f"{exc.code}: {exc.message}")
+
+
 def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: ClockFn) -> None:
     @mcp.tool(
         description=(
@@ -189,7 +199,7 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
         try:
             result = await anyio.to_thread.run_sync(work)
         except writes.Refusal as exc:
-            raise ToolError(f"{exc.code}: {exc.message}") from None
+            raise _tool_error("preview_week", exc) from None
         return result.model_dump(mode="json")
 
     @mcp.tool(
@@ -210,7 +220,7 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
         try:
             result = await anyio.to_thread.run_sync(work)
         except writes.Refusal as exc:
-            raise ToolError(f"{exc.code}: {exc.message}") from None
+            raise _tool_error("preview_correction", exc) from None
         return result.model_dump(mode="json")
 
     @mcp.tool(
@@ -223,13 +233,14 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
     )
     async def commit_week(preview_id: _PreviewId, idempotency_key: _IdemKey) -> dict[str, Any]:
         return await _run_op(
+            "commit_week",
             functools.partial(
                 writes.commit_week_tool,
                 write_factory,
                 preview_id,
                 idempotency_key=idempotency_key,
                 now=clock(),
-            )
+            ),
         )
 
     @mcp.tool(
@@ -241,21 +252,22 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
     )
     async def rollback_week(preview_id: _PreviewId, idempotency_key: _IdemKey) -> dict[str, Any]:
         return await _run_op(
+            "rollback_week",
             functools.partial(
                 writes.rollback_week_tool,
                 write_factory,
                 preview_id,
                 idempotency_key=idempotency_key,
                 now=clock(),
-            )
+            ),
         )
 
 
-async def _run_op(work: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+async def _run_op(tool: str, work: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     try:
         return await anyio.to_thread.run_sync(work)
     except writes.Refusal as exc:
-        raise ToolError(f"{exc.code}: {exc.message}") from None
+        raise _tool_error(tool, exc) from None
 
 
 async def _healthz(_request: Request) -> JSONResponse:

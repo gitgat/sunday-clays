@@ -218,3 +218,44 @@ def test_no_argument_can_allow_a_correction(
             _raw(mcp_server, mcp_token, tool, {**args, "allow_correction": True})
         )
         assert is_error is True
+
+
+@pytest.mark.parametrize("where", ["work", "sweep"])
+def test_a_database_error_over_mcp_is_a_coded_refusal_without_sql(
+    mcp_server: str,
+    mcp_token: str,
+    fx_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    where: str,
+) -> None:
+    import logging
+
+    import psycopg.errors
+    from sqlalchemy.exc import ProgrammingError
+
+    from sunday_clays.mcp import writes
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise ProgrammingError(
+            "SELECT secret_col FROM t WHERE name = %(n)s",
+            {"n": "Zzname"},
+            psycopg.errors.UndefinedTable("x"),
+        )
+
+    monkeypatch.setenv("MCP_COMMIT_ENABLED", "true")
+    monkeypatch.setattr(writes, "_sweep" if where == "sweep" else "commit_week", boom)
+    pid = _preview(fx_session)
+    with caplog.at_level(logging.INFO):
+        is_error, text = asyncio.run(
+            _raw(mcp_server, mcp_token, "commit_week", {"preview_id": pid, "idempotency_key": KEY})
+        )
+    assert is_error is True
+    assert "db_error" in text
+    for leaked in ("SELECT", "secret_col", "Zzname", "parameters", "[SQL"):
+        assert leaked not in text
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "tool=commit_week" in logged
+    assert "sqlstate=42P01" in logged
+    assert "Zzname" not in logged
+    assert "secret_col" not in logged

@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 from sqlalchemy import exists, func, select
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from sunday_clays.auth.deps import record_audit
@@ -68,6 +68,7 @@ class Refusal(Exception):
         super().__init__(f"{code}: {message}")
         self.code = code
         self.message = message
+        self.sqlstate: str | None = None  # set for db_error, for the log only
 
 
 class WeekPreview(BaseModel):
@@ -124,10 +125,20 @@ def run_write[T](
                 result = fn(session)
             except Refusal as exc:
                 refusal = exc
-    except DBAPIError as exc:
-        if getattr(exc.orig, "sqlstate", None) in BUSY_SQLSTATES:
-            raise Refusal("busy", "the database was busy; nothing changed, try again") from None
-        raise
+    except SQLAlchemyError as exc:
+        sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
+        if isinstance(exc, DBAPIError) and sqlstate in BUSY_SQLSTATES:
+            raise Refusal(
+                "busy",
+                "the database was busy; the scores were not changed; "
+                "retry with the same idempotency key",
+            ) from None
+        # Anything else is a bug or an outage; the text (SQL, parameters) never reaches the caller.
+        db_refusal = Refusal(
+            "db_error", "the database rejected the request; the scores were not changed"
+        )
+        db_refusal.sqlstate = sqlstate
+        raise db_refusal from None
     if refusal is not None:
         raise refusal
     return result
@@ -292,6 +303,17 @@ def _reusable(session: Session, op: McpOperation | None) -> McpOperation | None:
     """A previous identical preview, only while it can still be committed as previewed."""
     if op is None:
         return None
+    # Re-read under a row lock: the unlocked load may be stale (the row can have been committed
+    # while we waited), and an expire must never overwrite a committed or rolled-back operation.
+    held = session.scalars(
+        select(McpOperation)
+        .where(McpOperation.id == op.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one()
+    if held.status != "previewed":
+        return None
+    op = held
     live = all(
         i is None or session.scalar(select(Import.status).where(Import.id == i)) == "pending"
         for i in (op.scores_import_id, op.stations_import_id)
@@ -442,12 +464,9 @@ def preview_week(
     *,
     now: dt.datetime,
     ttl: dt.timedelta | None = None,
-    sweep: bool = True,
 ) -> WeekPreview:
     ttl = ttl or preview_ttl()
-    _lock_previews(session)
-    if sweep:  # the tool path sweeps in its own short transaction first (sweep_expired)
-        _sweep(session, now, ttl)
+    _lock_previews(session)  # never sweeps: preview_week_tool sweeps in its own transaction
     staged: list[int] = []
     try:
         return _week_preview(session, week, now, ttl, staged)
@@ -521,12 +540,9 @@ def preview_correction(
     *,
     now: dt.datetime,
     ttl: dt.timedelta | None = None,
-    sweep: bool = True,
 ) -> CorrectionPreview:
     ttl = ttl or preview_ttl()
-    _lock_previews(session)
-    if sweep:
-        _sweep(session, now, ttl)
+    _lock_previews(session)  # never sweeps: preview_correction_tool sweeps first
     staged: list[int] = []
     try:
         return _correction_preview(session, c, now, ttl, staged)
@@ -950,7 +966,7 @@ def preview_week_tool(
     factory: Callable[[], AbstractContextManager[Session]], week: WeekInput, *, now: dt.datetime
 ) -> WeekPreview:
     sweep_expired(factory, now)
-    return run_write(factory, lambda s: preview_week(s, week, now=now, sweep=False))
+    return run_write(factory, lambda s: preview_week(s, week, now=now))
 
 
 def preview_correction_tool(
@@ -960,7 +976,7 @@ def preview_correction_tool(
     now: dt.datetime,
 ) -> CorrectionPreview:
     sweep_expired(factory, now)
-    return run_write(factory, lambda s: preview_correction(s, correction, now=now, sweep=False))
+    return run_write(factory, lambda s: preview_correction(s, correction, now=now))
 
 
 def commit_week_tool(

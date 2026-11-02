@@ -70,7 +70,7 @@ class Slow:
 def _preview(fac: Factory, week: Any = None, now: dt.datetime = LATER) -> str:
     return writes.run_write(
         fac,
-        lambda s: writes.preview_week(s, week or _week(), now=now, sweep=False).preview_id,
+        lambda s: writes.preview_week(s, week or _week(), now=now).preview_id,
     )
 
 
@@ -387,3 +387,30 @@ def test_the_stale_base_is_refused_when_it_moves_during_a_real_dump(
     assert out["a"][1].code == "base_changed"
     assert _active(committed_engine) == after_move
     assert _state(committed_engine, a)["status"] == "expired"
+
+
+# --- R1: an identical preview must not expire an operation that committed meanwhile -----------
+def test_an_identical_preview_never_expires_an_operation_that_commits_meanwhile(
+    fac: Factory, committed_engine: Engine
+) -> None:
+    wk = _week(AFTER, 40)
+    a = _preview(fac, wk)
+    b = _preview(fac)
+    slow = Slow()
+    out: dict[str, Any] = {}
+    committing = _thread(lambda: _commit(fac, a, dump=slow), out, "a")
+    assert slow.entered.wait(15)
+    # B commits (the base moves, so A would be stale) and an identical preview of A queues up
+    # behind A's row lock ...
+    writes.commit_week_tool(fac, b, idempotency_key="key-bbbbbbb", now=LATER, dump=FakeDump())
+    previewing = _thread(lambda: writes.preview_week_tool(fac, wk, now=LATER), out, "p")
+    _wait_for(lambda: _lock_waiters(committed_engine) >= 1, "the preview to block on A's row")
+    # ... B is rolled back (the base is A's again) and A commits, then the preview resumes.
+    writes.rollback_week_tool(fac, b, idempotency_key="key-rrrrrrr", now=LATER, dump=FakeDump())
+    slow.release.set()
+    committing.join(60)
+    previewing.join(60)
+    assert out["a"][0] == "ok", out
+    state = _state(committed_engine, a)
+    assert state["status"] == "committed"  # not overwritten with 'expired'
+    assert state["imports"] == ["committed", "committed"]
