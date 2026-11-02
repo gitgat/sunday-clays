@@ -17,10 +17,12 @@ def _skip_unless_pg_dump_is_new_enough(engine: Engine) -> None:
     if shutil.which("pg_dump") is None:
         pytest.skip("pg_dump is not installed on this host")
     out = subprocess.run(["pg_dump", "--version"], capture_output=True, text=True, check=True)  # noqa: S607
-    match = re.search(r"(\d+)", out.stdout.split(")")[-1])
+    match = re.search(r"\(PostgreSQL\)\s+(\d+)", out.stdout)
+    if match is None:
+        pytest.skip(f"could not read the pg_dump version from {out.stdout.strip()!r}")
     with engine.connect() as conn:
         server_major = int(conn.execute(text("SHOW server_version_num")).scalar_one()) // 10000
-    if match is None or int(match.group(1)) < server_major:
+    if int(match.group(1)) < server_major:
         pytest.skip(
             f"host pg_dump ({out.stdout.strip()}) is older than the test server "
             f"(major {server_major}); pg_dump aborts on a version mismatch"
