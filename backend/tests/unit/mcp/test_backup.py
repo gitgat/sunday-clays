@@ -19,6 +19,8 @@ printf '%s\\n' "$@" > "$FAKE_DIR/dump_argv"
 printf '%s' "${PGPASSWORD-}" > "$FAKE_DIR/dump_pgpassword"
 [ -n "${FAKE_DUMP_FAIL-}" ] && exit 3
 for a in "$@"; do case "$a" in --file=*) out="${a#--file=}";; esac; done
+[ -n "${FAKE_DUMP_PARTIAL-}" ] && { head -c 500 /dev/zero > "$out"; exit 1; }
+[ -n "${FAKE_DUMP_HANG-}" ] && { printf x > "$out"; exec sleep 30; }
 head -c "${FAKE_DUMP_BYTES:-2048}" /dev/zero > "$out"
 """
 FAKE_PG_RESTORE = """#!/bin/sh
@@ -84,8 +86,13 @@ def test_password_is_env_only_never_argv(fake_pg: Path, backup_dir: Path) -> Non
 
 @pytest.mark.parametrize(
     "env",
-    [{"FAKE_DUMP_FAIL": "1"}, {"FAKE_RESTORE_FAIL": "1"}, {"FAKE_DUMP_BYTES": "100"}],
-    ids=["pg_dump fails", "pg_restore fails", "too small"],
+    [
+        {"FAKE_DUMP_FAIL": "1"},
+        {"FAKE_DUMP_PARTIAL": "1"},
+        {"FAKE_RESTORE_FAIL": "1"},
+        {"FAKE_DUMP_BYTES": "100"},
+    ],
+    ids=["pg_dump fails", "pg_dump partial then fails", "pg_restore fails", "too small"],
 )
 def test_failures_raise_and_leave_nothing(
     fake_pg: Path, backup_dir: Path, monkeypatch: pytest.MonkeyPatch, env: dict[str, str]
@@ -135,3 +142,164 @@ def test_held_lock_times_out(fake_pg: Path, backup_dir: Path) -> None:
 
     assert_nothing_left(backup_dir)
     assert not (fake_pg / "dump_argv").exists()
+
+
+def test_child_timeout_is_applied(
+    fake_pg: Path, backup_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_DUMP_HANG", "1")
+    monkeypatch.setattr(backup, "CHILD_TIMEOUT_S", 0.5)
+
+    with pytest.raises(BackupError):
+        pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL)
+
+    assert_nothing_left(backup_dir)
+
+
+def test_lock_is_released_after_a_failure(
+    fake_pg: Path, backup_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_DUMP_FAIL", "1")
+    with pytest.raises(BackupError):
+        pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL, lock_timeout_s=0.3)
+    monkeypatch.delenv("FAKE_DUMP_FAIL")
+
+    path = pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL, lock_timeout_s=0.3)
+
+    assert path.exists()
+
+
+def test_rename_failure_raises_and_leaves_nothing(
+    fake_pg: Path, backup_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_rename = Path.rename
+
+    def failing_rename(self: Path, target: Path) -> Path:
+        if self.name.endswith(".dump.tmp"):
+            raise OSError(116, "stale")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", failing_rename)
+
+    with pytest.raises(BackupError):
+        pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL)
+
+    assert_nothing_left(backup_dir)
+
+
+def test_unlink_failure_in_cleanup_is_still_a_backup_error(
+    fake_pg: Path, backup_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_DUMP_FAIL", "1")
+    real_unlink = Path.unlink
+
+    def failing_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self.name.endswith(".dump.tmp"):
+            raise OSError(116, "stale")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", failing_unlink)
+
+    with pytest.raises(BackupError, match="pg_dump"):
+        pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL)
+
+
+def test_successful_dump_survives_a_failing_cleanup(
+    fake_pg: Path, backup_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_unlink = Path.unlink
+
+    def failing_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self.name.endswith(".dump.tmp"):
+            raise PermissionError(13, "denied")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", failing_unlink)
+
+    assert pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL).exists()
+
+
+def test_earlier_dump_of_the_same_second_is_not_deleted_on_failure(
+    fake_pg: Path, backup_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL)
+    monkeypatch.setenv("FAKE_DUMP_FAIL", "1")
+    monkeypatch.setattr(backup, "datetime", _FrozenClock(first))
+
+    with pytest.raises(BackupError):
+        pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL)
+
+    assert first.exists()
+
+
+class _FrozenClock:
+    """Stands in for ``datetime`` so the second call gets the first call's stamp."""
+
+    def __init__(self, earlier: Path) -> None:
+        self.stamp = earlier.name.rsplit("-", 1)[1].removesuffix(".dump")
+
+    def now(self, tz: object) -> "_FrozenClock":
+        return self
+
+    def strftime(self, fmt: str) -> str:
+        return self.stamp
+
+
+def test_unusable_directories_raise_backup_error(tmp_path: Path, fake_pg: Path) -> None:
+    not_a_dir = tmp_path / "afile"
+    not_a_dir.write_text("")
+    with pytest.raises(BackupError):
+        pre_import_dump(PREVIEW, backup_dir=not_a_dir, database_url=URL)
+    with pytest.raises(BackupError):
+        pre_import_dump(PREVIEW, backup_dir=tmp_path / "missing", database_url=URL)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_permission_problems_raise_backup_error(
+    tmp_path: Path, fake_pg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    no_search = tmp_path / "nx"
+    no_search.mkdir()
+    no_search.chmod(0o000)
+    read_only = tmp_path / "ro"
+    read_only.mkdir()
+    read_only.chmod(0o555)
+    late = tmp_path / "late"
+    late.mkdir()
+    try:
+        with pytest.raises(BackupError):
+            pre_import_dump(PREVIEW, backup_dir=no_search, database_url=URL)
+        with pytest.raises(BackupError):
+            pre_import_dump(PREVIEW, backup_dir=read_only, database_url=URL)
+        # The directory turns read-only after the dump: rename and tmp cleanup both fail.
+        (tmp_path / "bin" / "pg_restore").write_text(f"#!/bin/sh\nchmod 555 {late}\nexit 0\n")
+        with pytest.raises(BackupError):
+            pre_import_dump(PREVIEW, backup_dir=late, database_url=URL)
+    finally:
+        for path in (no_search, read_only, late):
+            path.chmod(0o755)
+
+
+def test_uri_has_no_password_param_and_encodes_the_query(fake_pg: Path, backup_dir: Path) -> None:
+    url = "postgresql+psycopg://u:pw@h/db?sslmode=verify-full&password=leak&application_name=a b"
+
+    pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=url)
+
+    argv = (fake_pg / "dump_argv").read_text()
+    assert "leak" not in argv
+    assert "--dbname=postgresql://u@h/db?application_name=a%20b&sslmode=verify-full" in argv
+
+
+@pytest.mark.parametrize(
+    ("url", "uri"),
+    [
+        ("postgresql+psycopg://u:p@h/db", "postgresql://u@h/db"),
+        (
+            "postgresql+psycopg://u:p@h:6543/db?sslmode=require",
+            "postgresql://u@h:6543/db?sslmode=require",
+        ),
+    ],
+    ids=["no port", "sslmode"],
+)
+def test_libpq_uri_rendering(url: str, uri: str) -> None:
+    assert backup._libpq(url) == (uri, "p")

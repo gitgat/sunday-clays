@@ -14,6 +14,7 @@ import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 from uuid import UUID
 
 from sqlalchemy.engine import URL, make_url
@@ -37,9 +38,16 @@ def _libpq(database_url: str) -> tuple[str, str | None]:
     except Exception:  # never echo the URL
         raise BackupError("DATABASE_URL is not a valid database URL") from None
     plain = URL.create(  # url.set(password=None) would keep the password
-        "postgresql", url.username, None, url.host, url.port, url.database, url.query
+        "postgresql", url.username, None, url.host, url.port, url.database
     )
-    return plain.render_as_string(hide_password=False), url.password
+    pairs = [
+        f"{quote(key, safe='')}={quote(str(value), safe='')}"
+        for key, raw in sorted(url.query.items())
+        if key.lower() != "password"  # a ?password= would reach argv
+        for value in ([raw] if isinstance(raw, str) else raw)
+    ]
+    uri = plain.render_as_string(hide_password=False)
+    return (uri + "?" + "&".join(pairs) if pairs else uri), url.password
 
 
 def _acquire(fd: int, timeout_s: float) -> None:
@@ -91,12 +99,14 @@ def pre_import_dump(
     env.pop("PGPASSWORD", None)
     if password:
         env["PGPASSWORD"] = password
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    final = backup_dir / f"pre-import-{preview_id}-{stamp}.dump"
-    tmp = final.with_name(final.name + ".tmp")
+    tmp: Path | None = None
     try:
         with (backup_dir / LOCK_FILE).open("a") as lock_file:
             _acquire(lock_file.fileno(), lock_timeout_s)
+            # Named after the wait, so the stamp is when the snapshot was actually taken.
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            final = backup_dir / f"pre-import-{preview_id}-{stamp}.dump"
+            tmp = final.with_name(final.name + ".tmp")
             _run(
                 [
                     "pg_dump",
@@ -115,11 +125,9 @@ def pre_import_dump(
             tmp.rename(final)
             _prune(backup_dir)
     except OSError as exc:
-        final.unlink(missing_ok=True)
         raise BackupError(f"backup directory is not usable ({type(exc).__name__})") from None
-    except BackupError:
-        final.unlink(missing_ok=True)
-        raise
     finally:
-        tmp.unlink(missing_ok=True)
+        if tmp is not None:
+            with contextlib.suppress(OSError):  # after a rename it is already gone
+                tmp.unlink(missing_ok=True)
     return final
