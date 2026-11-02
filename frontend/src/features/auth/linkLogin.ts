@@ -57,7 +57,9 @@ export function extractLinkPassword(url: string): LinkLoginUrl {
   }
   if (!changed) return { password: null, cleanedUrl: url };
   const query = kept.filter((part) => part !== '').join('&');
-  return { password, cleanedUrl: `${path}${query === '' ? '' : `?${query}`}${hash}` };
+  // Leading slashes collapse: replaceState reads `//x` as a network-path URL and throws.
+  const safePath = path.replace(/^\/{2,}/, '/');
+  return { password, cleanedUrl: `${safePath}${query === '' ? '' : `?${query}`}${hash}` };
 }
 
 // In memory only: never storage, a cookie, a query key or router state.
@@ -76,7 +78,13 @@ export function captureLinkPassword(win: BrowserLike = window): void {
   const { location, history } = win;
   const current = `${location.pathname}${location.search}${location.hash}`;
   const { password, cleanedUrl } = extractLinkPassword(current);
-  if (cleanedUrl !== current) history.replaceState(history.state, '', cleanedUrl);
+  if (cleanedUrl !== current) {
+    try {
+      history.replaceState(history.state, '', cleanedUrl);
+    } catch {
+      // A refused rewrite must never blank the app.
+    }
+  }
   if (password !== null) pending = password;
 }
 

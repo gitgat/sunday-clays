@@ -18,9 +18,10 @@ describe('extractLinkPassword', () => {
     ['/?p=first&a=1&p=second', 'first', '/?a=1'],
     ['/?p=%E0%A4%A', '\uFFFD%A', '/'],
     ['/?p=a%26b%', 'a&b%', '/'],
-    ['//?p=secret', 'secret', '//'],
-    ['//events?p=secret&x=1', 'secret', '//events?x=1'],
-    ['//[/?p=secret', 'secret', '//[/'],
+    ['//?p=secret', 'secret', '/'],
+    ['//events?p=secret&x=1', 'secret', '/events?x=1'],
+    ['//[/?p=secret', 'secret', '/[/'],
+    ['///a?p=secret', 'secret', '/a'],
     ['https://example.test/events?p=secret&x=1', 'secret', '/events?x=1'],
   ])('%s', (url, password, cleanedUrl) => {
     expect(extractLinkPassword(url)).toEqual({ password, cleanedUrl });
@@ -109,21 +110,34 @@ describe('captureLinkPassword', () => {
     );
   });
 
-  it('does not throw on a doubled-slash path, with or without p', () => {
-    for (const [pathname, search] of [
-      ['//', '?p=hunter2-fake'],
-      ['//events', '?p=hunter2-fake&x=1'],
-      ['//', ''],
+  it('hands replaceState a single-slash URL for doubled-slash paths, and survives a refused rewrite', () => {
+    for (const [pathname, search, expected] of [
+      ['//', '?p=hunter2-fake', '/'],
+      ['//events', '?p=hunter2-fake&x=1', '/events?x=1'],
+      ['//[/', '?p=hunter2-fake', '/[/'],
     ] as const) {
       const replaceState = vi.fn();
       const win = {
         location: { pathname, search, hash: '' },
         history: { state: null, replaceState },
       };
-      expect(() => captureLinkPassword(win)).not.toThrow();
-      takePendingLinkPassword();
+      captureLinkPassword(win);
+      expect(replaceState).toHaveBeenCalledWith(null, '', expected);
+      expect(takePendingLinkPassword()).toBe('hunter2-fake');
     }
+    const throwing = {
+      location: { pathname: '/', search: '?p=hunter2-fake', hash: '' },
+      history: {
+        state: null,
+        replaceState: () => {
+          throw new Error('refused');
+        },
+      },
+    };
+    expect(() => captureLinkPassword(throwing)).not.toThrow();
+    expect(takePendingLinkPassword()).toBe('hunter2-fake');
   });
+
 
   it('does nothing for a URL without p', () => {
     const { win, replaceState } = fakeWindow('/events?rt=sporting');

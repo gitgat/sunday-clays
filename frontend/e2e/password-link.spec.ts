@@ -29,3 +29,10 @@ test('an admin password in a link is treated as wrong', async ({ page }) => {
   await expect(page).toHaveURL(/\/login\?next=%2F$/);
   await expect(page.getByText(/link's password didn't work/)).toBeVisible();
 });
+
+test('a doubled-slash path with p still cleans the address bar and logs in', async ({ page }) => {
+  await page.goto(`//?p=${encodeURIComponent(e2ePassword('viewer'))}`);
+  await expect(page).not.toHaveURL(/p=/);
+  expect(new URL(page.url()).pathname).toBe('/');
+  await expect(page.locator('#root')).not.toBeEmpty();
+});
