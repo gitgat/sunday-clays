@@ -64,7 +64,13 @@ async def _list(url: str, token: str) -> dict[str, str]:
 
 def test_tools_listed(mcp_server: str, mcp_token: str) -> None:
     tools = asyncio.run(_list(mcp_server, mcp_token))
-    assert set(tools) == {"find_shooters", "get_event", "get_job"}
+    assert set(tools) == {
+        "find_shooters",
+        "get_event",
+        "get_job",
+        "preview_week",
+        "preview_correction",
+    }
     assert "Last, First" in tools["find_shooters"]
 
 

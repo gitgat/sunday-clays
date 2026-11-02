@@ -48,7 +48,13 @@ def test_initialize_and_list_tools(mcp_server: str, mcp_token: str) -> None:
             await client.initialize()
             return {t.name for t in (await client.list_tools()).tools}
 
-    assert asyncio.run(run()) == {"find_shooters", "get_event", "get_job"}
+    assert asyncio.run(run()) == {
+        "find_shooters",
+        "get_event",
+        "get_job",
+        "preview_week",
+        "preview_correction",
+    }
 
 
 def test_gateway_host_header_accepted(mcp_server: str, mcp_token: str) -> None:

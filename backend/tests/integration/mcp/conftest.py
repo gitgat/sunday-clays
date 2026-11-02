@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -19,6 +20,8 @@ from sqlalchemy.orm import Session
 from sunday_clays.mcp.server import build_app
 
 TOKEN = "test-token-not-secret"
+# Frozen server clock for the staging tools; tests that need another one override mcp_clock.
+FROZEN_NOW = datetime(2026, 10, 6, 18, 0, tzinfo=UTC)
 
 
 async def call_tool(url: str, name: str, args: dict[str, Any], token: str = TOKEN) -> Any:
@@ -56,9 +59,17 @@ def _free_port() -> int:
 
 
 @pytest.fixture
-def mcp_server(session_factory: Callable[[], AbstractContextManager[Session]]) -> Iterator[str]:
+def mcp_clock() -> Callable[[], datetime]:
+    return lambda: FROZEN_NOW
+
+
+@pytest.fixture
+def mcp_server(
+    session_factory: Callable[[], AbstractContextManager[Session]],
+    mcp_clock: Callable[[], datetime],
+) -> Iterator[str]:
     port = _free_port()
-    app = build_app(TOKEN, session_factory)
+    app = build_app(TOKEN, session_factory, session_factory, mcp_clock)
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False)
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)

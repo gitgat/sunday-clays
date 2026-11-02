@@ -5,11 +5,11 @@ import os
 import uvicorn
 
 from sunday_clays.mcp.auth import load_auth_token
-from sunday_clays.mcp.server import build_app, default_session_factory
+from sunday_clays.mcp.server import build_app, default_session_factory, write_session_factory
 
 
 def main() -> None:
-    app = build_app(load_auth_token(), default_session_factory)
+    app = build_app(load_auth_token(), default_session_factory, write_session_factory)
     uvicorn.run(
         app,
         host="0.0.0.0",  # noqa: S104  # reachable on the gateway network only; bearer-gated
