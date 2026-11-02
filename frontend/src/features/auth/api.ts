@@ -35,6 +35,12 @@ export function useSession() {
   };
 }
 
+/** POST /api/auth/link-login: viewer-only login from a password link. Plain call, no cache entry. */
+export async function linkLogin(password: string): Promise<Session> {
+  const data = await unwrap(api.POST('/api/auth/link-login', { body: { password } }));
+  return { role: toRole(data.role) };
+}
+
 /** Drops every cached query except the session, so one session's data never shows in another. */
 function removeSessionData(queryClient: QueryClient): void {
   queryClient.removeQueries({

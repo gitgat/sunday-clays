@@ -11,7 +11,12 @@ export const api = createClient<paths>({
 });
 
 /** 401s from these endpoints are answers (logged out / wrong password), not expired sessions. */
-const NO_LOGIN_REDIRECT = new Set(['/api/auth/me', '/api/auth/login', '/api/auth/logout']);
+const NO_LOGIN_REDIRECT = new Set([
+  '/api/auth/me',
+  '/api/auth/login',
+  '/api/auth/link-login',
+  '/api/auth/logout',
+]);
 
 export function shouldRedirectToLogin(
   status: number,
