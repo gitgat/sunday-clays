@@ -61,6 +61,9 @@ VALID: dict[str, Any] = {
         ),
         "mcp": backend(
             networks={"default": None, "mcp_gateway": {"aliases": ["sundayclays-mcp"]}},
+            volumes=[
+                {"type": "bind", "source": "/var/data/sunday-clays/backups", "target": "/backups"}
+            ],
         ),
         "deployer": {
             "image": "registry.example.internal/sunday-clays-deployer:sha-0000000",
@@ -305,6 +308,24 @@ def short_named_volume(stack: dict[str, Any]) -> None:
 
 def short_bind_elsewhere(stack: dict[str, Any]) -> None:
     stack["services"]["backup"]["volumes"] = ["/srv/backups:/backups"]
+
+
+def mcp_without_backups_bind(stack: dict[str, Any]) -> None:
+    del stack["services"]["mcp"]["volumes"]
+
+
+def mcp_binds_db(stack: dict[str, Any]) -> None:
+    stack["services"]["mcp"]["volumes"].append(
+        {"type": "bind", "source": "/var/data/sunday-clays/db", "target": "/db"}
+    )
+
+
+def mcp_backups_at_the_wrong_target(stack: dict[str, Any]) -> None:
+    stack["services"]["mcp"]["volumes"] = ["/var/data/sunday-clays/backups:/data"]
+
+
+def mcp_on_a_named_volume(stack: dict[str, Any]) -> None:
+    stack["services"]["mcp"]["volumes"].append({"type": "volume", "source": "x", "target": "/x"})
 
 
 def socket_on_api(stack: dict[str, Any]) -> None:
@@ -556,6 +577,16 @@ def missing_deployer(stack: dict[str, Any]) -> None:
             "deployer: must bind /var/data/sunday-clays/deployer to /state",
         ),
         (short_bind_elsewhere, "backup: needs a bind mount under /var/data/sunday-clays/"),
+        (
+            mcp_without_backups_bind,
+            "mcp: must bind /var/data/sunday-clays/backups to /backups",
+        ),
+        (mcp_binds_db, "mcp: bind mount '/var/data/sunday-clays/db' to '/db' is not allowed"),
+        (
+            mcp_backups_at_the_wrong_target,
+            "mcp: must bind /var/data/sunday-clays/backups to /backups",
+        ),
+        (mcp_on_a_named_volume, "mcp: named volume 'x' is not allowed"),
     ],
 )
 def test_each_rule_rejects_its_violation(

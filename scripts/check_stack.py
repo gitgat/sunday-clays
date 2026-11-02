@@ -57,6 +57,7 @@ CLOUDFLARE_IP = "CF-Connecting-IP"
 MCP = "mcp"
 MCP_NETWORK = "mcp_gateway"
 MCP_ALIAS = "sundayclays-mcp"
+MCP_BACKUPS_BIND = (DATA_ROOT + "backups", "/backups")  # the pre-import dump's only mount
 MCP_FORBIDDEN_NETWORKS = ("traefik_public", PUBLIC_EDGE)
 ROUTER_LABEL = re.compile(r"^traefik\.http\.routers\.([^.]+)\.rule$")
 
@@ -121,6 +122,14 @@ def _mcp_gateway_rules(stack: dict[str, Any], services: dict[str, dict[str, Any]
     ]
     if not ((stack.get("networks") or {}).get(MCP_NETWORK) or {}).get("external"):
         problems.append(f"network {MCP_NETWORK}: must be external")
+    binds = _binds(mcp)
+    if MCP_BACKUPS_BIND not in binds:
+        problems.append(f"{MCP}: must bind {MCP_BACKUPS_BIND[0]} to {MCP_BACKUPS_BIND[1]}")
+    problems += [
+        f"{MCP}: bind mount {source!r} to {target!r} is not allowed (only {MCP_BACKUPS_BIND[0]})"
+        for source, target in binds
+        if (source, target) != MCP_BACKUPS_BIND
+    ]
     return problems
 
 

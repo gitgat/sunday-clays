@@ -105,6 +105,12 @@ services:
       MCP_AUTH_TOKEN_FILE: /run/secrets/mcp_token
       DATABASE_URL_FILE: /run/secrets/database_url
       MCP_PORT: "8080"
+      MCP_COMMIT_ENABLED: "false"
+      MCP_BACKUP_DIR: /backups
+    volumes:
+      # Same bind as `backup`: the pre-import dump lands where the nightly dumps do. /var/data is
+      # shared across nodes, so mcp needs no placement pin for it.
+      - /var/data/sunday-clays/backups:/backups
     secrets:
       - source: mcp_token
         target: mcp_token
