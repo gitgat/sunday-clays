@@ -138,7 +138,6 @@ describe('captureLinkPassword', () => {
     expect(takePendingLinkPassword()).toBe('hunter2-fake');
   });
 
-
   it('does nothing for a URL without p', () => {
     const { win, replaceState } = fakeWindow('/events?rt=sporting');
     captureLinkPassword(win);
