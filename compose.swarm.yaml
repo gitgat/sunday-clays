@@ -9,13 +9,13 @@
 # deployer's manager needs a ghcr.io login (deploy/README.md "Automatic deploys").
 # Images are multi-arch (linux/amd64 + linux/arm64), so caddy and the deployer carry no
 # architecture constraint and run on any node, Pi or VM. The single-writer data services are
-# pinned, by hostname, to the database node. api, worker and mcp are the one exception: they run on the
-# x86 nodes only (x-x86 below). scripts/check_stack.py enforces all of this.
+# pinned, by hostname, to the database node. api and worker are the one exception: they run on the
+# x86 nodes only (x-x86 below); mcp is light and runs on any node. scripts/check_stack.py enforces all of this.
 x-db-node: &db-node
   constraints:
     - node.hostname==${SC_DB_NODE:?SC_DB_NODE is required}
 
-# api, worker and mcp run on x86 only (the database node or another x86 node): measured slow on a 4-core arm64 Pi
+# api and worker run on x86 only (the database node or another x86 node): measured slow on a 4-core arm64 Pi
 # while the database lives on x86 (the database node). Swarm has no soft "prefer", so this is a hard
 # constraint; check_stack.py allows exactly this one architecture constraint, on these services.
 x-x86: &x86
@@ -120,7 +120,6 @@ services:
       retries: 3
       start_period: 30s
     deploy:
-      placement: *x86
       update_config: *update-rollback
       rollback_config: *rollback-stop-first
       resources:

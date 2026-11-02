@@ -37,9 +37,9 @@ RELEASE_TAG = re.compile(r"^sha-[0-9a-f]{7}$")
 # a constraint on them pins a service to one architecture just as node.platform.arch does.
 ARCH_CONSTRAINT = re.compile(r"^node\.(platform\.arch|labels\.(arch|class|type))(==|!=)")
 # Every image is multi-arch, so no service needs an architecture constraint. The one exception
-# (2026-10-02): api, worker and mcp must run on the x86 nodes, because a 4-core arm64 Pi measured slow
+# (2026-10-02): api and worker must run on the x86 nodes, because a 4-core arm64 Pi measured slow
 # against the database on x86. They may carry exactly this constraint and no other architecture one.
-X86_ONLY_SERVICES: frozenset[str] = frozenset({"api", "worker", "mcp"})
+X86_ONLY_SERVICES: frozenset[str] = frozenset({"api", "worker"})
 X86_CONSTRAINT = "node.platform.arch==x86_64"
 # Plan 13: the pull-based deployer is the only service that holds the Docker socket, and it runs as
 # one task on a manager (any architecture: the Swarm's managers are Raspberry Pis).
