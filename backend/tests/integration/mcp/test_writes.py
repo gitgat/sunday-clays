@@ -363,3 +363,265 @@ def test_run_write_commits_the_refusal_record_before_raising(fx_session: Session
         )
     assert events == ["commit"]
     assert len(_refused(fx_session)) == 1
+
+
+# --- fix round 1 -----------------------------------------------------------------------------
+def _commit(session: Session, data: bytes, name: str) -> int:
+    from sunday_clays.domain.imports import commit_import, stage_import
+
+    preview = stage_import(session, data, name)
+    commit_import(session, preview.import_id)
+    return preview.import_id
+
+
+def _base(session: Session) -> bytes:
+    from sunday_clays.domain.imports import active_scores_import
+
+    base_id = active_scores_import(session)
+    return session.scalars(select(Import.file_bytes).where(Import.id == base_id)).one()
+
+
+def _active(session: Session) -> int | None:
+    from sunday_clays.domain.imports import active_scores_import
+
+    return active_scores_import(session)
+
+
+def test_future_dates_are_refused_and_today_is_accepted(fx_session: Session) -> None:
+    saturday = dt.datetime(2026, 10, 3, 18, 0, tzinfo=dt.UTC)
+    with pytest.raises(Refusal) as exc:
+        writes.preview_week(fx_session, _week(), now=saturday)
+    assert exc.value.code == "future_date"
+    with pytest.raises(Refusal) as later:
+        writes.preview_week(fx_session, _week(date=dt.date(2026, 10, 11)), now=NOW)
+    assert later.value.code == "future_date"
+    sunday = dt.datetime(2026, 10, 4, 18, 0, tzinfo=dt.UTC)
+    assert writes.preview_week(fx_session, _week(), now=sunday).date == NEXT_SUNDAY
+
+
+def test_future_date_uses_los_angeles_today(fx_session: Session) -> None:
+    # 2026-10-05 03:00 UTC is still Sunday 10-04 in Los Angeles.
+    assert writes.preview_week(
+        fx_session, _week(), now=dt.datetime(2026, 10, 5, 3, 0, tzinfo=dt.UTC)
+    )
+
+
+def test_stations_that_replace_stored_stations_are_refused(fx_session: Session) -> None:
+    from sunday_clays.mcp.build import build_stations
+
+    committed = _week(
+        shooters=[
+            {
+                "name": "Testshooter, Alpha",
+                "score": 45,
+                "status": "Member",
+                "hits": [10, 10, 10, 10, 5],
+            }
+        ]
+    )
+    data = build_stations(committed)
+    assert data is not None
+    _commit(fx_session, data, "stations.xlsx")  # no rebuild: scores for that date stay unstored
+    with pytest.raises(Refusal) as exc:
+        writes.preview_week(fx_session, _week(), now=NOW)
+    assert exc.value.code == "not_append_only"
+    _assert_refused(fx_session, "not_append_only")
+
+
+def test_base_import_is_recorded(fx_session: Session) -> None:
+    week = writes.preview_week(fx_session, _week(), now=NOW)
+    op = fx_session.get(McpOperation, week.preview_id)
+    assert op is not None
+    assert op.result["base_import_id"] == _active(fx_session) is not None
+    name = _names_on_last(fx_session, 1)[0]
+    c = CorrectionInput.model_validate(
+        {"date": _last_event(fx_session), "rows": [{"name": name, "score": 7}]}
+    )
+    corr = writes.preview_correction(fx_session, c, now=NOW)
+    cop = fx_session.get(McpOperation, corr.preview_id)
+    assert cop is not None
+    assert cop.result["base_import_id"] == _active(fx_session)
+
+
+def test_same_input_after_an_admin_discard_gets_a_fresh_preview(fx_session: Session) -> None:
+    from sunday_clays.domain.imports import discard_import
+
+    first = writes.preview_week(fx_session, _week(), now=NOW)
+    op = fx_session.get(McpOperation, first.preview_id)
+    assert op is not None
+    assert op.scores_import_id is not None
+    discard_import(fx_session, op.scores_import_id)
+    again = writes.preview_week(fx_session, _week(), now=NOW)
+    assert again.preview_id != first.preview_id
+    assert op.status == "expired"
+    assert _pending(fx_session) >= 1
+
+
+def test_same_input_on_a_newer_base_gets_a_fresh_preview(fx_session: Session) -> None:
+    from sunday_clays.mcp.build import build_correction
+
+    first = writes.preview_week(fx_session, _week(), now=NOW)
+    name = _names_on_last(fx_session, 1)[0]
+    c = CorrectionInput.model_validate(
+        {"date": _last_event(fx_session), "rows": [{"name": name, "score": 7}]}
+    )
+    old_base = _active(fx_session)
+    _commit(fx_session, build_correction(_base(fx_session), c), "newer.xlsx")
+    assert _active(fx_session) != old_base
+    again = writes.preview_week(fx_session, _week(), now=NOW)
+    assert again.preview_id != first.preview_id
+    new = fx_session.get(McpOperation, again.preview_id)
+    assert new is not None
+    assert new.result["base_import_id"] == _active(fx_session)
+    assert fx_session.get(McpOperation, first.preview_id).status == "expired"  # type: ignore[union-attr]
+
+
+def test_previews_take_the_preview_lock(fx_session: Session) -> None:
+    from sqlalchemy import text
+
+    writes.preview_week(fx_session, _week(), now=NOW)
+    held = fx_session.scalar(
+        text(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted"
+            " AND pid = pg_backend_pid() AND classid = 0 AND objid = :k"
+        ),
+        {"k": writes.MCP_PREVIEW_LOCK_KEY},
+    )
+    assert held == 1
+
+
+def test_the_database_allows_one_previewed_row_per_sunday(fx_session: Session) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    fx_session.add(McpOperation(kind="week", event_date=NEXT_SUNDAY, status="previewed"))
+    fx_session.flush()
+    savepoint = fx_session.begin_nested()
+    fx_session.add(McpOperation(kind="week", event_date=NEXT_SUNDAY, status="previewed"))
+    with pytest.raises(IntegrityError):
+        fx_session.flush()
+    savepoint.rollback()
+    # refused/expired rows are not limited
+    fx_session.add(McpOperation(kind="week", event_date=NEXT_SUNDAY, status="expired"))
+    fx_session.flush()
+
+
+def test_sweeping_an_op_whose_import_an_admin_discarded_does_not_error(fx_session: Session) -> None:
+    from sunday_clays.domain.imports import discard_import
+
+    first = writes.preview_week(fx_session, _week(), now=NOW)
+    op = fx_session.get(McpOperation, first.preview_id)
+    assert op is not None
+    assert op.scores_import_id is not None
+    discard_import(fx_session, op.scores_import_id)
+    later = NOW + TTL + dt.timedelta(seconds=1)
+    with pytest.raises(Refusal):
+        writes.preview_week(fx_session, _week(date=dt.date(2026, 10, 5)), now=later)
+    assert op.status == "expired"
+
+
+def test_discard_tolerates_a_lost_race(
+    fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sunday_clays.domain.errors import ConflictError
+
+    first = writes.preview_week(fx_session, _week(), now=NOW)
+    op = fx_session.get(McpOperation, first.preview_id)
+    assert op is not None
+
+    def lost(session: Session, import_id: int) -> None:
+        raise ConflictError("not_pending", "already gone")
+
+    monkeypatch.setattr(writes, "discard_import", lost)
+    writes._discard_if_pending(fx_session, op.scores_import_id)  # no error
+
+
+def test_stale_rebuild_window_uses_the_active_import(fx_session: Session) -> None:
+    # A committed scores import not yet rebuilt into events: its newest Sunday still counts.
+    committed = writes.preview_week(fx_session, _week(), now=NOW)
+    op = fx_session.get(McpOperation, committed.preview_id)
+    assert op is not None
+    assert op.scores_import_id is not None
+    from sunday_clays.domain.imports import commit_import
+
+    commit_import(fx_session, op.scores_import_id)
+    assert _last_event(fx_session) == NEXT_SUNDAY - dt.timedelta(days=7)  # events not rebuilt
+    with pytest.raises(Refusal) as exc:
+        writes.preview_week(fx_session, _week(), now=NOW)
+    assert exc.value.code == "not_after_last_event"
+    # corrections target the newest Sunday of the active import, not the stale events table
+    name = "Testshooter, Beta"
+    ok = CorrectionInput.model_validate(
+        {"date": NEXT_SUNDAY, "rows": [{"name": name, "score": 31}]}
+    )
+    assert writes.preview_correction(fx_session, ok, now=NOW).changes[0].old_score == 30
+    old = CorrectionInput.model_validate(
+        {"date": NEXT_SUNDAY - dt.timedelta(days=7), "rows": [{"name": name, "score": 31}]}
+    )
+    with pytest.raises(Refusal) as stale:
+        writes.preview_correction(fx_session, old, now=NOW)
+    assert stale.value.code == "not_latest_event"
+
+
+def _tampered(monkeypatch: pytest.MonkeyPatch, edit: Any) -> None:
+    import io
+
+    import openpyxl
+
+    real = writes.build_scores
+
+    def build(base: bytes, week: WeekInput) -> bytes:
+        wb = openpyxl.load_workbook(io.BytesIO(real(base, week)))
+        edit(wb)
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    monkeypatch.setattr(writes, "build_scores", build)
+
+
+def test_a_new_row_with_a_different_score_is_refused(
+    fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def edit(wb: Any) -> None:
+        ws = wb["ALL SCORE DETAIL"]
+        ws.cell(ws.max_row, 2).value = 1  # a different score from the one submitted
+
+    _tampered(monkeypatch, edit)
+    with pytest.raises(Refusal) as exc:
+        writes.preview_week(fx_session, _week(), now=NOW)
+    assert exc.value.code == "not_append_only"
+    _assert_refused(fx_session, "not_append_only")
+
+
+def test_an_extra_attendance_change_is_refused(
+    fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def edit(wb: Any) -> None:
+        ws = wb["Attendance History"]
+        ws.cell(2, 2).value = (ws.cell(2, 2).value or 0) + 1
+
+    _tampered(monkeypatch, edit)
+    with pytest.raises(Refusal) as exc:
+        writes.preview_week(fx_session, _week(), now=NOW)
+    assert exc.value.code == "not_append_only"
+    _assert_refused(fx_session, "not_append_only")
+
+
+def test_preview_totals_come_from_the_staged_rows(fx_session: Session) -> None:
+    out = writes.preview_week(fx_session, _week(), now=NOW)
+    op = fx_session.get(McpOperation, out.preview_id)
+    assert op is not None
+    from sunday_clays.domain.imports import load_staged_scores
+
+    rows = [
+        r
+        for r in load_staged_scores(fx_session, op.scores_import_id)
+        if r.event_date == NEXT_SUNDAY
+    ]
+    assert (out.head_count, out.score_sum) == (len(rows), sum(r.score for r in rows))
+
+
+def test_new_shooters_with_hits_get_no_unmatched_name_findings(fx_session: Session) -> None:
+    out = writes.preview_week(fx_session, _week(), now=NOW)
+    assert "Testshooter, Alpha" in out.new_names  # Alpha has hits
+    assert not [f for f in out.findings_for_date if f.code == "station_name_unmatched"]

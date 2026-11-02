@@ -58,6 +58,11 @@ def test_schemas_are_bounded(mcp_server: str, mcp_token: str) -> None:
     assert week["WeekInput"]["properties"]["stations"]["maxItems"] == 12
     corr = schemas["preview_correction"]["$defs"]
     assert corr["CorrectionInput"]["properties"]["rows"]["maxItems"] == 5
+    shooter = week["ShooterRow"]["properties"]
+    assert shooter["name"]["maxLength"] == 60
+    assert shooter["class"]["anyOf"][0]["maxLength"] == 20
+    assert shooter["hits"]["anyOf"][0]["maxItems"] == 12
+    assert corr["CorrectionRow"]["properties"]["name"]["maxLength"] == 60
 
 
 def test_descriptions_carry_the_procedure_rules(mcp_server: str, mcp_token: str) -> None:
@@ -122,6 +127,37 @@ def test_bad_input_is_tool_error(mcp_server: str, mcp_token: str, args: dict[str
     tool = "preview_correction" if "correction" in args else "preview_week"
     is_error, _ = asyncio.run(_raw(mcp_server, mcp_token, tool, args))
     assert is_error is True
+
+
+def _with_shooters(*shooters: dict[str, Any]) -> dict[str, Any]:
+    return {"week": {**WEEK, "shooters": list(shooters)}}
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (
+            _with_shooters(
+                {"name": "Testshooter, Beta", "score": 30, "status": "Guest", "hits": [1] * 5}
+            ),
+            "hits sum to 5, not the score 30",
+        ),
+        (
+            _with_shooters(
+                {"name": "Testshooter, Beta", "score": 30, "status": "Guest"},
+                {"name": "testshooter, beta", "score": 31, "status": "Guest"},
+            ),
+            "duplicate shooter name",
+        ),
+    ],
+)
+def test_validation_errors_explain_the_problem_and_record_nothing(
+    mcp_server: str, mcp_token: str, fx_session: Session, args: dict[str, Any], message: str
+) -> None:
+    is_error, text = asyncio.run(_raw(mcp_server, mcp_token, "preview_week", args))
+    assert is_error is True
+    assert message in text
+    assert fx_session.scalar(select(func.count(McpOperation.id))) == 0
 
 
 def test_names_are_not_logged(

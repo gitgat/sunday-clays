@@ -38,6 +38,12 @@ class McpOperation(Base):
             name=conv("ck_mcp_operations_commit_path"),
         ),
         Index(conv("ix_mcp_operations_status_created_at"), "status", "created_at"),
+        Index(
+            conv("uq_mcp_operations_previewed_event_date"),
+            "event_date",
+            unique=True,
+            postgresql_where=text("status = 'previewed'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

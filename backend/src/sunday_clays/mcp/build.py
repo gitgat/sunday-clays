@@ -93,11 +93,11 @@ class _Model(BaseModel):
 
 
 class ShooterRow(_Model):
-    name: str
+    name: str = Field(max_length=60)
     score: StrictInt = Field(ge=0, le=50)
     status: str = Field(pattern=r"^(Member|Guest)$")
-    class_: str | None = Field(default=None, alias="class")
-    hits: list[StrictInt] | None = None
+    class_: str | None = Field(default=None, alias="class", max_length=20)
+    hits: list[StrictInt] | None = Field(default=None, max_length=12)
 
     @field_validator("name")
     @classmethod
@@ -143,7 +143,7 @@ class WeekInput(_Model):
 class CorrectionRow(_Model):
     """Score-only: a stations import replaces the whole day, so corrections carry no hits."""
 
-    name: str
+    name: str = Field(max_length=60)
     score: StrictInt = Field(ge=0, le=50)
 
     @field_validator("name")

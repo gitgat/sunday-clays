@@ -80,3 +80,62 @@ def test_gateway_host_header_accepted(mcp_server: str, mcp_token: str) -> None:
     )
     assert response.status_code == 200
     assert '"result"' in response.text
+
+
+def _big(n: int) -> bytes:
+    return b"x" * n
+
+
+def test_body_over_the_cap_is_413_by_content_length(mcp_server: str, mcp_token: str) -> None:
+    response = httpx.post(
+        f"{mcp_server}/mcp",
+        content=_big(1024 * 1024 + 1),
+        headers={"Authorization": f"Bearer {mcp_token}", "Content-Type": "application/json"},
+    )
+    assert response.status_code == 413
+    assert response.content == b'{"error":"too_large"}'
+
+
+def test_streamed_body_over_the_cap_is_413_without_content_length(
+    mcp_server: str, mcp_token: str
+) -> None:
+    def chunks():  # type: ignore[no-untyped-def]
+        for _ in range(17):
+            yield _big(64 * 1024)
+
+    request = httpx.Request(
+        "POST",
+        f"{mcp_server}/mcp",
+        content=chunks(),
+        headers={"Authorization": f"Bearer {mcp_token}", "Content-Type": "application/json"},
+    )
+    assert "content-length" not in request.headers
+    with httpx.Client() as client:
+        response = client.send(request)
+    assert response.status_code == 413
+    assert response.content == b'{"error":"too_large"}'
+
+
+def test_a_full_200_shooter_week_fits_under_the_cap() -> None:
+    from sunday_clays.mcp.build import WeekInput
+    from sunday_clays.mcp.limits import MAX_BODY_BYTES
+
+    shooters = [
+        {
+            "name": f"{'L' * 25}{chr(97 + i // 26)}{chr(97 + i % 26)}, {'F' * 28}",
+            "score": 50,
+            "status": "Member",
+            "class": "12 Gauge",
+            "hits": [10] * 5,
+        }
+        for i in range(200)
+    ]
+    week = WeekInput.model_validate(
+        {
+            "date": "2026-10-04",
+            "stations": ["1", "2", "3", "4", "5"],
+            "counts": [10] * 5,
+            "shooters": shooters,
+        }
+    )
+    assert len(week.model_dump_json(by_alias=True)) < MAX_BODY_BYTES // 10

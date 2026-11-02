@@ -69,8 +69,17 @@ def upgrade() -> None:
         "mcp_operations",
         ["status", "created_at"],
     )
+    # One live preview per Sunday, however the previews race.
+    op.create_index(
+        op.f("uq_mcp_operations_previewed_event_date"),
+        "mcp_operations",
+        ["event_date"],
+        unique=True,
+        postgresql_where=sa.text("status = 'previewed'"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(op.f("uq_mcp_operations_previewed_event_date"), table_name="mcp_operations")
     op.drop_index(op.f("ix_mcp_operations_status_created_at"), table_name="mcp_operations")
     op.drop_table("mcp_operations")

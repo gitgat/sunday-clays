@@ -25,6 +25,7 @@ from sunday_clays.config import database_url_from_env
 from sunday_clays.mcp import reads, writes
 from sunday_clays.mcp.auth import BearerMiddleware
 from sunday_clays.mcp.build import CorrectionInput, WeekInput
+from sunday_clays.mcp.limits import BodyLimitMiddleware
 from sunday_clays.mcp.schemas import (
     MAX_JOB_ID,
     EventSummary,
@@ -174,7 +175,10 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
             "Stage one new Sunday's scores for import and return a preview; nothing is "
             "committed. " + _RULES + "The date must be a Sunday after the latest stored one, "
             "at most 14 days ago, with no stored rounds. A new preview for the same date "
-            "replaces the earlier one. Refusals come back as an error beginning with a code."
+            "replaces the earlier one, but a refused new preview leaves any earlier preview for "
+            "that date live. Invalid input comes back as a validation error explaining the "
+            "problem (nothing is recorded); checks made after validation (dates, stored data) "
+            "come back as an error beginning with a code and are recorded."
         )
     )
     async def preview_week(week: WeekInput) -> dict[str, Any]:
@@ -195,7 +199,9 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
             "a preview. Corrections are score-only, for existing names; they need a human to "
             "approve them and can never be committed through this server. "
             + _RULES
-            + "Refusals come back as an error beginning with a code."
+            + "Invalid input comes back as a validation error explaining the problem (nothing is "
+            "recorded); checks made after validation come back as an error beginning with a "
+            "code and are recorded."
         )
     )
     async def preview_correction(correction: CorrectionInput) -> dict[str, Any]:
@@ -224,4 +230,4 @@ def build_app(
     """The SDK's own Starlette app (so its session-manager lifespan runs) plus /healthz, gated."""
     app = build_mcp(session_factory, write_session_factory, clock).streamable_http_app()
     app.router.routes.append(Route("/healthz", _healthz, methods=["GET"]))
-    return BearerMiddleware(app, token)
+    return BearerMiddleware(BodyLimitMiddleware(app), token)
