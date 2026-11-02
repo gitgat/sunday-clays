@@ -39,8 +39,9 @@ from sunday_clays.mcp.build import (
 from sunday_clays.models import Event, Import, McpOperation, Round
 
 DEFAULT_PREVIEW_TTL_SECONDS = 3600
-# pg_advisory_xact_lock key serializing previews (imports use 7263001 and 7263002)
-MCP_PREVIEW_LOCK_KEY = 7263003
+# pg_advisory_xact_lock key serializing previews. Taken elsewhere: 7263001 migrations,
+# 7263002 import lifecycle, 7263003 rebuild, 7263004 page views.
+MCP_PREVIEW_LOCK_KEY = 7263005
 LOCAL_TZ = ZoneInfo("America/Los_Angeles")
 MAX_WEEK_AGE_DAYS = 14
 MANY_NEW_NAMES = 3
@@ -186,11 +187,18 @@ def _stage(session: Session, data: bytes, filename: str, staged: list[int]) -> I
     return preview
 
 
-def _base_bytes(session: Session) -> bytes:
+def _base_bytes(session: Session) -> tuple[int, bytes]:
+    """The active scores import's id and bytes, read together so the id is the one built on."""
     base_id = active_scores_import(session)
     if base_id is None:
         raise Refusal("no_base", "no committed scores import to build on")
-    return session.scalars(select(Import.file_bytes).where(Import.id == base_id)).one()
+    data = session.scalars(select(Import.file_bytes).where(Import.id == base_id)).one()
+    return base_id, data
+
+
+def _require_base(session: Session, base_id: int) -> None:
+    if active_scores_import(session) != base_id:
+        raise Refusal("base_changed", "the stored scores changed while this was being built")
 
 
 def _split_findings(
@@ -277,7 +285,9 @@ def _record_preview(
     scores_id: int,
     stations_id: int | None,
     digest: str,
+    base_id: int,
 ) -> McpOperation:
+    _require_base(session, base_id)
     _supersede(session, date)
     session.flush()  # the old row leaves 'previewed' before the new one enters it
     op = McpOperation(
@@ -287,7 +297,7 @@ def _record_preview(
         created_at=now,
         scores_import_id=scores_id,
         stations_import_id=stations_id,
-        result={"input_sha256": digest, "base_import_id": active_scores_import(session)},
+        result={"input_sha256": digest, "base_import_id": base_id},
     )
     session.add(op)
     session.flush()
@@ -328,11 +338,12 @@ def _week_preview(
     same = _reusable(session, _existing_preview(session, "week", week.date, digest))
     if same is not None:
         return WeekPreview.model_validate(same.result["preview"])
-    base = _base_bytes(session)
+    base_id, base = _base_bytes(session)
     try:
         scores_bytes = build_scores(base, week)
     except BuildError as exc:
         raise Refusal("invalid_input", f"could not build the scores workbook: {exc.code}") from exc
+    _require_base(session, base_id)  # before staging: the diff must be against this base
     stations_bytes = build_stations(week)
     scores = _stage(session, scores_bytes, f"mcp-scores-{week.date.isoformat()}.xlsx", staged)
     stations = None
@@ -370,7 +381,7 @@ def _week_preview(
         raise Refusal("not_append_only", "the staged rows do not match the submitted scores")
     op = _record_preview(
         session, "week", week.date, now, ttl, scores.import_id,
-        stations.import_id if stations else None, digest,
+        stations.import_id if stations else None, digest, base_id,
     )  # fmt: skip
     mine, other = _split_findings(
         week.date, [p for p in (scores, stations) if p is not None], diff.new_names
@@ -422,11 +433,9 @@ def _correction_preview(
     same = _reusable(session, _existing_preview(session, "correction", c.date, digest))
     if same is not None:
         return CorrectionPreview.model_validate(same.result["preview"])
-    base = _base_bytes(session)
+    base_id, base = _base_bytes(session)
     old = {
-        r.name_key: r.score
-        for r in load_staged_scores(session, active_scores_import(session))
-        if r.event_date == c.date
+        r.name_key: r.score for r in load_staged_scores(session, base_id) if r.event_date == c.date
     }
     try:
         data = build_correction(base, c)
@@ -436,6 +445,7 @@ def _correction_preview(
                 "name_not_on_date", "a corrected name is not on that Sunday's scores"
             ) from exc
         raise Refusal("invalid_input", f"could not build the correction: {exc.code}") from exc
+    _require_base(session, base_id)
     scores = _stage(session, data, f"mcp-correction-{c.date.isoformat()}.xlsx", staged)
     diff = scores.diff
     if not (
@@ -452,7 +462,9 @@ def _correction_preview(
             f"expected {len(c.rows)} changed scores and nothing else; a score may equal the "
             "stored one",
         )
-    op = _record_preview(session, "correction", c.date, now, ttl, scores.import_id, None, digest)
+    op = _record_preview(
+        session, "correction", c.date, now, ttl, scores.import_id, None, digest, base_id
+    )
     mine, other = _split_findings(c.date, [scores], [])
     preview = CorrectionPreview(
         date=c.date,

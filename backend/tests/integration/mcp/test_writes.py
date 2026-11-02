@@ -625,3 +625,76 @@ def test_new_shooters_with_hits_get_no_unmatched_name_findings(fx_session: Sessi
     out = writes.preview_week(fx_session, _week(), now=NOW)
     assert "Testshooter, Alpha" in out.new_names  # Alpha has hits
     assert not [f for f in out.findings_for_date if f.code == "station_name_unmatched"]
+
+
+# --- fix round 2 -----------------------------------------------------------------------------
+def test_advisory_lock_keys_are_distinct() -> None:
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    found: dict[int, list[str]] = {}
+    pattern = re.compile(r"^(\w*LOCK_KEY)\b[^=\n]*=\s*(\d+)", re.MULTILINE)
+    for path in [*(root / "src").rglob("*.py"), *(root / "migrations").rglob("*.py")]:
+        for name, value in pattern.findall(path.read_text()):
+            found.setdefault(int(value), []).append(f"{path.name}:{name}")
+    assert len(found) >= 5
+    assert {k: v for k, v in found.items() if len(v) > 1} == {}
+
+
+def test_future_date_is_judged_in_los_angeles_not_utc(fx_session: Session) -> None:
+    # 2026-10-04 03:00 UTC is still Saturday 10-03 in Los Angeles: Sunday 10-04 is the future.
+    with pytest.raises(Refusal) as exc:
+        writes.preview_week(fx_session, _week(), now=dt.datetime(2026, 10, 4, 3, 0, tzinfo=dt.UTC))
+    assert exc.value.code == "future_date"
+
+
+def test_a_base_that_moves_during_the_build_is_refused(
+    fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sunday_clays.mcp.build import build_correction
+
+    real = writes.build_scores
+    name = _names_on_last(fx_session, 1)[0]
+    c = CorrectionInput.model_validate(
+        {"date": _last_event(fx_session), "rows": [{"name": name, "score": 7}]}
+    )
+
+    def moving(base: bytes, week: WeekInput) -> bytes:
+        _commit(fx_session, build_correction(base, c), "moved.xlsx")  # a newer base appears
+        return real(base, week)
+
+    monkeypatch.setattr(writes, "build_scores", moving)
+    with pytest.raises(Refusal) as exc:
+        writes.preview_week(fx_session, _week(), now=NOW)
+    assert exc.value.code == "base_changed"
+    assert _pending(fx_session) == 0
+    assert [r.result["code"] for r in _refused(fx_session)] == ["base_changed"]
+
+
+def test_correction_with_an_attendance_change_is_refused(
+    fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+
+    import openpyxl
+
+    real = writes.build_correction
+
+    def build(base: bytes, c: CorrectionInput) -> bytes:
+        wb = openpyxl.load_workbook(io.BytesIO(real(base, c)))
+        ws = wb["Attendance History"]
+        ws.cell(ws.max_row, 2).value = (ws.cell(ws.max_row, 2).value or 0) + 1
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    monkeypatch.setattr(writes, "build_correction", build)
+    name = _names_on_last(fx_session, 1)[0]
+    c = CorrectionInput.model_validate(
+        {"date": _last_event(fx_session), "rows": [{"name": name, "score": 7}]}
+    )
+    with pytest.raises(Refusal) as exc:
+        writes.preview_correction(fx_session, c, now=NOW)
+    assert exc.value.code == "invalid_input"
+    _assert_refused(fx_session, "invalid_input")
