@@ -231,6 +231,7 @@ def cfg(tmp_path: Path) -> Any:
     (tmp_path / "ghcr_token").write_text(GHCR_TOKEN + "\n")
     return d.Config.from_env(
         {
+            "REGISTRY": REG,
             "GHCR_USER": "gitgat-bot",
             "GITHUB_TOKEN_FILE": str(tmp_path / "github_token"),
             "GHCR_TOKEN_FILE": str(tmp_path / "ghcr_token"),
@@ -732,6 +733,7 @@ def test_cli_needs_ghcr_user_up_front(
     cfg: Any, deps: Any, capsys: pytest.CaptureFixture[str], command: list[str]
 ) -> None:
     env = {
+        "REGISTRY": REG,
         "GITHUB_TOKEN_FILE": str(cfg.github_token_file),
         "GHCR_TOKEN_FILE": str(cfg.ghcr_token_file),
         "STATE_DIR": str(cfg.state_dir),
@@ -739,6 +741,29 @@ def test_cli_needs_ghcr_user_up_front(
 
     assert d.main(command, env, deps) == 1
     assert "GHCR_USER is not set" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", [None, ""])
+@pytest.mark.parametrize("command", [["run"], ["once"], ["rollback", OLD_TAG]])
+def test_cli_needs_registry_up_front(
+    cfg: Any,
+    deps: Any,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+    value: str | None,
+) -> None:
+    env = {"GHCR_USER": "gitgat-bot", "STATE_DIR": str(cfg.state_dir)}
+    if value is not None:
+        env["REGISTRY"] = value
+
+    assert d.main(command, env, deps) == 1
+    assert "REGISTRY is not set" in capsys.readouterr().err
+
+
+def test_config_has_no_default_registry() -> None:
+    with pytest.raises(d.DeployError, match="REGISTRY is not set"):
+        d.Config.from_env({})
+    assert d.Config.from_env({"REGISTRY": REG}).registry == REG
 
 
 def test_corrupt_state_file_is_treated_as_empty(cfg: Any, deps: Any) -> None:
@@ -761,13 +786,13 @@ def test_history_keeps_the_newest_twenty(cfg: Any) -> None:
 
 
 def test_environment_defaults_and_limits() -> None:
-    cfg = d.Config.from_env({})
+    cfg = d.Config.from_env({"REGISTRY": REG})
     assert (cfg.poll_interval, cfg.branch, cfg.stack) == (120.0, "main", "sundayclays")
     assert cfg.repo_url == "https://github.com/gitgat/sunday-clays.git"
     with pytest.raises(d.DeployError, match="POLL_INTERVAL must be at least 30"):
-        d.Config.from_env({"POLL_INTERVAL": "5"})
+        d.Config.from_env({"REGISTRY": REG, "POLL_INTERVAL": "5"})
     with pytest.raises(d.DeployError, match="bad number"):
-        d.Config.from_env({"POLL_INTERVAL": "two minutes"})
+        d.Config.from_env({"REGISTRY": REG, "POLL_INTERVAL": "two minutes"})
 
 
 def test_run_command_turns_a_timeout_into_a_deploy_error() -> None:
@@ -793,7 +818,7 @@ def test_serve_keeps_polling_after_errors_and_stops_on_request(
 
 
 def test_cli_pause_status_resume(cfg: Any, deps: Any, capsys: pytest.CaptureFixture[str]) -> None:
-    env = {"STATE_DIR": str(cfg.state_dir)}
+    env = {"REGISTRY": REG, "STATE_DIR": str(cfg.state_dir)}
 
     assert d.main(["pause", "club", "shoot", "today"], env, deps) == 0
     assert d.main(["status"], env, deps) == 0
@@ -805,6 +830,7 @@ def test_cli_pause_status_resume(cfg: Any, deps: Any, capsys: pytest.CaptureFixt
 
 def test_cli_once_tag_and_rollback(cfg: Any, deps: Any, capsys: pytest.CaptureFixture[str]) -> None:
     env = {
+        "REGISTRY": REG,
         "GHCR_USER": "gitgat-bot",
         "GITHUB_TOKEN_FILE": str(cfg.github_token_file),
         "GHCR_TOKEN_FILE": str(cfg.ghcr_token_file),
@@ -823,8 +849,16 @@ def test_cli_once_tag_and_rollback(cfg: Any, deps: Any, capsys: pytest.CaptureFi
     assert "not a sha-<7> tag" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("command", [["status"], ["tag"], ["pause", "why"], ["resume"]])
+def test_state_commands_work_without_registry(
+    cfg: Any, deps: Any, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    assert d.main(command, {"STATE_DIR": str(cfg.state_dir)}, deps) in (0, 1)
+    assert "REGISTRY" not in capsys.readouterr().err
+
+
 def test_cli_rejects_a_bad_environment(deps: Any, capsys: pytest.CaptureFixture[str]) -> None:
-    assert d.main(["status"], {"POLL_INTERVAL": "1"}, deps) == 1
+    assert d.main(["status"], {"REGISTRY": REG, "POLL_INTERVAL": "1"}, deps) == 1
     assert "POLL_INTERVAL" in capsys.readouterr().err
 
 
@@ -832,6 +866,7 @@ def test_cli_run_stops_on_sigterm(cfg: Any, deps: Any, fake: Fake) -> None:
     import signal
 
     env = {
+        "REGISTRY": REG,
         "GHCR_USER": "gitgat-bot",
         "GITHUB_TOKEN_FILE": str(cfg.github_token_file),
         "GHCR_TOKEN_FILE": str(cfg.ghcr_token_file),
@@ -1088,7 +1123,7 @@ def test_drift_compares_the_local_registry_refs(cfg: Any, deps: Any, fake: Fake)
 
 
 def test_registries_come_from_the_environment(cfg: Any) -> None:
-    default = d.Config.from_env({})
+    default = d.Config.from_env({"REGISTRY": REG})
     assert (default.registry, default.source_registry) == ("registry.example.internal", "ghcr.io/gitgat")
     custom = d.Config.from_env({"REGISTRY": "r.example", "SOURCE_REGISTRY": "quay.io/x"})
     assert (
@@ -1111,6 +1146,7 @@ def test_cli_mirror_logs_in_mirrors_and_updates_nothing(
     cfg: Any, deps: Any, fake: Fake, capsys: pytest.CaptureFixture[str]
 ) -> None:
     env = {
+        "REGISTRY": REG,
         "GHCR_USER": "gitgat-bot",
         "GHCR_TOKEN_FILE": str(cfg.ghcr_token_file),
         "STATE_DIR": str(cfg.state_dir),

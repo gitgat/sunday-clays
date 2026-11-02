@@ -6,13 +6,31 @@ network, `websecure` entrypoint, `cloudflare` certresolver). Caddy serves the SP
 on plain `:80` inside the stack. `api`, `worker`, `db` and `backup` publish no
 ports and never join `traefik_public`.
 
+## Deploy-time settings
+
+The repo names none of the fleet's own hosts. Their values are environment variables read when the
+stack is rendered or the deployer starts, and they live in an untracked env file next to the deploy
+secrets, `secrets/deploy.env` in the server's checkout (gitignored, with the rest of `secrets/`):
+
+| Variable | Meaning |
+| --- | --- |
+| `SC_REGISTRY` | the private registry mirror every app image is pulled from (also the deployer's `REGISTRY`) |
+| `SC_DB_NODE` | hostname of the database node, where `db` and `backup` are pinned |
+| `SC_LAN_HOST` | LAN hostname of Caddy's `sundayclays-lan` router rule |
+| `GHCR_USER` | GitHub login that owns the `read:packages` token |
+| `IMAGE_TAG` | the release to deploy (`sha-<7>`); set per deploy, not stored in the file |
+
+All but `IMAGE_TAG` are required (`${…:?}`) with no defaults. Every hand `docker stack deploy`
+first runs `set -a; . secrets/deploy.env; set +a` from the checkout. CI renders the stack with
+placeholder values (`registry.example.internal`, `db-node`, `sundayclays.lan.example`).
+
 ## Preconditions (not built by this repo)
 
 - Two paths reach Caddy, and both peers are in a private range: the Cloudflare Tunnel
-  (`cloudflared` → `edge-proxy` → Caddy over `edge_public`, where Cloudflare sets
-  `CF-Connecting-IP`) and the LAN (`traefik-v3` → Caddy over `traefik_public`, where Traefik has no
+  (`cloudflared` → the edge proxy → Caddy over `edge_public`, where Cloudflare sets
+  `CF-Connecting-IP`) and the LAN (the LAN Traefik → Caddy over `traefik_public`, where Traefik has no
   `forwardedHeaders.trustedIPs` on `websecure` and sets `X-Forwarded-For` to the LAN client; verified
-  in `infra-repo/traefik-v3`). Caddy trusts forwarding headers only from private ranges
+  in the infra repo's Traefik stack). Caddy trusts forwarding headers only from private ranges
   (`TRUSTED_PROXIES=private_ranges` in `compose.swarm.yaml`; it publishes no ports, so only those two
   overlays reach it), reads `CF-Connecting-IP` first and `X-Forwarded-For` second
   (`client_ip_headers` in `deploy/caddy/Caddyfile`), and always overwrites `X-Real-IP`, which is the
@@ -23,9 +41,9 @@ ports and never join `traefik_public`.
   repository variable `PUBLISH_ON_PUSH=true` before the first deploy, or run the `ci` workflow on
   `main` with "Run workflow" (workflow_dispatch). Tags are `sha-<7>` and `latest`; deploy `sha-<7>`.
 - Every `sha-<7>` image is multi-arch (`linux/amd64` + `linux/arm64`). Placement: `api` and `worker`
-  run on the x86 nodes (`db-node` or `x86-node-2`, constraint `node.platform.arch==x86_64`),
+  run on the x86 nodes (the database node or another x86 node, constraint `node.platform.arch==x86_64`),
   because a 4-core arm64 Pi measured slow against the database; if both x86 nodes are down the app
-  stops. `db` and `backup` are pinned, by hostname, to `db-node`. `caddy` and the `deployer` can
+  stops. `db` and `backup` are pinned, by hostname, to the database node (`SC_DB_NODE`). `caddy` and the `deployer` can
   go anywhere. `scripts/check_stack.py` allows an architecture constraint only on `api` and
   `worker`, and only that one. The worker is limited to 1 GiB of memory. This is a `compose*.yaml`
   change, so it takes effect only after a hand `docker stack deploy`: follow "Deploy or upgrade"
@@ -33,25 +51,24 @@ ports and never join `traefik_public`.
 - On each Raspberry Pi node, `docker info 2>&1 | grep -i 'memory limit'` must print nothing. A
   `No memory limit support` warning means the kernel's memory cgroup is off and the limits are
   ignored: add `cgroup_enable=memory cgroup_memory=1` to the kernel command line and reboot.
-- Every node pulls the app images from the fleet registry, `registry.example.internal` (a plain
-  `registry:3` behind Traefik, pinned to `db-node`), never from `ghcr.io`: not every node can
+- Every node pulls the app images from the fleet registry, the private registry mirror `SC_REGISTRY` (a plain
+  `registry:3` behind Traefik, pinned to the database node), never from `ghcr.io`: not every node can
   reach GHCR. The deployer copies each release from GHCR into it ("Automatic deploys" →
   "Mirroring"), so only the manager running the deployer needs a `docker login ghcr.io`. The
-  stack's images are `registry.example.internal/sunday-clays-<image>:sha-<7>`; `SC_REGISTRY` overrides the
-  host, and `scripts/check_stack.py` rejects any `ghcr.io` reference in the stack. The registry has
+  stack's images are `$SC_REGISTRY/sunday-clays-<image>:sha-<7>`, and `scripts/check_stack.py` rejects any `ghcr.io` reference in the stack. The registry has
   no auth, so anything on the LAN can push to it; that matches the rest of the fleet.
 - Tags published before Plan 13 are amd64-only and are not supported on the mixed fleet. Swarm keeps
   a task off nodes its image does not support only when `docker stack deploy` (or
   `docker service update`) can read the image's index from the registry. If a deploy prints
   `could not be accessed on a registry to record its digest`, stop: it deployed with no platform
   restriction, and an amd64-only image on a Pi crash-loops with `exec format error`. Check that
-  `registry.example.internal` answers from the node and that the tag was mirrored, then deploy again
+  the registry mirror answers from the node and that the tag was mirrored, then deploy again
   before anything else.
 
 ## Public access (Cloudflare Tunnel)
 
 The public edge is the fleet's Cloudflare Tunnel: visitor → Cloudflare (TLS, WAF) → tunnel →
-`cloudflared` → `edge-proxy` (file provider, plain `:80`, network `edge_public`, no host ports)
+`cloudflared` → the edge proxy (file provider, plain `:80`, network `edge_public`, no host ports)
 → `sundayclays_caddy`. There is no Cloudflare Access (owner decision): the app's two passwords are the
 only gate, and the app limits logins to 10 failures / 15 min per real client IP. The stack side is
 in `compose.swarm.yaml` (Caddy joins the external `edge_public` network), but the deployer only
@@ -59,7 +76,7 @@ swaps images, so a stack that is already running needs a hand deploy first. Trus
 `TRUSTED_PROXIES=private_ranges` trusts every container on `edge_public` and `traefik_public`, so a
 compromised neighbour that reaches Caddy directly could set `CF-Connecting-IP` and dodge the per-IP
 login limit (the same was already true of `X-Forwarded-For` on `traefik_public`). The owner steps
-below are in the `infra-repo` repo, in this order (ingress last, as `cloudflared/config.yml`
+below are in the infra repo, in this order (ingress last, as `cloudflared/config.yml`
 itself warns):
 
 0. If the stack is already running, hand-deploy it per "Deploy or upgrade" so Caddy joins
@@ -67,7 +84,7 @@ itself warns):
    `docker service inspect sundayclays_caddy --format '{{json .Spec.TaskTemplate.Networks}}'`,
    which must include `edge_public`. Do this before touching `routes.yml`.
 
-1. `edge-proxy/dynamic/routes.yml`:
+1. The edge proxy's `dynamic/routes.yml`:
    - Add router `sundayclays-public`: rule ``Host(`sundayclays.claysmasher.com`)``, entryPoints
      `web`, service `sundayclays-public`, middlewares `sundayclays-throttle` then `edge-headers`.
    - Add service `sundayclays-public`: `loadBalancer` server `http://sundayclays_caddy:80`,
@@ -79,13 +96,13 @@ itself warns):
    - Check that `edge-headers` sets no `Content-Security-Policy` or `Cache-Control`, which would
      replace Caddy's. It does not today (HSTS, nosniff, referrer policy and frame options only). If
      it ever does, use a sundayclays-specific headers middleware without those.
-2. Deploy `edge-proxy`: `docker stack deploy -c /var/data/config/edge-proxy/docker-compose.yml edge-proxy`.
+2. Deploy the edge proxy stack from the infra repo's checkout with `docker stack deploy`.
 3. `cloudflared/config.yml`:
-   - Add `- hostname: sundayclays.claysmasher.com` / `service: http://edge-proxy:80` above the
+   - Add `- hostname: sundayclays.claysmasher.com` / `service: http://<edge-proxy>:80` above the
      `http_status:404` fallback.
    - Delete any existing A or CNAME record for `sundayclays.claysmasher.com` first (or edit it into
      the proxied tunnel CNAME); `route dns` fails if the name already has a record.
-   - Run `cloudflared tunnel route dns edge-tunnel sundayclays.claysmasher.com`. The tunnel login
+   - Run `cloudflared tunnel route dns <tunnel-name> sundayclays.claysmasher.com`. The tunnel login
      must have authorized the `claysmasher.com` zone; otherwise create the proxied CNAME to
      `<UUID>.cfargotunnel.com` by hand.
    - `docker service update --force cloudflared_cloudflared`.
@@ -162,8 +179,22 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    `docker stack deploy` below runs from that directory. `scripts/dev-secrets.sh` needs `uv` and `openssl`. Type the real passwords and the
    ping URL at a silent prompt, so they never land in shell history or `ps` output. (Once Plan 04 has
    landed you can instead write the two hashes with
-   `docker run --rm -it registry.example.internal/sunday-clays-backend:sha-<7> python -m sunday_clays.auth.hashpw`
+   `docker run --rm -it "$SC_REGISTRY/sunday-clays-backend:sha-<7>" python -m sunday_clays.auth.hashpw`
    once that tag is mirrored, see "Turn it on".)
+
+   Create the deploy-time settings file ("Deploy-time settings") with the real values of your
+   fleet. They live only in this untracked file, never in the repo:
+
+   ```bash
+   cat > secrets/deploy.env <<'ENV'
+   SC_REGISTRY=<registry-mirror-host>
+   SC_DB_NODE=<database-node-hostname>
+   SC_LAN_HOST=<lan-hostname>
+   GHCR_USER=<github-login>
+   ENV
+   chmod 600 secrets/deploy.env
+   set -a; . secrets/deploy.env; set +a
+   ```
 
    ```bash
    read -rsp 'Viewer password: ' VIEWER_PASSWORD && echo && export VIEWER_PASSWORD
@@ -178,7 +209,7 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    (`printf '\n' > secrets/backup_hc_url`): Swarm rejects an empty secret, and the backup service
    treats a URL that is blank after trimming whitespace as "no ping".
 
-3. On the database node (`db-node`; override with `SC_DB_NODE=<hostname>` at deploy time) create
+3. On the database node (the host named by `SC_DB_NODE`) create
    the data directories with the owners the containers run as:
 
    ```bash
@@ -247,7 +278,7 @@ state is carried over or seeded rather than started empty.
    (`dep tag`; the new directory, not the old deployer) or from the API service:
 
    ```bash
-   export GHCR_USER=<github-login>
+   set -a; . secrets/deploy.env; set +a   # "Deploy-time settings"
    export IMAGE_TAG=$(dep tag)     # or: docker service inspect sundayclays_api --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
    [[ $IMAGE_TAG =~ ^sha-[0-9a-f]{7}$ ]] && echo "deploy $IMAGE_TAG" || echo "STOP: bad tag '$IMAGE_TAG'"
    docker stack deploy -c compose.yaml -c compose.swarm.yaml sundayclays
@@ -285,7 +316,7 @@ first); it reads the deployer's state from the shared `/var/data` directory, so 
 which manager runs the task:
 
 ```bash
-export GHCR_USER=<github-login>    # owner of the read:packages token ("Automatic deploys" → "Tokens")
+set -a; . secrets/deploy.env; set +a   # SC_REGISTRY, SC_DB_NODE, SC_LAN_HOST, GHCR_USER ("Deploy-time settings")
 dep pause "stack deploy"   # waits for a rollout in progress
 export IMAGE_TAG=$(dep tag)
 [[ $IMAGE_TAG =~ ^sha-[0-9a-f]{7}$ ]] && echo "deploy $IMAGE_TAG" || echo "STOP: bad tag '$IMAGE_TAG'"
@@ -310,13 +341,13 @@ curl -fsS https://sundayclays.claysmasher.com/api/health   # {"status":"ok","ver
   previous image. `db` never rolls back automatically.
 - `worker`, `db` and `backup` run one replica each; the worker gets 5 minutes to finish its current
   job.
-- `IMAGE_TAG` and `GHCR_USER` are required (`${…:?}`); `latest` is never deployed. The tag must
+- `IMAGE_TAG`, `GHCR_USER`, `SC_REGISTRY`, `SC_DB_NODE` and `SC_LAN_HOST` are required (`${…:?}`); `latest` is never deployed. The tag must
   also have a `sunday-clays-deployer` image, which every tag published after Plan 13 has; to go
   back to an older release, use `deployer.py rollback` ("Rollback"), which never touches the
   deployer.
 - `docker stack deploy` needs no `--with-registry-auth`: the fleet registry takes no credentials.
 - If `docker stack deploy` prints `could not be accessed on a registry to record its digest`, stop
-  and make `registry.example.internal` reachable: without the index, Swarm gets no platform list and may
+  and make the registry mirror (`SC_REGISTRY`) reachable: without the index, Swarm gets no platform list and may
   put an image on a node of the wrong architecture. Tags published before Plan 13 are amd64-only and are
   not supported on this fleet ("Preconditions").
 
@@ -325,13 +356,13 @@ curl -fsS https://sundayclays.claysmasher.com/api/health   # {"status":"ok","ver
 The `deployer` service (`deploy/deployer/deployer.py`, one task on a Swarm manager) asks GitHub for
 `main`'s SHA every 2 minutes (`git ls-remote`). When `main` has moved and CI has published
 `sunday-clays-backend`, `-frontend` and `-deployer` at `sha-<7>` to GHCR (the `publish` job runs only
-after `ci-ok` passes on `main`), it mirrors the three into `registry.example.internal`, then runs
-`docker service update --image registry.example.internal/…:sha-<7>` on `api`, waits until `/api/health`
+after `ci-ok` passes on `main`), it mirrors the three into the registry mirror (`SC_REGISTRY`), then runs
+`docker service update --image $SC_REGISTRY/…:sha-<7>` on `api`, waits until `/api/health`
 reports `sha-<7>`, then updates `worker`, `caddy` and `backup`, and records the SHA in its
 state directory, `/var/data/sunday-clays/deployer` (mounted at `/state`). A service already on that image is skipped.
 
 - **Mirroring.** For each image the deployer runs
-  `docker buildx imagetools create --tag registry.example.internal/sunday-clays-<image>:sha-<7> ghcr.io/gitgat/sunday-clays-<image>:sha-<7>`,
+  `docker buildx imagetools create --tag $SC_REGISTRY/sunday-clays-<image>:sha-<7> ghcr.io/gitgat/sunday-clays-<image>:sha-<7>`,
   which copies the whole multi-arch index from registry to registry (nothing is pulled onto the
   node), then reads the copy back and refuses the release unless it lists exactly `linux/amd64` and
   `linux/arm64` (one platform only, or an `unknown/unknown` attestation entry, fails). Never push
@@ -396,7 +427,7 @@ An expired or wrong token shows in the logs as `poll failed: git ls-remote faile
 
 ### Turn it on (first deploy)
 
-The deployer runs on any Swarm manager, Raspberry Pi (`pi-manager-1`) or VM: its image, like the app
+The deployer runs on any Swarm manager, Raspberry Pi or VM: its image, like the app
 images, is published for both `linux/arm64` and `linux/amd64`.
 
 1. With the owner's OK, publish from every CI-green `main` commit:
@@ -404,21 +435,21 @@ images, is published for both `linux/arm64` and `linux/amd64`.
    then also runs the `publish` jobs (one cached build per image and architecture, then a merge;
    a few Actions minutes).
 2. Wait for the `publish` run of the newest `main` commit. The stack pulls the deployer's own
-   image from the fleet registry too, so bootstrap by hand: on a manager with the GHCR login
+   image from the registry mirror (`SC_REGISTRY`) too, so bootstrap by hand: on a manager with the GHCR login
    ("One-time setup" step 1), mirror all three images, check them, then deploy the tag once
    (there is no deployer to pause yet):
 
    ```bash
    docker buildx version   # precheck: the buildx plugin must be installed on this manager
+   set -a; . secrets/deploy.env; set +a   # SC_REGISTRY etc. ("Deploy-time settings")
    TAG=sha-<7>
    for i in backend frontend deployer; do
-     docker buildx imagetools create --tag "registry.example.internal/sunday-clays-$i:$TAG" \
+     docker buildx imagetools create --tag "$SC_REGISTRY/sunday-clays-$i:$TAG" \
        "ghcr.io/gitgat/sunday-clays-$i:$TAG"
    done
    for i in backend frontend deployer; do   # each must list linux/amd64 and linux/arm64
-     docker buildx imagetools inspect "registry.example.internal/sunday-clays-$i:$TAG"
+     docker buildx imagetools inspect "$SC_REGISTRY/sunday-clays-$i:$TAG"
    done
-   export GHCR_USER=<github-login>
    IMAGE_TAG=$TAG docker stack deploy -c compose.yaml -c compose.swarm.yaml sundayclays
    ```
 
@@ -440,9 +471,10 @@ a one-off container on that directory; no `docker exec` on the node that happens
 Define these once per shell:
 
 ```bash
-# one-off: same image as the running deployer, same state directory (no socket or tokens needed)
+# one-off: same image as the running deployer, same state directory (no socket or tokens needed);
+# needs SC_REGISTRY exported (`set -a; . secrets/deploy.env; set +a`)
 dep() { [ -d /var/data/sunday-clays/deployer ] || { echo "run: sudo install -d -m 700 /var/data/sunday-clays/deployer first"; return 1; }
-  docker run --rm -v /var/data/sunday-clays/deployer:/state \
+  docker run --rm -e REGISTRY="$SC_REGISTRY" -v /var/data/sunday-clays/deployer:/state \
   "$(docker service inspect sundayclays_deployer --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')" "$@"; }
 # fallback, and for the commands that need the Docker socket and tokens (mirror, rollback): run on
 # the node that runs the task (`docker service ps sundayclays_deployer`)
@@ -452,7 +484,7 @@ dep status          # live SHA and tag, pause, last failure, last 20 deploys
 dep tag             # just the live tag
 dep pause "club shoot"
 dep resume
-dep_exec mirror sha-<7>  # copy a release into registry.example.internal, deploy nothing
+dep_exec mirror sha-<7>  # copy a release into the registry mirror (SC_REGISTRY), deploy nothing
 ```
 
 The image's entrypoint is already `python3 /app/deployer.py`, so `dep` takes the subcommand directly.
@@ -483,7 +515,7 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   ```
 
   `rollback` mirrors the tag again first, so the tag must still be published in GHCR. If GHCR no
-  longer has it, use the manual loop below from what `registry.example.internal` still holds.
+  longer has it, use the manual loop below from what the registry mirror (`SC_REGISTRY`) still holds.
 
   This updates `api`, `worker`, `caddy` and `backup` in the usual order (skipping any already on
   that tag) and **pauses** automatic deploys, because otherwise the next poll would put `main`
@@ -515,14 +547,15 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   split between two releases.
 
   ```bash
+  set -a; . secrets/deploy.env; set +a   # SC_REGISTRY ("Deploy-time settings")
   TAG=sha-<7>   # a tag from the deployer's history; stop if an update prints "could not be accessed"
   for i in backend frontend; do   # only if a registry GC removed the tag; needs the GHCR login
-    docker buildx imagetools create --tag "registry.example.internal/sunday-clays-$i:$TAG" \
+    docker buildx imagetools create --tag "$SC_REGISTRY/sunday-clays-$i:$TAG" \
       "ghcr.io/gitgat/sunday-clays-$i:$TAG"
   done
   for s in api worker caddy backup; do
     kind=backend; [ "$s" = caddy ] && kind=frontend
-    docker service update --image "registry.example.internal/sunday-clays-$kind:$TAG" \
+    docker service update --image "$SC_REGISTRY/sunday-clays-$kind:$TAG" \
       "sundayclays_$s" || { echo "stopped at $s"; break; }
   done
   ```
@@ -543,8 +576,8 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
 
 - `deploy sha-<7>: updating sundayclays_<service>` … `deploy sha-<7>: done`: a rollout
   (`… already on sha-<7>` for a service that needed nothing).
-- `mirror sha-<7>: ghcr.io/… -> registry.example.internal/…` (or `… already there`): the release copied
-  into the fleet registry before the rollout. `deploy sha-<7> FAILED: mirror: …` means the copy
+- `mirror sha-<7>: ghcr.io/… -> <SC_REGISTRY>/…` (or `… already there`): the release copied
+  into the registry mirror (`SC_REGISTRY`) before the rollout. `deploy sha-<7> FAILED: mirror: …` means the copy
   failed or the index was not exactly amd64 + arm64; nothing was updated.
 - `sha-<7>: waiting for …`: CI has not finished publishing that commit (or it failed CI). Logged
   once per commit.
@@ -552,8 +585,8 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   the previous release. Nothing recorded as deployed; see "Rollback".
 - `drift: sundayclays_<service> runs …; recorded sha-<7>, redeploying it`: something other than the
   deployer changed a service's image.
-- `poll failed: …`: GitHub or GHCR unreachable, or a token is wrong or expired. (A registry.example.internal
-  outage shows as `deploy sha-<7> FAILED: mirror: cannot …`.)
+- `poll failed: …`: GitHub or GHCR unreachable, or a token is wrong or expired. (An outage of the registry
+  mirror shows as `deploy sha-<7> FAILED: mirror: cannot …`.)
 - `WARNING … database schema is newer than this image's migrations`, logged by `api` at start-up:
   expected right after a deliberate rollback ("Rollback") or a failed deploy (`deploy sha-<7> FAILED: …`
   in the deployer's log), because the previous `api` is put back after the new one migrated.
@@ -569,7 +602,7 @@ place) and leaves all six `_v<old>` secrets orphaned.
 
 ```bash
 # 1. put the new value in ./secrets/<name>
-# 2. run the "Deploy or upgrade" sequence (pause, IMAGE_TAG from `deployer.py tag`, GHCR_USER,
+# 2. run the "Deploy or upgrade" sequence (pause, IMAGE_TAG from `deployer.py tag`, `secrets/deploy.env` sourced,
 #    resume) with `export SECRETS_REV=2` before its `docker stack deploy`
 # 3. once the services are healthy, remove all six previous versions (not the deployer's tokens,
 #    which have their own DEPLOYER_SECRETS_REV)
@@ -636,7 +669,7 @@ says: every stored answer is keyed by the data version, the local date and the r
 - Every run, the service's own and `verify-restore.sh`'s, holds an exclusive lock on
   `backups/backup.lock`. A second run waits for the first for up to 10 minutes
   (`BACKUP_LOCK_TIMEOUT`, seconds), then fails like any failed dump (exit 1, `/fail` ping).
-- The `backup` task runs on the database node (`db-node`), so run the `docker exec` commands
+- The `backup` task runs on the database node (the host named by `SC_DB_NODE`), so run the `docker exec` commands
   below on that node (`docker service ps sundayclays_backup` shows where it runs); run
   `docker service scale` on a manager.
 - Take a fresh dump and check that it restores cleanly into a scratch database (live data is not

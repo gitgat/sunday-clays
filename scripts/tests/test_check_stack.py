@@ -75,9 +75,15 @@ VALID: dict[str, Any] = {
 }
 
 
-def run(stack: dict[str, Any], sc_registry: str = "") -> subprocess.CompletedProcess[str]:
+TEST_REGISTRY = "registry.example.internal"
+
+
+def run(
+    stack: dict[str, Any], sc_registry: str | None = TEST_REGISTRY
+) -> subprocess.CompletedProcess[str]:
+    """The fleet registry comes from SC_REGISTRY, as exported for the render; None leaves it unset."""
     env = {k: v for k, v in os.environ.items() if k != "SC_REGISTRY"}
-    if sc_registry:
+    if sc_registry is not None:
         env["SC_REGISTRY"] = sc_registry
     return subprocess.run(
         [sys.executable, str(SCRIPT)],
@@ -556,9 +562,17 @@ def test_sc_registry_moves_the_pull_registry_for_every_release_image() -> None:
     _on_registry(stack, "reg.lan:5000")
 
     assert run(stack, sc_registry="reg.lan:5000").returncode == 0
-    refused = run(stack)  # the render used SC_REGISTRY but the check was told nothing
+    refused = run(stack)  # the render used another SC_REGISTRY than the check was told
     assert refused.returncode == 1
     assert "must be registry.example.internal/sunday-clays-backend:sha-<7>" in refused.stderr
+
+
+def test_sc_registry_is_required() -> None:
+    for unset in (None, ""):
+        result = run(VALID, sc_registry=unset)
+
+        assert result.returncode == 2
+        assert "SC_REGISTRY" in result.stderr
 
 
 def test_ghcr_is_refused_even_when_sc_registry_names_it() -> None:
@@ -576,7 +590,11 @@ def test_reads_a_file_argument(tmp_path: Path) -> None:
     rendered.write_text(yaml.safe_dump(VALID))
 
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), str(rendered)], capture_output=True, text=True, check=False
+        [sys.executable, str(SCRIPT), str(rendered)],
+        env={**os.environ, "SC_REGISTRY": TEST_REGISTRY},
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
     assert result.returncode == 0, result.stderr

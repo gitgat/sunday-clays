@@ -2,7 +2,7 @@
 {
 	servers {
 		# Two paths reach Caddy, both through a private-range peer:
-		# - Cloudflare Tunnel: cloudflared -> edge-proxy -> Caddy. Cloudflare overwrites
+		# - Cloudflare Tunnel: cloudflared -> the edge proxy -> Caddy. Cloudflare overwrites
 		#   CF-Connecting-IP at its edge, so it is the real visitor.
 		# - LAN: traefik-v3 -> Caddy. The internal router strips CF-Connecting-IP (a client could send
 		#   its own), so Caddy falls back to X-Forwarded-For, which traefik-v3 sets to the LAN client.

@@ -10,6 +10,7 @@ from PIL import Image
 import cli
 
 BASE = "https://imagen.test"
+IMAGEN_HOST = "https://imagen.example.internal"
 MANIFEST = """
 style: "style"
 defaults: {model: z-image, size: 64, seeds: [1, 2], negative: "n"}
@@ -84,15 +85,27 @@ def mock_imagen(respx_mock, state="completed"):
     return create
 
 
-@pytest.mark.respx(base_url=cli.DEFAULT_IMAGEN_URL, assert_all_called=False)
-def test_generate_without_credentials_skips_login_and_uses_the_default_url(paths, monkeypatch, respx_mock):
-    for name in ("IMAGEN_URL", "IMAGEN_USERNAME", "IMAGEN_PASSWORD"):
+@pytest.mark.respx(base_url=IMAGEN_HOST, assert_all_called=False)
+def test_generate_without_credentials_skips_login_and_uses_imagen_url(paths, monkeypatch, respx_mock):
+    monkeypatch.setenv("IMAGEN_URL", IMAGEN_HOST)
+    for name in ("IMAGEN_USERNAME", "IMAGEN_PASSWORD"):
         monkeypatch.delenv(name, raising=False)
     create = mock_imagen(respx_mock)
     assert run(paths, "generate") == 0
     assert create.call_count == 2
     assert respx_mock["login"].call_count == 0
     assert sorted(p.name for p in (paths["out"] / "candidates" / "doubleheader").iterdir()) == ["1.png", "2.png"]
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_generate_needs_imagen_url(paths, monkeypatch, capsys, value):
+    for name in ("IMAGEN_USERNAME", "IMAGEN_PASSWORD"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("IMAGEN_URL", raising=False)
+    if value is not None:
+        monkeypatch.setenv("IMAGEN_URL", value)
+    assert run(paths, "generate") == 2
+    assert "IMAGEN_URL" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("present", ["IMAGEN_USERNAME", "IMAGEN_PASSWORD"])
@@ -325,9 +338,10 @@ def test_an_empty_credential_counts_as_unset(paths, monkeypatch, capsys, name):
     assert "set both IMAGEN_USERNAME and IMAGEN_PASSWORD, or neither" in capsys.readouterr().err
 
 
-@pytest.mark.respx(base_url=cli.DEFAULT_IMAGEN_URL, assert_all_called=False)
-def test_empty_credentials_and_url_mean_anonymous_on_the_default_host(paths, monkeypatch, respx_mock):
-    for name in ("IMAGEN_URL", "IMAGEN_USERNAME", "IMAGEN_PASSWORD"):
+@pytest.mark.respx(base_url=IMAGEN_HOST, assert_all_called=False)
+def test_empty_credentials_mean_anonymous(paths, monkeypatch, respx_mock):
+    monkeypatch.setenv("IMAGEN_URL", IMAGEN_HOST)
+    for name in ("IMAGEN_USERNAME", "IMAGEN_PASSWORD"):
         monkeypatch.setenv(name, "")
     create = mock_imagen(respx_mock)
     assert run(paths, "generate") == 0
