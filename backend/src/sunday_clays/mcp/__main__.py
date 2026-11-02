@@ -1,5 +1,6 @@
 """Entrypoint: ``python -m sunday_clays.mcp``."""
 
+import logging
 import os
 
 import uvicorn
@@ -9,6 +10,10 @@ from sunday_clays.mcp.server import build_app, default_session_factory, write_se
 
 
 def main() -> None:
+    # The SDK logs a malformed request's input on the root logger (shared/session.py), which can
+    # carry shooter names: keep root at ERROR and let only our own loggers speak at WARNING.
+    logging.getLogger().setLevel(logging.ERROR)
+    logging.getLogger("sunday_clays").setLevel(logging.WARNING)
     app = build_app(load_auth_token(), default_session_factory, write_session_factory)
     uvicorn.run(
         app,

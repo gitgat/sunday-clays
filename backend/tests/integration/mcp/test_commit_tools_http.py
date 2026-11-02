@@ -180,6 +180,7 @@ def test_real_pg_dump_happy_path(
     monkeypatch.setattr("sunday_clays.mcp.backup.MIN_DUMP_BYTES", 100)
     monkeypatch.setenv("MCP_COMMIT_ENABLED", "true")
     monkeypatch.setenv("MCP_BACKUP_DIR", str(tmp_path))
+    (tmp_path / "last_success").write_text("")  # the nightly job's marker: a shared backups dir
     monkeypatch.setenv("DATABASE_URL", fx_engine.url.render_as_string(hide_password=False))
     pid = _preview(fx_session)
     is_error, text = asyncio.run(

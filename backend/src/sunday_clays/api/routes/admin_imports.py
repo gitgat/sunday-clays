@@ -7,13 +7,14 @@ from typing import Annotated, ClassVar, Final
 from fastapi import APIRouter, Depends, File, Path, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from sunday_clays.api.routes._admin import JobRefOut
 from sunday_clays.auth.deps import Actor, admin_actor, record_audit
 from sunday_clays.config import Settings, get_settings
 from sunday_clays.db import SessionDep
-from sunday_clays.domain.errors import DomainError
+from sunday_clays.domain.errors import ConflictError, DomainError
 from sunday_clays.domain.imports import (
     commit_import,
     discard_import,
@@ -25,6 +26,7 @@ from sunday_clays.domain.imports import list_imports as list_import_summaries
 from sunday_clays.domain.schemas import ImportPreview, ImportSummary
 from sunday_clays.ingest.types import ParseError
 from sunday_clays.jobs.queue import JobOut, enqueue, get_job
+from sunday_clays.models import McpOperation
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
@@ -115,6 +117,22 @@ def commit(
     import_id: ImportId, session: SessionDep, actor: ActorDep, body: CommitIn | None = None
 ) -> JobRefOut:
     confirm = body.confirm_removals if body is not None else False
+    staged_by_mcp = session.scalar(
+        select(McpOperation.id)
+        .where(
+            or_(
+                McpOperation.scores_import_id == import_id,
+                McpOperation.stations_import_id == import_id,
+            )
+        )
+        .limit(1)
+    )
+    if staged_by_mcp is not None:
+        # The approve command checks the preview's age and base, and takes a backup first.
+        raise ConflictError(
+            "mcp_staged",
+            "Staged by the scores MCP: use the approve command, or discard it",
+        )
     commit_import(session, import_id, confirm_removals=confirm)
     job_id = enqueue(session, "rebuild", dedupe_key="rebuild")
     record_audit(

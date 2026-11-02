@@ -672,6 +672,10 @@ def _take_dump(session: Session, op: McpOperation, dump: DumpFn | None) -> str:
             database_url=database_url_from_env(),
             lock_timeout_s=TOOL_DUMP_LOCK_TIMEOUT_S,
         )
+    except backup.BackupDirNotShared as exc:
+        raise Refusal(
+            "backup_dir_not_shared", f"the pre-import backup was not taken, nothing changed: {exc}"
+        ) from exc
     except backup.BackupError as exc:
         raise Refusal(
             "backup_failed", f"the pre-import backup failed, nothing changed: {exc}"
@@ -958,8 +962,9 @@ def rollback_week(
         _audit_refusal(session, "rollback", parsed, "correction_needs_human")
         raise Refusal(
             "correction_needs_human",
-            "a human must roll back a correction: use the admin imports page and roll back both "
-            "the scores and the stations import (the approve command only commits)",
+            "a human must roll back a correction: use the admin imports page and roll back its "
+            "scores import only (a correction has no stations import; the approve command only "
+            "commits)",
         )
     return rollback_operation(
         session, preview_id, idempotency_key=idempotency_key, now=now, dump=dump

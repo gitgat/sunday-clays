@@ -1,7 +1,7 @@
 import io
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import openpyxl
@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sunday_clays.config import Settings, get_settings
-from sunday_clays.models import Base
+from sunday_clays.models import Base, McpOperation
 
 IMPORTS = Base.metadata.tables["imports"]
 JOBS = Base.metadata.tables["jobs"]
@@ -257,6 +257,58 @@ def test_second_commit_is_409_not_pending(admin_client: TestClient, stations_byt
     again = admin_client.post(f"/api/admin/imports/{import_id}/commit")
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "not_pending"
+
+
+def _link_to_mcp(
+    session: Session, *, scores: int | None = None, stations: int | None = None
+) -> None:
+    session.add(
+        McpOperation(
+            kind="week",
+            event_date=date(2026, 10, 4),
+            status="previewed",
+            scores_import_id=scores,
+            stations_import_id=stations,
+        )
+    )
+    session.flush()
+
+
+@pytest.mark.parametrize("linked", ["scores", "stations"])
+def test_an_mcp_staged_import_cannot_be_committed_from_the_admin_page(
+    admin_client: TestClient,
+    scores_bytes: bytes,
+    stations_bytes: bytes,
+    session: Session,
+    linked: str,
+) -> None:
+    data, name = (
+        (scores_bytes, "scores_2026-09-27.xlsx")
+        if linked == "scores"
+        else (stations_bytes, "stations_2026-09-27.xlsx")
+    )
+    import_id = _upload(admin_client, data, name)["import_id"]
+    _link_to_mcp(session, **{linked: import_id})
+    before = _actions(session)
+
+    refused = admin_client.post(f"/api/admin/imports/{import_id}/commit")
+
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "mcp_staged"
+    assert "approve command" in refused.json()["error"]["message"]
+    assert _status(session, import_id) == "pending"
+    assert _actions(session) == before  # no commit audit, no rebuild queued
+    assert session.scalar(select(JOBS.c.id)) is None
+
+
+def test_an_mcp_staged_import_can_still_be_discarded_from_the_admin_page(
+    admin_client: TestClient, stations_bytes: bytes, session: Session
+) -> None:
+    import_id = _upload(admin_client, stations_bytes)["import_id"]
+    _link_to_mcp(session, stations=import_id)
+
+    assert admin_client.post(f"/api/admin/imports/{import_id}/discard").status_code == 204
+    assert _status(session, import_id) == "discarded"
 
 
 def test_discard_marks_import_discarded(

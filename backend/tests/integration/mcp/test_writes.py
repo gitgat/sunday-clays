@@ -710,3 +710,72 @@ def test_correction_with_an_attendance_change_is_refused(
         writes.preview_correction(fx_session, c, now=NOW)
     assert exc.value.code == "invalid_input"
     _assert_refused(fx_session, "invalid_input")
+
+
+def _correction_input(session: Session) -> CorrectionInput:
+    names = _names_on_last(session, 1)
+    return CorrectionInput.model_validate(
+        {"date": _last_event(session), "rows": [{"name": names[0], "score": 7}]}
+    )
+
+
+def test_the_same_correction_returns_the_same_preview(fx_session: Session) -> None:
+    c = _correction_input(fx_session)
+    first = writes.preview_correction(fx_session, c, now=NOW)
+
+    second = writes.preview_correction(fx_session, c, now=NOW + dt.timedelta(minutes=5))
+
+    assert second.preview_id == first.preview_id
+    assert _pending(fx_session) == 1  # no second staging
+
+
+def test_an_unexpected_build_failure_is_an_invalid_input_refusal(
+    fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sunday_clays.mcp.build import BuildError
+
+    def broken(base: bytes, c: CorrectionInput) -> bytes:
+        raise BuildError("sheet_missing")
+
+    monkeypatch.setattr(writes, "build_correction", broken)
+    with pytest.raises(Refusal) as exc:
+        writes.preview_correction(fx_session, _correction_input(fx_session), now=NOW)
+    assert exc.value.code == "invalid_input"
+    assert "sheet_missing" in exc.value.message
+    assert _pending(fx_session) == 0
+
+
+def test_a_conflict_with_another_code_passes_through_translation() -> None:
+    from sunday_clays.domain.errors import ConflictError
+
+    out = writes._translate(ConflictError("removals_not_confirmed", "confirm first"))
+    assert (out.code, out.message) == ("removals_not_confirmed", "confirm first")
+
+
+def test_a_discard_that_loses_the_race_to_an_admin_is_ignored(
+    fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sunday_clays.domain.errors import ConflictError
+
+    out = writes.preview_week(fx_session, _week(), now=NOW)
+    op = fx_session.get(McpOperation, out.preview_id)
+    assert op is not None
+
+    def lost(session: Session, import_id: int) -> None:
+        raise ConflictError("not_pending", "an admin got there first")
+
+    monkeypatch.setattr(writes, "discard_import", lost)
+    writes._discard_if_pending(fx_session, op.scores_import_id)  # must not raise
+
+
+def test_expiring_a_correction_has_no_stations_import_to_discard(fx_session: Session) -> None:
+    out = writes.preview_correction(fx_session, _correction_input(fx_session), now=NOW)
+    op = fx_session.get(McpOperation, out.preview_id)
+    assert op is not None
+    assert op.stations_import_id is None
+
+    writes._expire(fx_session, op)  # discards the scores import; nothing to do for the stations
+
+    assert op.status == "expired"
+    assert _pending(fx_session) == 0
+    writes._discard_if_pending(fx_session, None)  # and a missing id is simply ignored

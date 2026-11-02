@@ -35,6 +35,7 @@ def test_real_pg_dump_is_restorable(
 ) -> None:
     _skip_unless_pg_dump_is_new_enough(engine)
     monkeypatch.setattr("sunday_clays.mcp.backup.MIN_DUMP_BYTES", 100)
+    (tmp_path / "last_success").write_text("")  # the nightly job's marker
 
     path = pre_import_dump(uuid.uuid4(), backup_dir=tmp_path, database_url=database_url)
 

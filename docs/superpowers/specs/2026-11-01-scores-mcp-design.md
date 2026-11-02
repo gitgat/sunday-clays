@@ -184,8 +184,9 @@ This is how commits happen during the preview-only period. A web-UI approve butt
 - **Readable** via `get_job`.
 - **Every write is also logged** to `audit_log` with role `mcp` and the action `mcp.preview`, `mcp.commit`,
   `mcp.rollback` or `mcp.refuse`.
-- **Expiry.** Previews over 1 hour old are swept to `expired` and their pending imports discarded. This happens lazily
-  on the next preview call, and on a scheduler tick.
+- **Expiry.** Previews over 1 hour old are swept to `expired` and their pending imports discarded. There is no
+  scheduler tick: the sweep runs at the start of every write tool call (preview, commit, rollback) and of the approve command, so an
+  expired preview is cleaned up the next time anything touches the server.
 
 ## Config
 - `MCP_COMMIT_ENABLED` is a bool and defaults to false.
@@ -220,7 +221,6 @@ This is how commits happen during the preview-only period. A web-UI approve butt
 ## Left to the builder
 - Module layout inside `sunday_clays/mcp/`.
 - The exact search ranking for `find_shooters`.
-- The scheduler wiring for the expiry sweep.
 - Exact wording of the tool descriptions. They must carry the skill's rules:
   - count marks, not row totals;
   - a thrown-out station is credited perfect for everyone;

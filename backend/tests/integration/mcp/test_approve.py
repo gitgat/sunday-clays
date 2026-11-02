@@ -12,7 +12,6 @@ from uuid import UUID
 import pytest
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
-from tests.conftest import FIXTURES_DIR
 from tests.integration.mcp.test_commit import (
     AFTER,
     KEY,
@@ -22,8 +21,7 @@ from tests.integration.mcp.test_commit import (
     _week,
 )
 
-from sunday_clays.domain.imports import active_scores_import, commit_import, stage_import
-from sunday_clays.domain.rebuild import rebuild_live
+from sunday_clays.domain.imports import active_scores_import
 from sunday_clays.mcp import approve, server, writes
 from sunday_clays.mcp.writes import Refusal
 from sunday_clays.models import AuditLog, Job, McpOperation
@@ -33,14 +31,9 @@ STALE = LATER - dt.timedelta(hours=2)
 
 
 @pytest.fixture
-def fac(committed_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Factory]:
-    monkeypatch.setenv("DATABASE_URL", committed_engine.url.render_as_string(hide_password=False))
+def fac(base_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Factory]:
+    monkeypatch.setenv("DATABASE_URL", base_engine.url.render_as_string(hide_password=False))
     monkeypatch.setenv("MCP_COMMIT_ENABLED", "true")
-    with Session(committed_engine) as s:
-        base = stage_import(s, (FIXTURES_DIR / "scores_2026-09-27.xlsx").read_bytes(), "base.xlsx")
-        commit_import(s, base.import_id)
-        rebuild_live(s)
-        s.commit()
     try:
         yield server.write_session_factory
     finally:
@@ -91,12 +84,12 @@ def _active(engine: Engine) -> int | None:
 
 # --- confirmation ------------------------------------------------------------------------------
 def test_typing_yes_commits_and_reports_the_job_and_backup(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     pid = _week_preview(fac)
     code, out = _run([pid], Stdin("yes\n"))
     assert code == 0, out
-    op = _op(committed_engine, pid)
+    op = _op(base_engine, pid)
     assert op.status == "committed"
     assert op.commit_path == "cli-approve"
     assert (op.idempotency_key or "").startswith("cli-")
@@ -104,7 +97,7 @@ def test_typing_yes_commits_and_reports_the_job_and_backup(
     assert "pre-import-x.dump" in out
     assert "get_job" in out
     assert pid in out
-    with Session(committed_engine) as s:
+    with Session(base_engine) as s:
         assert s.get(Job, op.job_id) is not None
 
 
@@ -128,21 +121,21 @@ def test_the_summary_is_shown_before_the_prompt(fac: Factory) -> None:
 
 @pytest.mark.parametrize("answer", ["y\n", "YES\n", "Yes\n", "yes please\n", "\n", "", "no\n"])
 def test_anything_but_yes_declines_with_no_change(
-    fac: Factory, committed_engine: Engine, answer: str
+    fac: Factory, base_engine: Engine, answer: str
 ) -> None:
     pid = _week_preview(fac)
-    base = _active(committed_engine)
+    base = _active(base_engine)
     dump = FakeDump()
     code, out = _run([pid], Stdin(answer), dump=dump)
     assert code == 1
     assert dump.calls == []
-    assert _op(committed_engine, pid).status == "previewed"
-    assert _active(committed_engine) == base
+    assert _op(base_engine, pid).status == "previewed"
+    assert _active(base_engine) == base
     assert "Not committed" in out
 
 
 def test_no_tty_without_yes_is_a_usage_error_with_no_change(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     pid = _week_preview(fac)
     dump = FakeDump()
@@ -150,18 +143,18 @@ def test_no_tty_without_yes_is_a_usage_error_with_no_change(
     assert code == 2
     assert "--yes" in out
     assert dump.calls == []
-    assert _op(committed_engine, pid).status == "previewed"
+    assert _op(base_engine, pid).status == "previewed"
 
 
-def test_yes_flag_commits_without_a_prompt(fac: Factory, committed_engine: Engine) -> None:
+def test_yes_flag_commits_without_a_prompt(fac: Factory, base_engine: Engine) -> None:
     pid = _week_preview(fac)
     code, out = _run([pid, "--yes"], Stdin("", tty=False))
     assert code == 0, out
-    assert _op(committed_engine, pid).status == "committed"
+    assert _op(base_engine, pid).status == "committed"
 
 
 def test_a_week_commits_with_mcp_commit_enabled_unset(
-    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+    fac: Factory, base_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pid = _week_preview(fac)
     monkeypatch.delenv("MCP_COMMIT_ENABLED")
@@ -170,12 +163,12 @@ def test_a_week_commits_with_mcp_commit_enabled_unset(
     assert gated.value.code == "commits_disabled"
     code, out = _run([pid, "--yes"], Stdin(tty=False))  # ... the human path is not
     assert code == 0, out
-    assert _op(committed_engine, pid).status == "committed"
+    assert _op(base_engine, pid).status == "committed"
 
 
 # --- corrections -------------------------------------------------------------------------------
 def test_a_correction_commits_and_shows_old_and_new_scores(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     pid = _correction_preview(fac)
     with pytest.raises(Refusal) as tool:
@@ -186,32 +179,32 @@ def test_a_correction_commits_and_shows_old_and_new_scores(
     assert "correction" in out
     assert " -> " in out
     assert "station_score_mismatch" in out
-    stored = _op(committed_engine, pid).result["preview"]["changes"][0]
+    stored = _op(base_engine, pid).result["preview"]["changes"][0]
     assert stored["name"] in out
     assert f"{stored['old_score']} -> {stored['new_score']}" in out
-    op = _op(committed_engine, pid)
+    op = _op(base_engine, pid)
     assert (op.status, op.commit_path) == ("committed", "cli-approve")
 
 
 # --- refusals ----------------------------------------------------------------------------------
-def test_a_stale_base_is_refused_base_changed(fac: Factory, committed_engine: Engine) -> None:
+def test_a_stale_base_is_refused_base_changed(fac: Factory, base_engine: Engine) -> None:
     a = _week_preview(fac)
     b = _week_preview(fac, _week(AFTER, 40))
     writes.commit_week_tool(fac, b, idempotency_key="key-bbbbbbb", now=LATER, dump=FakeDump())
-    moved = _active(committed_engine)
+    moved = _active(base_engine)
     code, out = _run([a, "--yes"], Stdin(tty=False))
     assert code == 1
     assert "base_changed" in out
-    assert _active(committed_engine) == moved
-    assert _op(committed_engine, a).status == "expired"
+    assert _active(base_engine) == moved
+    assert _op(base_engine, a).status == "expired"
 
 
-def test_an_expired_preview_is_refused_expired(fac: Factory, committed_engine: Engine) -> None:
+def test_an_expired_preview_is_refused_expired(fac: Factory, base_engine: Engine) -> None:
     pid = _week_preview(fac, now=STALE)
     code, out = _run([pid, "--yes"], Stdin(tty=False))
     assert code == 1
     assert "expired" in out
-    assert _op(committed_engine, pid).status == "expired"
+    assert _op(base_engine, pid).status == "expired"
 
 
 def test_an_unknown_preview_exits_1_without_a_change(fac: Factory) -> None:
@@ -229,16 +222,14 @@ def test_an_already_committed_preview_is_refused(fac: Factory) -> None:
     assert "already_committed" in out
 
 
-def test_a_backup_failure_exits_1_and_commits_nothing(
-    fac: Factory, committed_engine: Engine
-) -> None:
+def test_a_backup_failure_exits_1_and_commits_nothing(fac: Factory, base_engine: Engine) -> None:
     pid = _week_preview(fac)
-    base = _active(committed_engine)
+    base = _active(base_engine)
     code, out = _run([pid, "--yes"], Stdin(tty=False), dump=FakeDump(fail=True))
     assert code == 1
     assert "backup_failed" in out
-    assert _op(committed_engine, pid).status == "previewed"
-    assert _active(committed_engine) == base
+    assert _op(base_engine, pid).status == "previewed"
+    assert _active(base_engine) == base
 
 
 # --- bad arguments -----------------------------------------------------------------------------
@@ -256,12 +247,12 @@ def test_missing_and_extra_arguments_exit_2() -> None:
 
 
 # --- hygiene -----------------------------------------------------------------------------------
-def test_the_database_url_and_audit_are_clean(fac: Factory, committed_engine: Engine) -> None:
+def test_the_database_url_and_audit_are_clean(fac: Factory, base_engine: Engine) -> None:
     pid = _week_preview(fac)
     code, out = _run([pid, "--yes"], Stdin(tty=False))
     assert code == 0
     assert "postgresql" not in out
-    with Session(committed_engine) as s:
+    with Session(base_engine) as s:
         details = s.scalars(select(AuditLog.details).where(AuditLog.action == "mcp.commit")).all()
     assert any(d.get("commit_path") == "cli-approve" for d in details)
 
@@ -330,18 +321,18 @@ def _audits(engine: Engine, action: str = "mcp.refuse") -> list[dict[str, Any]]:
         return [a.details for a in s.scalars(select(AuditLog).where(AuditLog.action == action))]
 
 
-def test_the_cli_sweeps_stale_previews_first(fac: Factory, committed_engine: Engine) -> None:
+def test_the_cli_sweeps_stale_previews_first(fac: Factory, base_engine: Engine) -> None:
     stale = _week_preview(fac, _week(AFTER, 40), now=STALE)
     pid = _week_preview(fac)
     assert _run([pid, "--yes"], Stdin(tty=False))[0] == 0
-    assert _op(committed_engine, stale).status == "expired"  # swept, not merely left behind
+    assert _op(base_engine, stale).status == "expired"  # swept, not merely left behind
 
 
-def test_a_leading_space_is_not_yes(fac: Factory, committed_engine: Engine) -> None:
+def test_a_leading_space_is_not_yes(fac: Factory, base_engine: Engine) -> None:
     pid = _week_preview(fac)
     code, _out = _run([pid], Stdin(" yes\n"))
     assert code == 1
-    assert _op(committed_engine, pid).status == "previewed"
+    assert _op(base_engine, pid).status == "previewed"
 
 
 def test_the_summary_numbers_messages_and_clock(fac: Factory) -> None:
@@ -378,6 +369,48 @@ def test_duplicates_and_note_are_printed(fac: Factory) -> None:
     assert "check each against find_shooters" in out.getvalue()
 
 
+def test_a_near_miss_of_a_known_name_prints_a_possible_duplicate_line(
+    fac: Factory, base_engine: Engine
+) -> None:
+    from sunday_clays.mcp.build import WeekInput
+    from sunday_clays.models import Shooter
+
+    with Session(base_engine) as s:
+        known = s.scalars(select(Shooter.display_name).order_by(Shooter.display_name)).first()
+    assert known is not None
+    assert "," in known
+    surname, given = (part.strip() for part in known.split(",", 1))
+    near = f"{surname}x, {given}"  # one letter off a shooter who is not here that day
+    data = _week().model_dump(mode="json", by_alias=True)
+    data["shooters"][1]["name"] = near
+
+    pid = writes.run_write(
+        fac, lambda s: writes.preview_week(s, WeekInput.model_validate(data), now=LATER).preview_id
+    )
+    out = io.StringIO()
+    approve.main([pid], Stdin("no\n"), out, dump=FakeDump(), now=lambda: LATER)
+
+    line = next(ln for ln in out.getvalue().splitlines() if "possible duplicate:" in ln)
+    assert near in line
+    assert known in line
+
+
+def test_a_busy_database_says_nothing_changed_and_to_re_run(
+    fac: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pid = _week_preview(fac)
+
+    def busy(*_a: object, **_k: object) -> dict[str, Any]:
+        raise Refusal("busy", "the database was busy")
+
+    monkeypatch.setattr(writes, "commit_operation", busy)
+    code, out = _run([pid, "--yes"], Stdin(tty=False))
+
+    assert code == 1
+    assert "Busy: the database was busy and nothing was changed; re-run this command." in out
+    assert "Refused:" not in out
+
+
 def test_a_correction_summary_has_counts(fac: Factory) -> None:
     pid = _correction_preview(fac)
     out = io.StringIO()
@@ -398,7 +431,7 @@ def test_a_non_previewed_status_goes_straight_to_the_refusal(fac: Factory) -> No
 
 @pytest.mark.parametrize("how", ["superseded", "base_moved"])
 def test_state_changing_between_summary_and_yes_refuses_with_no_dump(
-    fac: Factory, committed_engine: Engine, how: str
+    fac: Factory, base_engine: Engine, how: str
 ) -> None:
     a = _week_preview(fac)
     b = _week_preview(fac, _week(AFTER, 40))
@@ -412,7 +445,7 @@ def test_state_changing_between_summary_and_yes_refuses_with_no_dump(
             )
 
     dump = FakeDump()
-    base = _active(committed_engine) if how == "superseded" else None
+    base = _active(base_engine) if how == "superseded" else None
     code, out = _run([a], HookIn(change), dump=dump)
     assert code == 1
     assert "Refused:" in out
@@ -421,25 +454,25 @@ def test_state_changing_between_summary_and_yes_refuses_with_no_dump(
         assert dump.calls == []
     else:
         assert dump.calls == []
-        assert _active(committed_engine) == base
-    assert _op(committed_engine, a).status == "expired"
+        assert _active(base_engine) == base
+    assert _op(base_engine, a).status == "expired"
 
 
-def test_a_cli_refusal_writes_the_audit_row(fac: Factory, committed_engine: Engine) -> None:
+def test_a_cli_refusal_writes_the_audit_row(fac: Factory, base_engine: Engine) -> None:
     pid = _week_preview(fac, now=STALE)
     _run([pid, "--yes"], Stdin(tty=False))
-    assert {"action": "commit", "code": "expired", "preview_id": pid} in _audits(committed_engine)
+    assert {"action": "commit", "code": "expired", "preview_id": pid} in _audits(base_engine)
     _run(["00000000-0000-4000-8000-000000000000", "--yes"], Stdin(tty=False))
-    assert any(d.get("code") == "unknown_preview" for d in _audits(committed_engine))
+    assert any(d.get("code") == "unknown_preview" for d in _audits(base_engine))
 
 
 def test_a_commit_prints_both_import_ids_and_both_ways_to_check(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     pid = _week_preview(fac)
     code, out = _run([pid, "--yes"], Stdin(tty=False))
     assert code == 0
-    op = _op(committed_engine, pid)
+    op = _op(base_engine, pid)
     assert f"scores import {op.scores_import_id}" in out
     assert f"stations import {op.stations_import_id}" in out
     assert f"get_job with the job id {op.job_id}" in out
@@ -448,14 +481,14 @@ def test_a_commit_prints_both_import_ids_and_both_ways_to_check(
 
 
 def test_a_database_error_is_uncertain_and_mentions_no_key(
-    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+    fac: Factory, base_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from sqlalchemy import text
 
     pid = _week_preview(fac)
 
     def bad(*_a: object, **_k: object) -> int:
-        raise_sql(committed_engine)
+        raise_sql(base_engine)
         return 0
 
     def raise_sql(engine: Engine) -> None:
@@ -465,7 +498,7 @@ def test_a_database_error_is_uncertain_and_mentions_no_key(
     monkeypatch.setattr(writes, "enqueue", bad)
     code, out = _run([pid, "--yes"], Stdin(tty=False))
     assert code == 1
-    assert "the outcome is uncertain; re-run this command" in out
+    assert "re-run this command (a committed preview" in out
     assert "42P01" in out
     assert "ProgrammingError" in out
     assert "idempotency" not in out
@@ -474,7 +507,7 @@ def test_a_database_error_is_uncertain_and_mentions_no_key(
 
 
 def test_closed_stdin_exits_2_without_yes_and_works_with_it(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     pid = _week_preview(fac)
     import sys  # sys.stdin is None when the process was started with stdin closed
@@ -485,15 +518,15 @@ def test_closed_stdin_exits_2_without_yes_and_works_with_it(
         out = io.StringIO()
         assert approve.main([pid], None, out, dump=FakeDump(), now=lambda: LATER) == 2
         assert "--yes" in out.getvalue()
-        assert _op(committed_engine, pid).status == "previewed"
+        assert _op(base_engine, pid).status == "previewed"
         out = io.StringIO()
         assert approve.main([pid, "--yes"], None, out, dump=FakeDump(), now=lambda: LATER) == 0
     finally:
         sys.stdin = real
-    assert _op(committed_engine, pid).status == "committed"
+    assert _op(base_engine, pid).status == "committed"
 
 
-def test_ctrl_c_at_the_prompt_is_not_committed(fac: Factory, committed_engine: Engine) -> None:
+def test_ctrl_c_at_the_prompt_is_not_committed(fac: Factory, base_engine: Engine) -> None:
     def interrupt() -> None:
         raise KeyboardInterrupt
 
@@ -503,10 +536,10 @@ def test_ctrl_c_at_the_prompt_is_not_committed(fac: Factory, committed_engine: E
     assert code == 1
     assert "Not committed." in out
     assert dump.calls == []
-    assert _op(committed_engine, pid).status == "previewed"
+    assert _op(base_engine, pid).status == "previewed"
 
 
-def test_ctrl_c_during_the_backup_is_not_committed(fac: Factory, committed_engine: Engine) -> None:
+def test_ctrl_c_during_the_backup_is_not_committed(fac: Factory, base_engine: Engine) -> None:
     def interrupt() -> None:
         raise KeyboardInterrupt
 
@@ -514,11 +547,11 @@ def test_ctrl_c_during_the_backup_is_not_committed(fac: Factory, committed_engin
     code, out = _run([pid, "--yes"], Stdin(tty=False), dump=FakeDump(hook=interrupt))
     assert code == 1
     assert "Not committed." in out
-    assert _op(committed_engine, pid).status == "previewed"
+    assert _op(base_engine, pid).status == "previewed"
 
 
 def test_ctrl_c_during_the_commit_step_is_ambiguous(
-    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+    fac: Factory, base_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def boom(*_a: object, **_k: object) -> int:
         raise KeyboardInterrupt
@@ -529,3 +562,29 @@ def test_ctrl_c_during_the_commit_step_is_ambiguous(
     assert code == 1
     assert "may or may not have committed" in out
     assert "Traceback" not in out
+
+
+def test_help_prints_usage_and_exits_zero_without_touching_anything() -> None:
+    out = io.StringIO()
+    code = approve.main(["--help"], Stdin(), out, dump=FakeDump(), now=lambda: LATER)
+    assert code == 0
+
+
+def test_a_correction_summary_without_day_totals_omits_that_line() -> None:
+    lines = approve._render(
+        {
+            "kind": "correction",
+            "date": dt.date(2026, 9, 27),
+            "status": "previewed",
+            "created_at": LATER,
+            "expires_at": LATER + dt.timedelta(hours=1),
+            "now": LATER,
+            "preview": {
+                "changes": [{"name": "Testshooter, Alpha", "old_score": 40, "new_score": 41}]
+            },
+        }
+    )
+    text = "\n".join(lines)
+    assert "Testshooter, Alpha: 40 -> 41" in text
+    assert "the day then has" not in text
+    assert "station detail stays" in text

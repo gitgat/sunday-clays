@@ -138,7 +138,7 @@ def _uncertain(say: Callable[[str], None], exc: writes.Refusal) -> None:
         "The outcome is uncertain: the database returned an error and the scores may or may not "
         "have changed."
     )
-    say("  the outcome is uncertain; re-run this command (a committed preview won't commit twice)")
+    say("  re-run this command (a committed preview won't commit twice)")
     say("  or check get_job with the preview id.")
     say(f"  sqlstate {exc.sqlstate or 'unknown'}, error class {exc.error_class or 'unknown'}")
 

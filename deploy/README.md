@@ -720,8 +720,9 @@ says: every stored answer is keyed by the data version, the local date and the r
 
 ## Scores MCP
 
-The `mcp` service runs `python -m sunday_clays.mcp` from the backend image: a read-only
-[Model Context Protocol](https://modelcontextprotocol.io) server over the scores database. It
+The `mcp` service runs `python -m sunday_clays.mcp` from the backend image: a
+[Model Context Protocol](https://modelcontextprotocol.io) server over the scores database. It reads
+the scores, and it stages previews and (when enabled) commits them with a verified backup. It
 listens on port 8080 (`GET /healthz` is open; everything else needs the bearer token) and is placed
 on any node (it carries no placement constraint).
 
@@ -738,6 +739,16 @@ on any node (it carries no placement constraint).
      and refreshes the deployer. It must come before the new deployer's first automatic run,
      because the deployer raises if `mcp` does not exist yet.
   4. Verify with `docker service ps sundayclays_mcp`.
+- **Rolling out phase 2 (the write tools and the approve command).** The deployer only swaps the
+  image, so until a hand deploy the `mcp` service has no backups bind and none of the new env, and an
+  approve would write its "verified" dump into the container's own layer, lost when the task is
+  replaced. The tool and the approve command therefore refuse (`backup_dir_not_shared`) unless the
+  backups directory holds the `last_success` file that the nightly backup job writes. In order:
+  1. Wait until `dep status` shows the phase 2 merge SHA or a later one.
+  2. Do "Deploy or upgrade" (pause, `docker stack deploy`, resume). It must run with the
+     `SECRETS_REV` from `secrets/deploy.env` sourced (the `set -a; . secrets/deploy.env` line), or
+     the stack deploys against the wrong secret revision. This adds the backups bind and the env.
+  3. Only then run the first approve.
 - **Preview-only period.** The server has staging tools (`preview_week`, `preview_correction`) and
   commit tools (`commit_week`, `rollback_week`), but `MCP_COMMIT_ENABLED` is `"false"` in
   `compose.swarm.yaml`, so the commit tools refuse. An agent can stage a Sunday or a correction and
@@ -757,24 +768,31 @@ on any node (it carries no placement constraint).
   exactly `yes`; anything else cancels with no change. Without a terminal it refuses unless you add
   `--yes`. Exit codes: 0 committed, 1 refused or declined (the refusal code is printed, for example
   `expired` or `base_changed`: stage the preview again), 2 bad arguments. On success it prints the
-  both import ids, the rebuild job id and the backup file name. Check rebuild progress with `get_job`
+  import ids (a Sunday has two, a correction has one), the rebuild job id and the backup file name. Check rebuild progress with `get_job`
   using the job id; `get_job` with the preview id returns the commit record.
   This command ignores `MCP_COMMIT_ENABLED` by design and is not reachable from any MCP tool.
 - **Turning on auto-commit later** is the owner's decision, not an automatic step. Set
   `MCP_COMMIT_ENABLED` to `"true"` in `compose.swarm.yaml` and hand deploy ("Deploy or upgrade"); the
   deployer only swaps images, so it never changes this. Corrections still need the approve command.
   Complete the pre-launch checks below first.
-- **Undoing a commit.** A committed Sunday is two imports, scores and stations, and the approve
-  command prints both ids. With commits enabled, call `rollback_week` with the preview id: it rolls
-  back both, works only for the latest committed Sunday, and takes a backup first. A committed
-  correction is rolled back by the owner only. With commits disabled, use the admin imports page and
-  roll back BOTH imports, scores and stations. Rolling back only the scores leaves orphan station
-  hits that keep the date alive, and `preview_week` then refuses that date with
-  `not_after_last_event`. Either way a rebuild is queued; wait for it. `get_job` with the preview id
+- **Undoing a commit.** The two kinds differ.
+  - A committed Sunday (from `preview_week`) is two imports, scores and stations, and the approve
+    command prints both ids. With commits enabled, call `rollback_week` with the preview id: it
+    rolls back both, works only for the latest committed Sunday, and takes a backup first. With
+    commits disabled, use the admin imports page and roll back BOTH imports, scores and stations.
+    Rolling back only the scores leaves orphan station hits that keep the date alive, and
+    `preview_week` then refuses that date with `not_after_last_event`.
+  - A committed correction is one scores import and has no stations import. The owner rolls it back
+    on the admin imports page, its scores import only. Do not roll back any stations import for that
+    date: it belongs to the original Sunday, and rolling it back would drop that Sunday's station
+    detail. `rollback_week` refuses a correction.
+
+  Either way a rebuild is queued; wait for it. `get_job` with the preview id
   keeps reporting `committed` after an admin rollback, because the commit record is history; trust
   the imports page. Restoring from the `pre-import-*.dump` file named in the commit result is the
   last resort.
-- **Pre-launch checks before ever enabling auto-commit:**
+- **Pre-launch checks, run at the first approve (not only before enabling auto-commit):** the
+  approve command takes the same dump with the same lock, so these apply from the first one.
   1. The backup lock works across nodes on NFS: run the nightly backup and an approve at the same
      time from different nodes and confirm one waits for the other (`fcntl.flock` over NFS depends
      on the mount options).

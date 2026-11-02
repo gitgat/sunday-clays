@@ -211,7 +211,7 @@ def _stations_workbook(
         return None
     out = openpyxl.Workbook()
     w = out.active
-    if w is None:  # a new workbook always has an active sheet
+    if w is None:  # pragma: no cover - a new openpyxl workbook always has an active sheet
         raise BuildError("workbook_error")
     w.title = day.strftime("%m %d %y")
     w.append(["Event Date"])

@@ -16,17 +16,13 @@ from uuid import UUID
 import pytest
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
-from tests.conftest import FIXTURES_DIR
 from tests.integration.mcp.test_commit import AFTER, KEY, KEY2, LATER, FakeDump, _week
 
 from sunday_clays.domain.errors import ConflictError
 from sunday_clays.domain.imports import (
     IMPORT_LIFECYCLE_LOCK_KEY,
     active_scores_import,
-    commit_import,
-    stage_import,
 )
-from sunday_clays.domain.rebuild import rebuild_live
 from sunday_clays.mcp import server, writes
 from sunday_clays.mcp.writes import Refusal
 from sunday_clays.models import Import, McpOperation
@@ -36,14 +32,9 @@ STALE = LATER - dt.timedelta(hours=2)
 
 
 @pytest.fixture
-def fac(committed_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Factory]:
-    monkeypatch.setenv("DATABASE_URL", committed_engine.url.render_as_string(hide_password=False))
+def fac(base_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Factory]:
+    monkeypatch.setenv("DATABASE_URL", base_engine.url.render_as_string(hide_password=False))
     monkeypatch.setenv("MCP_COMMIT_ENABLED", "true")
-    with Session(committed_engine) as s:
-        base = stage_import(s, (FIXTURES_DIR / "scores_2026-09-27.xlsx").read_bytes(), "base.xlsx")
-        commit_import(s, base.import_id)
-        rebuild_live(s)
-        s.commit()
     try:
         yield server.write_session_factory
     finally:
@@ -146,10 +137,10 @@ def _commit(fac: Factory, pid: str, key: str = KEY, dump: Any = None) -> dict[st
 
 # --- savepoints: nothing half-committed survives run_write's commit ----------------------------
 def test_a_conflict_on_the_second_commit_leaves_both_imports_pending(
-    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+    fac: Factory, base_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pid = _preview(fac)
-    base = _active(committed_engine)
+    base = _active(base_engine)
     real, calls = writes.commit_import, []
 
     def flaky(session: Session, import_id: int, **kw: Any) -> None:
@@ -163,18 +154,18 @@ def test_a_conflict_on_the_second_commit_leaves_both_imports_pending(
         _commit(fac, pid)
     assert exc.value.code == "import_not_pending"
     assert len(calls) == 2  # the first commit really ran, then was undone
-    state = _state(committed_engine, pid)
+    state = _state(base_engine, pid)
     assert state["imports"] == ["pending", "pending"]
     assert state["status"] == "previewed"
     assert state["active"] == base
 
 
 def test_a_conflict_on_the_second_rollback_leaves_the_commit_in_place(
-    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+    fac: Factory, base_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pid = _preview(fac)
     _commit(fac, pid)
-    committed = _state(committed_engine, pid)
+    committed = _state(base_engine, pid)
     assert committed["imports"] == ["committed", "committed"]
     real, calls = writes.rollback_import, []
 
@@ -189,14 +180,14 @@ def test_a_conflict_on_the_second_rollback_leaves_the_commit_in_place(
         writes.rollback_week_tool(fac, pid, idempotency_key=KEY2, now=LATER, dump=FakeDump())
     assert exc.value.code == "import_not_committed"
     assert len(calls) == 2
-    assert _state(committed_engine, pid) == committed
+    assert _state(base_engine, pid) == committed
 
 
 def test_an_enqueue_failure_undoes_the_commit(
-    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+    fac: Factory, base_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pid = _preview(fac)
-    base = _active(committed_engine)
+    base = _active(base_engine)
 
     def boom(*_a: object, **_k: object) -> int:
         raise RuntimeError("queue is down")
@@ -204,14 +195,14 @@ def test_an_enqueue_failure_undoes_the_commit(
     monkeypatch.setattr(writes, "enqueue", boom)
     with pytest.raises(RuntimeError):
         _commit(fac, pid)
-    state = _state(committed_engine, pid)
+    state = _state(base_engine, pid)
     assert state["imports"] == ["pending", "pending"]
     assert (state["status"], state["active"]) == ("previewed", base)
 
 
 # --- I1: a preview must not expire an operation that is committing -----------------------------
 def test_a_preview_cannot_expire_an_operation_that_commits_mid_dump(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     a = _preview(fac)
     out: dict[str, Any] = {}
@@ -220,13 +211,13 @@ def test_a_preview_cannot_expire_an_operation_that_commits_mid_dump(
     assert slow.entered.wait(15)
     other = _week(score=44)
     previewing = _thread(lambda: writes.preview_week_tool(fac, other, now=LATER), out, "preview")
-    _wait_for(lambda: _lock_waiters(committed_engine) >= 1, "the preview to block on the row")
+    _wait_for(lambda: _lock_waiters(base_engine) >= 1, "the preview to block on the row")
     assert "preview" not in out
     slow.release.set()
     committing.join(60)
     previewing.join(60)
     assert out["commit"][0] == "ok"
-    state = _state(committed_engine, a)
+    state = _state(base_engine, a)
     assert state["status"] == "committed"  # not overwritten with 'expired'
     assert state["imports"] == ["committed", "committed"]
     # The newcomer saw the moved base and was refused rather than recorded on a stale one.
@@ -240,7 +231,7 @@ def test_a_preview_cannot_expire_an_operation_that_commits_mid_dump(
 
 # --- I2: no lifecycle lock held across a dump ---------------------------------------------------
 def test_the_lifecycle_lock_is_not_held_during_a_slow_dump_with_a_stale_op(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     stale = _preview(fac, _week(AFTER, 40), now=STALE)
     a = _preview(fac)
@@ -249,18 +240,18 @@ def test_the_lifecycle_lock_is_not_held_during_a_slow_dump_with_a_stale_op(
     committing = _thread(lambda: _commit(fac, a, dump=slow), out, "commit")
     assert slow.entered.wait(15)
     try:
-        assert _lifecycle_lock_granted(committed_engine) == 0
+        assert _lifecycle_lock_granted(base_engine) == 0
         # The sweep already expired the stale op in its own short transaction.
-        assert _state(committed_engine, stale)["status"] == "expired"
+        assert _state(base_engine, stale)["status"] == "expired"
     finally:
         slow.release.set()
         committing.join(60)
     assert out["commit"][0] == "ok"
-    assert _state(committed_engine, a)["status"] == "committed"
+    assert _state(base_engine, a)["status"] == "committed"
 
 
 def test_commit_itself_never_sweeps_so_it_holds_no_lifecycle_lock_over_the_dump(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     """Calls the transaction body directly, so only an in-transaction sweep could take the lock."""
     stale = _preview(fac, _week(AFTER, 40), now=STALE)
@@ -277,16 +268,16 @@ def test_commit_itself_never_sweeps_so_it_holds_no_lifecycle_lock_over_the_dump(
     )
     assert slow.entered.wait(15)
     try:
-        assert _lifecycle_lock_granted(committed_engine) == 0
+        assert _lifecycle_lock_granted(base_engine) == 0
     finally:
         slow.release.set()
         committing.join(60)
     assert out["commit"][0] == "ok"
-    assert _state(committed_engine, stale)["status"] == "previewed"  # not its job
+    assert _state(base_engine, stale)["status"] == "previewed"  # not its job
 
 
 def test_the_sweep_does_not_deadlock_with_a_commit_holding_a_row(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     stale = _preview(fac, _week(AFTER, 40), now=STALE)
     a = _preview(fac)
@@ -302,14 +293,12 @@ def test_the_sweep_does_not_deadlock_with_a_commit_holding_a_row(
     t0.join(60)
     assert out["t0"][0] == "ok", out
     assert out["t1"][0] == "ok", out
-    assert _state(committed_engine, stale)["status"] == "expired"
+    assert _state(base_engine, stale)["status"] == "expired"
 
 
-def test_the_sweep_skips_a_row_another_transaction_holds(
-    fac: Factory, committed_engine: Engine
-) -> None:
+def test_the_sweep_skips_a_row_another_transaction_holds(fac: Factory, base_engine: Engine) -> None:
     stale = _preview(fac, _week(AFTER, 40), now=STALE)
-    holder = committed_engine.connect()
+    holder = base_engine.connect()
     tx = holder.begin()
     try:
         holder.execute(text("SELECT id FROM mcp_operations WHERE id = :i FOR UPDATE"), {"i": stale})
@@ -318,17 +307,17 @@ def test_the_sweep_skips_a_row_another_transaction_holds(
         t.join(10)
         assert not t.is_alive(), "the sweep blocked on a row it should have skipped"
         assert out["sweep"][0] == "ok"
-        assert _state(committed_engine, stale)["status"] == "previewed"
+        assert _state(base_engine, stale)["status"] == "previewed"
     finally:
         tx.rollback()
         holder.close()
     writes.sweep_expired(fac, LATER)
-    assert _state(committed_engine, stale)["status"] == "expired"  # picked up once free
+    assert _state(base_engine, stale)["status"] == "expired"  # picked up once free
 
 
 # --- the lifecycle lock is held when the base is re-checked ------------------------------------
 def test_the_lifecycle_lock_is_held_at_the_locked_recheck(
-    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+    fac: Factory, base_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pid = _preview(fac)
     real = writes._stale_base
@@ -353,11 +342,11 @@ def test_the_lifecycle_lock_is_held_at_the_locked_recheck(
     assert len(held) == 2
     assert held[0] == 0  # the early check runs before the dump, without the lock
     assert held[1] == 1  # the re-check runs under it
-    assert _state(committed_engine, pid)["status"] == "committed"
+    assert _state(base_engine, pid)["status"] == "committed"
 
 
 def test_the_stale_base_is_refused_when_it_moves_during_a_real_dump(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     """Two real transactions: the base moves while the first is in its dump."""
     a = _preview(fac)
@@ -379,19 +368,19 @@ def test_the_stale_base_is_refused_when_it_moves_during_a_real_dump(
         ),
     )
     assert moved["status"] == "committed"
-    after_move = _active(committed_engine)
+    after_move = _active(base_engine)
     slow.release.set()
     t.join(60)
     assert out["a"][0] == "err"
     assert isinstance(out["a"][1], Refusal)
     assert out["a"][1].code == "base_changed"
-    assert _active(committed_engine) == after_move
-    assert _state(committed_engine, a)["status"] == "expired"
+    assert _active(base_engine) == after_move
+    assert _state(base_engine, a)["status"] == "expired"
 
 
 # --- R1: an identical preview must not expire an operation that committed meanwhile -----------
 def test_an_identical_preview_never_expires_an_operation_that_commits_meanwhile(
-    fac: Factory, committed_engine: Engine
+    fac: Factory, base_engine: Engine
 ) -> None:
     wk = _week(AFTER, 40)
     a = _preview(fac, wk)
@@ -404,13 +393,13 @@ def test_an_identical_preview_never_expires_an_operation_that_commits_meanwhile(
     # behind A's row lock ...
     writes.commit_week_tool(fac, b, idempotency_key="key-bbbbbbb", now=LATER, dump=FakeDump())
     previewing = _thread(lambda: writes.preview_week_tool(fac, wk, now=LATER), out, "p")
-    _wait_for(lambda: _lock_waiters(committed_engine) >= 1, "the preview to block on A's row")
+    _wait_for(lambda: _lock_waiters(base_engine) >= 1, "the preview to block on A's row")
     # ... B is rolled back (the base is A's again) and A commits, then the preview resumes.
     writes.rollback_week_tool(fac, b, idempotency_key="key-rrrrrrr", now=LATER, dump=FakeDump())
     slow.release.set()
     committing.join(60)
     previewing.join(60)
     assert out["a"][0] == "ok", out
-    state = _state(committed_engine, a)
+    state = _state(base_engine, a)
     assert state["status"] == "committed"  # not overwritten with 'expired'
     assert state["imports"] == ["committed", "committed"]

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from sunday_clays.mcp import backup
-from sunday_clays.mcp.backup import BackupError, pre_import_dump
+from sunday_clays.mcp.backup import BackupDirNotShared, BackupError, pre_import_dump
 
 URL = "postgresql+psycopg://clays_user:s3cret%40pw@db.internal:5433/sunday_clays"
 PREVIEW = uuid.UUID("12345678-1234-5678-1234-567812345678")
@@ -50,6 +50,7 @@ def fake_pg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def backup_dir(tmp_path: Path) -> Path:
     path = tmp_path / "backups"
     path.mkdir()
+    (path / "last_success").write_text("")  # the nightly job's marker: this is the shared bind
     return path
 
 
@@ -245,6 +246,23 @@ class _FrozenClock:
         return self.stamp
 
 
+def test_a_directory_without_the_nightly_marker_is_refused_and_nothing_is_taken(
+    fake_pg: Path, tmp_path: Path
+) -> None:
+    unshared = tmp_path / "container-layer"
+    unshared.mkdir()
+
+    with pytest.raises(BackupDirNotShared, match="shared"):
+        pre_import_dump(PREVIEW, backup_dir=unshared, database_url=URL)
+
+    assert list(unshared.iterdir()) == []  # not even a lock file
+    assert not (fake_pg / "dump_argv").exists()  # pg_dump never ran
+
+
+def test_a_directory_with_the_nightly_marker_is_accepted(fake_pg: Path, backup_dir: Path) -> None:
+    assert pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url=URL).exists()
+
+
 def test_unusable_directories_raise_backup_error(tmp_path: Path, fake_pg: Path) -> None:
     not_a_dir = tmp_path / "afile"
     not_a_dir.write_text("")
@@ -263,9 +281,11 @@ def test_permission_problems_raise_backup_error(
     no_search.chmod(0o000)
     read_only = tmp_path / "ro"
     read_only.mkdir()
+    (read_only / "last_success").write_text("")
     read_only.chmod(0o555)
     late = tmp_path / "late"
     late.mkdir()
+    (late / "last_success").write_text("")
     try:
         with pytest.raises(BackupError):
             pre_import_dump(PREVIEW, backup_dir=no_search, database_url=URL)
@@ -303,3 +323,23 @@ def test_uri_has_no_password_param_and_encodes_the_query(fake_pg: Path, backup_d
 )
 def test_libpq_uri_rendering(url: str, uri: str) -> None:
     assert backup._libpq(url) == (uri, "p")
+
+
+def test_an_unparseable_database_url_is_a_backup_error_that_does_not_echo_it(
+    fake_pg: Path, backup_dir: Path
+) -> None:
+    with pytest.raises(BackupError, match="not a valid database URL") as caught:
+        pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url="not-a-url://hunter2")
+
+    assert "hunter2" not in str(caught.value)
+    assert not (fake_pg / "dump_argv").exists()
+
+
+def test_a_url_without_a_password_sends_no_pgpassword(
+    fake_pg: Path, backup_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PGPASSWORD", "from-the-parent-environment")
+
+    pre_import_dump(PREVIEW, backup_dir=backup_dir, database_url="postgresql+psycopg://u@h/db")
+
+    assert (fake_pg / "dump_pgpassword").read_text() == ""

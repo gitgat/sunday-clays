@@ -24,11 +24,17 @@ KEEP_DUMPS = 20
 LOCK_TIMEOUT_S = 600.0
 CHILD_TIMEOUT_S = 600.0
 LOCK_FILE = "backup.lock"
+SHARED_MARKER = "last_success"  # touched by the nightly backup job, which has the shared bind
 _STAMPED = re.compile(r"^pre-import-.*-(\d{8}T\d{6}Z)\.dump$")
 
 
 class BackupError(RuntimeError):
     """The pre-import dump could not be taken and verified; the caller must not write."""
+
+
+class BackupDirNotShared(BackupError):
+    """The backup directory is not the shared bind (no marker from the nightly job), so a dump
+    written there would be lost with the container."""
 
 
 def _libpq(database_url: str) -> tuple[str, str | None]:
@@ -101,6 +107,11 @@ def pre_import_dump(
         env["PGPASSWORD"] = password
     tmp: Path | None = None
     try:
+        if not (backup_dir / SHARED_MARKER).is_file():
+            raise BackupDirNotShared(
+                f"{backup_dir} has no {SHARED_MARKER} from the nightly backup job, so it is not "
+                "the shared backups bind and a dump there would be lost with the container"
+            )
         with (backup_dir / LOCK_FILE).open("a") as lock_file:
             _acquire(lock_file.fileno(), lock_timeout_s)
             # Named after the wait, so the stamp is when the snapshot was actually taken.
@@ -127,7 +138,9 @@ def pre_import_dump(
     except OSError as exc:
         raise BackupError(f"backup directory is not usable ({type(exc).__name__})") from None
     finally:
-        if tmp is not None:
+        if (
+            tmp is not None
+        ):  # pragma: no branch - on success tmp is always set; None only on an early raise
             with contextlib.suppress(OSError):  # after a rename it is already gone
                 tmp.unlink(missing_ok=True)
     return final

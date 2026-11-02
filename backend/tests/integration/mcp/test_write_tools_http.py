@@ -91,6 +91,24 @@ def test_preview_week_over_mcp(mcp_server: str, fx_session: Session) -> None:
     assert fx_session.get(McpOperation, out["preview_id"]) is not None
 
 
+def test_preview_correction_over_mcp(mcp_server: str, fx_session: Session) -> None:
+    from tests.integration.mcp.test_writes import _last_event, _names_on_last
+
+    name = _names_on_last(fx_session, 1)[0]
+    args = {
+        "correction": {
+            "date": _last_event(fx_session).isoformat(),
+            "rows": [{"name": name, "score": 7}],
+        }
+    }
+    out = asyncio.run(call_tool(mcp_server, "preview_correction", args))
+    assert out["needs_human_approval"] is True
+    assert [(c["name"], c["new_score"]) for c in out["changes"]] == [(name, 7)]
+    op = fx_session.get(McpOperation, out["preview_id"])
+    assert op is not None
+    assert op.kind == "correction"
+
+
 def test_refusal_is_a_tool_error_with_its_code_and_is_recorded(
     mcp_server: str, mcp_token: str, fx_session: Session
 ) -> None:

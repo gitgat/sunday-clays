@@ -309,6 +309,24 @@ def test_unknown_and_malformed_preview_ids(fx_session: Session) -> None:
 
 
 @pytest.mark.usefixtures("enabled")
+def test_an_unshared_backup_dir_refuses_with_its_own_code_and_changes_nothing(
+    fx_session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MCP_BACKUP_DIR", str(tmp_path))  # no last_success marker in it
+    base = active_scores_import(fx_session)
+    pid = _preview(fx_session)
+    with pytest.raises(Refusal) as exc:
+        writes.commit_week(fx_session, pid, idempotency_key=KEY, now=NOW)  # the real dump
+    assert exc.value.code == "backup_dir_not_shared"
+    assert _statuses(fx_session, pid) == ["pending", "pending"]
+    assert active_scores_import(fx_session) == base
+    assert list(tmp_path.iterdir()) == []
+    assert [a.details["code"] for a in _audits(fx_session, "mcp.refuse")] == [
+        "backup_dir_not_shared"
+    ]
+
+
+@pytest.mark.usefixtures("enabled")
 def test_dump_failure_changes_nothing_and_is_retryable(fx_session: Session) -> None:
     base = active_scores_import(fx_session)
     pid = _preview(fx_session)
@@ -537,6 +555,9 @@ def test_the_tool_refuses_to_roll_back_a_correction_but_the_logic_allows_it(
     with pytest.raises(Refusal) as exc:
         _rollback(fx_session, pid, dump)
     assert exc.value.code == "correction_needs_human"
+    # A correction has no stations import: rolling one back would drop the Sunday's station detail.
+    assert "scores import only" in exc.value.message
+    assert "both" not in exc.value.message
     assert dump.calls == []
     out = writes.rollback_operation(fx_session, pid, idempotency_key=KEY2, now=NOW, dump=FakeDump())
     assert out["status"] == "rolled_back"
@@ -781,3 +802,48 @@ def test_busy_message_is_precise(fx_session: Session) -> None:
     assert exc.value.message == (
         "the database was busy; the scores were not changed; retry with the same idempotency key"
     )
+
+
+def _claim_key_elsewhere(session: Session, key: str, *, as_rollback: bool = False) -> None:
+    """Another operation takes ``key`` (as a commit key, or as a rollback key in its result)."""
+    session.add(
+        McpOperation(
+            kind="week",
+            event_date=dt.date(2026, 1, 4),
+            status="refused",
+            idempotency_key=None if as_rollback else key,
+            result={"rollback": {"idempotency_key": key}} if as_rollback else {},
+        )
+    )
+    session.flush()
+
+
+@pytest.mark.usefixtures("enabled")
+def test_a_commit_key_taken_during_the_dump_is_refused_under_the_lock(fx_session: Session) -> None:
+    pid = _preview(fx_session)
+    base = active_scores_import(fx_session)
+    dump = FakeDump(hook=lambda: _claim_key_elsewhere(fx_session, KEY))
+
+    with pytest.raises(Refusal) as exc:
+        _commit(fx_session, pid, dump)
+
+    assert exc.value.code == "key_reused"
+    assert len(dump.calls) == 1  # it got past the early check and reached the locked one
+    assert _op(fx_session, pid).status == "previewed"
+    assert active_scores_import(fx_session) == base
+
+
+@pytest.mark.usefixtures("enabled")
+def test_a_rollback_key_taken_during_the_dump_is_refused_under_the_lock(
+    fx_session: Session,
+) -> None:
+    pid = _preview(fx_session)
+    _commit(fx_session, pid, FakeDump())
+    dump = FakeDump(hook=lambda: _claim_key_elsewhere(fx_session, KEY2, as_rollback=True))
+
+    with pytest.raises(Refusal) as exc:
+        _rollback(fx_session, pid, dump)
+
+    assert exc.value.code == "key_reused"
+    assert len(dump.calls) == 1
+    assert _op(fx_session, pid).status == "committed"

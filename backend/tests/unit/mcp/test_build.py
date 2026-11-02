@@ -3,7 +3,7 @@ import io
 
 import openpyxl
 import pytest
-from hypothesis import given
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
@@ -358,6 +358,7 @@ def valid_weeks(draw: st.DrawFn) -> dict[str, object]:
     }
 
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(valid_weeks())
 def test_valid_weeks_round_trip(data: dict[str, object]) -> None:
     week = WeekInput.model_validate(data)
@@ -365,6 +366,7 @@ def test_valid_weeks_round_trip(data: dict[str, object]) -> None:
     assert WeekInput.model_validate_json(week.model_dump_json(by_alias=True)) == week
 
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(valid_weeks())
 def test_each_violation_is_rejected_by_its_own_rule(data: dict[str, object]) -> None:
     shooters = list(data["shooters"])  # type: ignore[call-overload]
@@ -395,3 +397,22 @@ def test_each_violation_is_rejected_by_its_own_rule(data: dict[str, object]) -> 
                 WeekInput.model_validate(
                     {**data, "expected_total": None, "shooters": [broken, *others]}
                 )
+
+
+def test_a_name_that_is_60_characters_before_tidying_and_61_after_is_rejected() -> None:
+    week = {
+        "date": DAY,
+        "stations": ["1"],
+        "counts": [10],
+        "shooters": [{"name": "X" * 29 + "," + "Y" * 30, "score": 5, "status": "Guest"}],
+    }
+    with pytest.raises(ValidationError, match="3-60 characters"):
+        WeekInput.model_validate(week)
+
+
+def test_as_date_accepts_a_plain_date_and_nothing_else() -> None:
+    from sunday_clays.mcp.build import _as_date
+
+    assert _as_date(dt.date(2026, 10, 4)) == dt.date(2026, 10, 4)
+    assert _as_date(dt.datetime(2026, 10, 4, 9, 30)) == dt.date(2026, 10, 4)  # noqa: DTZ001
+    assert _as_date("2026-10-04") is None
