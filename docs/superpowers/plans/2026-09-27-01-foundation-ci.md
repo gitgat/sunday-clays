@@ -26,7 +26,7 @@
 - Theme (ClaySmasher defaultBrand): surface `#1A4D2E`, elevated `#2D5F3F`, primary `#9E5530`, primary-container `#C76D3F`, accent `#E8A77A`, text `#FEFBF6`, text-muted `#D4E7DD`, outline `#D1E7DA`, outline-variant `#4A7C59`, error `#FEE2E2`, error-container `#DC2626`; font Roboto; radii card 12px, button 20px, sheet 16px. Dark-only UI.
 - Viewports: mobile `390×844` and desktop `1440×900` are both first-class; every page has an e2e check at both.
 - Host `sundayclays.claysmasher.com`; compose services exactly `caddy`, `api`, `worker`, `db`, `backup`; configuration only via env vars and `*_FILE` Docker secrets; no host bind mounts in `compose.yaml`. In the Swarm, TLS terminates at the existing Traefik (`traefik_public` external network, labels `traefik.http.routers.sundayclays.rule=Host(\`sundayclays.claysmasher.com\`)`, `entrypoints=websecure`, `tls.certresolver=cloudflare`); Caddy listens on plain `:80` inside the stack.
-- Trophy art comes from imagen at `https://imagen.thehalf.io` via the dev-only tool `tools/trophy_art/` (credentials from env `IMAGEN_URL`, `IMAGEN_USERNAME`, `IMAGEN_PASSWORD`, never committed); the running app and CI never call imagen.
+- Trophy art comes from imagen at `https://imagen.example.internal` via the dev-only tool `tools/trophy_art/` (credentials from env `IMAGEN_URL`, `IMAGEN_USERNAME`, `IMAGEN_PASSWORD`, never committed); the running app and CI never call imagen.
 - Auth: exactly two roles, `viewer` and `admin` (admin ⊇ viewer); passwords supplied as argon2 hashes via secrets.
 - Do NOT add a Claude code-review GitHub workflow.
 - Branch per task `task/<NN>-<T>-<slug>` (NN = sub-plan, T = task); controller-only branches `chore/ratchet-wave-<N>` (the only branches that may change `ratchets/`); Conventional Commits; commit trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -5350,7 +5350,7 @@ x-arch: &amd64-only
 x-db-node: &db-node
   constraints:
     - node.platform.arch==x86_64
-    - node.hostname==${SC_DB_NODE:-autopirate}
+    - node.hostname==${SC_DB_NODE:-db-node}
 
 services:
   caddy:
@@ -5452,7 +5452,7 @@ IMAGE_TAG=sha-0000000 docker stack config -c compose.yaml -c compose.swarm.yaml 
 docker stack config -c compose.yaml -c compose.swarm.yaml > /dev/null; echo "without IMAGE_TAG: exit $?"
 ```
 
-Expected: `local-ok`, `test-ok`. Then four `image: ghcr.io/gitgat/sunday-clays-*:sha-0000000` lines plus `image: postgres:17`, two `node.hostname==autopirate` lines, six `name: sundayclays_…_v1` lines, and finally `required variable IMAGE_TAG is missing a value: IMAGE_TAG is required` with `exit 1`. `docker stack config` is client-only; no swarm is needed.
+Expected: `local-ok`, `test-ok`. Then four `image: ghcr.io/gitgat/sunday-clays-*:sha-0000000` lines plus `image: postgres:17`, two `node.hostname==db-node` lines, six `name: sundayclays_…_v1` lines, and finally `required variable IMAGE_TAG is missing a value: IMAGE_TAG is required` with `exit 1`. `docker stack config` is client-only; no swarm is needed.
 
 - [ ] **Step 16: Run the stack, the smoke suite and the restore check (master §0 step 4a, T4)**
 
@@ -5496,11 +5496,11 @@ ports and never join `traefik_public`.
 ## Preconditions (not built by this repo)
 
 - Traefik publishes 80/443 with `mode: host` and has no `forwardedHeaders.trustedIPs` on `websecure`,
-  so the client IP it forwards is the real one (verified in `swarm-config/traefik-v3`). Caddy trusts
+  so the client IP it forwards is the real one (verified in `infra-repo/traefik-v3`). Caddy trusts
   forwarding headers only from private ranges (`TRUSTED_PROXIES=private_ranges` in
   `compose.swarm.yaml`) and always overwrites `X-Real-IP`, which is the only client-IP header the API
   reads.
-- If this host ever moves behind Cloudflare's proxy or the cloudflared → traefik-public edge, add
+- If this host ever moves behind Cloudflare's proxy or the cloudflared → edge-proxy edge, add
   Cloudflare's IP ranges to `TRUSTED_PROXIES` and add `client_ip_headers CF-Connecting-IP` to the
   `servers` block of `deploy/caddy/Caddyfile`. Never publish Caddy ports with `mode: host`.
 - Images are published to GHCR by the CI `publish` job only from CI-green `main` commits. Set the
@@ -5529,7 +5529,7 @@ ports and never join `traefik_public`.
    `secrets/backup_hc_url` holds the Healthchecks.io ping URL of the nightly-backup check (create
    the check first: period 1 day, grace 2 hours). An empty file disables the ping.
 
-3. On the database node (`autopirate`; override with `SC_DB_NODE=<hostname>` at deploy time) create
+3. On the database node (`db-node`; override with `SC_DB_NODE=<hostname>` at deploy time) create
    the data directories with the owners the containers run as:
 
    ```bash
@@ -6237,7 +6237,7 @@ import yaml
 
 SCRIPT = Path(__file__).resolve().parents[1] / "check_stack.py"
 ARCH = ["node.platform.arch==x86_64"]
-DB_NODE = ["node.platform.arch==x86_64", "node.hostname==autopirate"]
+DB_NODE = ["node.platform.arch==x86_64", "node.hostname==db-node"]
 
 
 def backend(**extra: Any) -> dict[str, Any]:

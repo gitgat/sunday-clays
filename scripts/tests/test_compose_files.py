@@ -29,6 +29,30 @@ def test_caddy_still_starts_after_a_healthy_api_locally_and_in_ci() -> None:
         assert depends_on["api"]["condition"] == "service_healthy", compose_file
 
 
+def test_the_swarm_overlay_names_no_registry_node_or_lan_host_by_default() -> None:
+    """Deploy-time names come from the environment and must be set: no `:-default` for them."""
+    text = (ROOT / "compose.swarm.yaml").read_text()
+    for variable in ("SC_REGISTRY", "SC_DB_NODE", "SC_LAN_HOST"):
+        assert f"${{{variable}:-" not in text, variable
+        assert f"${{{variable}:?{variable} is required}}" in text, variable
+
+
+def test_every_release_image_and_the_deployer_registry_come_from_sc_registry() -> None:
+    for name in ("caddy", "api", "worker", "backup", "deployer"):
+        image = service("compose.swarm.yaml", name)["image"]
+        assert image.startswith("${SC_REGISTRY:?SC_REGISTRY is required}/"), name
+    environment = service("compose.swarm.yaml", "deployer")["environment"]
+    assert environment["REGISTRY"] == "${SC_REGISTRY:?SC_REGISTRY is required}"
+
+
+def test_the_lan_router_host_comes_from_sc_lan_host() -> None:
+    labels = service("compose.swarm.yaml", "caddy")["deploy"]["labels"]
+    rules = [v for k, v in labels.items() if k.endswith(".rule")] if isinstance(labels, dict) else [
+        i for i in labels if ".rule=" in i
+    ]
+    assert any("${SC_LAN_HOST:?SC_LAN_HOST is required}" in r for r in rules)
+
+
 def test_swarm_restarts_the_worker_even_after_a_clean_exit() -> None:
     """An unhealthy task gets SIGTERM, finishes its job and exits 0; Swarm must restart it."""
     restart = service("compose.swarm.yaml", "worker")["deploy"]["restart_policy"]
@@ -65,7 +89,7 @@ def test_only_the_data_services_are_pinned_and_only_by_hostname() -> None:
         assert placement == {"constraints": ["node.platform.arch==x86_64"]}, name
     for name in ("db", "backup"):
         placement = service("compose.swarm.yaml", name)["deploy"]["placement"]
-        assert placement == {"constraints": ["node.hostname==${SC_DB_NODE:-autopirate}"]}, name
+        assert placement == {"constraints": ["node.hostname==${SC_DB_NODE:?SC_DB_NODE is required}"]}, name
 
 
 def test_the_worker_has_a_memory_limit_that_fits_a_raspberry_pi() -> None:
@@ -116,7 +140,7 @@ def test_deployer_tokens_rotate_without_touching_the_app_secrets() -> None:
 
 
 def test_the_deployer_runs_on_any_manager_whatever_its_architecture() -> None:
-    """The Swarm's schedulable managers are arm64 Raspberry Pis (birdo); the image is multi-arch."""
+    """The Swarm's schedulable managers are arm64 Raspberry Pis (pi-manager-1); the image is multi-arch."""
     deploy = service("compose.swarm.yaml", "deployer")["deploy"]
 
     assert deploy["placement"] == {"constraints": ["node.role==manager"]}

@@ -3,7 +3,7 @@
 
 Every POLL_INTERVAL seconds it reads main's SHA with `git ls-remote`. Once CI has published
 ghcr.io/gitgat/sunday-clays-{backend,frontend,deployer}:sha-<7>, it mirrors the three multi-arch
-indexes into the fleet registry (registry.thehalf.io), then updates api (and waits until api
+indexes into the fleet registry (registry.example.internal), then updates api (and waits until api
 reports that version), then worker, caddy and backup, and only then records the SHA in STATE_DIR. A failed
 step rolls the services this run already updated back to their previous image, so the stack stays
 on one coherent release. While main is unchanged it checks that the services still run the
@@ -110,7 +110,7 @@ class Config:
     repo_url: str = "https://github.com/gitgat/sunday-clays.git"
     branch: str = "main"
     stack: str = "sundayclays"
-    registry: str = "registry.thehalf.io"  # where the stack pulls from: the fleet registry
+    registry: str = ""  # where the stack pulls from: the fleet registry (REGISTRY, required)
     source_registry: str = "ghcr.io/gitgat"  # where CI publishes
     ghcr_user: str = ""
     github_token_file: Path = Path("/run/secrets/deployer_github_token")
@@ -124,7 +124,7 @@ class Config:
     mirror_timeout: float = 600.0  # per image copy
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str]) -> Config:
+    def from_env(cls, env: Mapping[str, str], require_registry: bool = True) -> Config:
         d = cls()
         try:
             poll = float(env.get("POLL_INTERVAL", d.poll_interval))
@@ -132,6 +132,8 @@ class Config:
             update_timeout = float(env.get("UPDATE_TIMEOUT", d.update_timeout))
         except ValueError as exc:
             raise DeployError(f"bad number in the environment: {exc}") from None
+        if require_registry and not env.get("REGISTRY"):
+            raise DeployError("REGISTRY is not set (the registry the stack pulls from)")
         if poll < MIN_POLL_INTERVAL:
             raise DeployError(f"POLL_INTERVAL must be at least {MIN_POLL_INTERVAL:.0f} seconds")
         return cls(
@@ -569,7 +571,10 @@ def main(argv: Sequence[str], env: Mapping[str, str] = os.environ, deps: Deps | 
     args = parser.parse_args(argv)
     deps = deps or Deps()
     try:
-        cfg = Config.from_env(env)
+        # Only the commands that deploy or mirror need the registry; state commands do not.
+        cfg = Config.from_env(
+            env, require_registry=args.command in ("run", "once", "mirror", "rollback")
+        )
         if args.command in ("run", "once", "rollback", "mirror") and not cfg.ghcr_user:
             raise DeployError("GHCR_USER is not set")
         if args.command == "run":

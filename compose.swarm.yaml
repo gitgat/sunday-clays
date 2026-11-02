@@ -1,8 +1,11 @@
 # Swarm overlay. The deployer service keeps the stack on main by itself; run
 # `docker stack deploy` by hand only as in deploy/README.md "Deploy or upgrade" (pause the
-# deployer, IMAGE_TAG from `deployer.py tag`, GHCR_USER exported, resume).
-# Every app image is pulled from the fleet registry, registry.thehalf.io (SC_REGISTRY overrides
-# it): the deployer mirrors each release's multi-arch index from GHCR into it, so only the
+# deployer, IMAGE_TAG from `deployer.py tag`, GHCR_USER and the deploy-time names below exported
+# from secrets/deploy.env, resume).
+# Deploy-time names come from the environment and have no defaults here: SC_REGISTRY (the private
+# registry mirror every app image is pulled from), SC_DB_NODE (the database node's hostname) and
+# SC_LAN_HOST (the LAN hostname of the router rule).
+# The deployer mirrors each release's multi-arch index from GHCR into the registry, so only the
 # deployer's manager needs a ghcr.io login (deploy/README.md "Automatic deploys").
 # Images are multi-arch (linux/amd64 + linux/arm64), so caddy and the deployer carry no
 # architecture constraint and run on any node, Pi or VM. The single-writer data services are
@@ -10,10 +13,10 @@
 # x86 nodes only (x-x86 below). scripts/check_stack.py enforces all of this.
 x-db-node: &db-node
   constraints:
-    - node.hostname==${SC_DB_NODE:-autopirate}
+    - node.hostname==${SC_DB_NODE:?SC_DB_NODE is required}
 
-# api and worker run on x86 only (autopirate or pico-relief): measured slow on a 4-core arm64 Pi
-# while the database lives on x86 (autopirate). Swarm has no soft "prefer", so this is a hard
+# api and worker run on x86 only (the database node or another x86 node): measured slow on a 4-core arm64 Pi
+# while the database lives on x86 (the database node). Swarm has no soft "prefer", so this is a hard
 # constraint; check_stack.py allows exactly this one architecture constraint, on these two services.
 x-x86: &x86
   constraints:
@@ -31,7 +34,7 @@ x-rollback: &rollback-stop-first
 
 services:
   caddy:
-    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ${SC_REGISTRY:?SC_REGISTRY is required}/sunday-clays-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
     environment:
       TRUSTED_PROXIES: private_ranges
     networks: [default, traefik_public, edge_public]
@@ -51,12 +54,12 @@ services:
         - traefik.http.services.sundayclays.loadbalancer.server.port=80
         # LAN-only router: a client could send its own CF-Connecting-IP, so drop it (an empty value
         # removes the header). Caddy then falls back to X-Forwarded-For. The public path is
-        # swarm-config's traefik-public (edge_public), where Cloudflare sets the header.
+        # the edge proxy stack in the infra repo (edge_public), where Cloudflare sets the header.
         - traefik.http.middlewares.sundayclays-strip-cf.headers.customrequestheaders.CF-Connecting-IP=
         - traefik.http.routers.sundayclays.middlewares=sundayclays-strip-cf
-        # LAN name on the fleet's wildcard (*.thehalf.io -> ingress VIP); its own router so its
+        # LAN name on the fleet's wildcard DNS entry (-> ingress VIP); its own router so its
         # certificate never waits on the public claysmasher.com one.
-        - traefik.http.routers.sundayclays-lan.rule=Host(`sundayclays.thehalf.io`)
+        - traefik.http.routers.sundayclays-lan.rule=Host(`${SC_LAN_HOST:?SC_LAN_HOST is required}`)
         - traefik.http.routers.sundayclays-lan.entrypoints=websecure
         - traefik.http.routers.sundayclays-lan.tls=true
         - traefik.http.routers.sundayclays-lan.tls.certresolver=cloudflare
@@ -64,7 +67,7 @@ services:
         - traefik.http.routers.sundayclays-lan.middlewares=sundayclays-strip-cf
 
   api:
-    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ${SC_REGISTRY:?SC_REGISTRY is required}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     deploy:
       placement: *x86
       update_config: *update-rollback
@@ -73,7 +76,7 @@ services:
         condition: any
 
   worker:
-    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ${SC_REGISTRY:?SC_REGISTRY is required}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     deploy:
       replicas: 1
       placement: *x86
@@ -103,7 +106,7 @@ services:
         condition: any
 
   backup:
-    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ${SC_REGISTRY:?SC_REGISTRY is required}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     environment:
       BACKUP_HC_URL_FILE: /run/secrets/backup_hc_url
     secrets: [db_password, backup_hc_url]
@@ -125,10 +128,10 @@ services:
   # task moving to another manager, and `deployer.py pause|resume|tag|status` can run from any manager
   # as a one-off container on that directory (deploy/README.md "Automatic deploys").
   deployer:
-    image: ${SC_REGISTRY:-registry.thehalf.io}/sunday-clays-deployer:${IMAGE_TAG:?IMAGE_TAG is required}
+    image: ${SC_REGISTRY:?SC_REGISTRY is required}/sunday-clays-deployer:${IMAGE_TAG:?IMAGE_TAG is required}
     environment:
       GHCR_USER: ${GHCR_USER:?GHCR_USER is required}
-      REGISTRY: ${SC_REGISTRY:-registry.thehalf.io}
+      REGISTRY: ${SC_REGISTRY:?SC_REGISTRY is required}
       SOURCE_REGISTRY: ghcr.io/gitgat
       POLL_INTERVAL: "120"
     secrets: [deployer_github_token, deployer_ghcr_token]
@@ -152,7 +155,7 @@ services:
 networks:
   traefik_public:
     external: true
-  # swarm-config's isolated public edge (cloudflared -> traefik-public -> caddy).
+  # The infra repo's isolated public edge (cloudflared -> edge proxy -> caddy).
   edge_public:
     external: true
 

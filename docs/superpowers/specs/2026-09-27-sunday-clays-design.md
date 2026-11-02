@@ -136,7 +136,7 @@ broken").
   pages, and "Your next trophy" on the home "me" panel.
 Defined declaratively (family, tiers, value function or evaluator) and evaluated during rebuild; unit-tested each.
 - **Trophy art** is generated with the user's running **imagen** instance (`../imagen`; external deployment
-  `https://imagen.thehalf.io`, session login, `POST /api/generations` with `Idempotency-Key`, poll
+  `https://imagen.example.internal`, session login, `POST /api/generations` with `Idempotency-Key`, poll
   `GET /api/generations/{id}`, download `GET /api/assets/{id}/bytes`). A dev-only tool in this repo submits one job
   per trophy/tier (several seeds each), builds a contact sheet for the user to pick favorites, then post-processes
   picks (circular medallion mask, 256 px + 128 px WebP) into committed static assets. The app never calls imagen at
@@ -169,7 +169,7 @@ date range → chart + table + CSV + shareable URL. One backend query endpoint w
 - **Compose** (`compose.yaml`, Swarm-ready: env/secrets only, named volumes, healthchecks, no host binds):
   `caddy` (static SPA + `/api` proxy on plain `:80`; in the Swarm, TLS terminates at the existing **Traefik**
   (`traefik_public` network, `websecure` entrypoint, `cloudflare` certresolver — same pattern as
-  `../imagen/swarm-config/imagen/docker-compose.yml`); locally Caddy serves `:8080`), `api`, `worker` (Postgres job queue;
+  `../imagen/infra-repo/imagen/docker-compose.yml`); locally Caddy serves `:8080`), `api`, `worker` (Postgres job queue;
   scheduled forecast refresh + weather sync), `db` (Postgres 17), `backup` (verified nightly pg_dump + restore script).
 - The DB, including `imports.file_bytes`, rules and aliases, is the system of record for station history, because the
   station workbook is rolling. Swarm data lives on `/var/data/sundayclays/*` inside the fleet restic backup.

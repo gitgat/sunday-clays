@@ -3282,7 +3282,7 @@ Add `"stats_excluded",` as the last item of `EVENT_COLUMNS` in `test_rebuild_liv
 - None in the repo. Snapshots go to the session scratchpad (`before/`, `after/` JSON files), never committed.
 
 **Interfaces:**
-- Consumes: CI multi-arch images, the deployer (GHCR → registry.thehalf.io mirror → `sundayclays` stack), `POST /api/admin/recompute`, `GET /api/admin/data-issues`, `POST /api/admin/rules`, the public routes.
+- Consumes: CI multi-arch images, the deployer (GHCR → registry.example.internal mirror → `sundayclays` stack), `POST /api/admin/recompute`, `GET /api/admin/data-issues`, `POST /api/admin/rules`, the public routes.
 - Produces: production with both thrown-out Sundays flagged, and a recorded before/after comparison.
 
 Note: `POST /api/admin/recompute` only re-runs the pipeline (`jobs/handlers.py:44`); `rebuild_live` runs only in the `rebuild` job (`jobs/rebuild_handler.py:16`), which imports, rules and merges enqueue. Spec §8's "rebuild runs on deploy or by admin recompute" is therefore not true as written, so Step 3 enqueues a rebuild explicitly.
@@ -3298,7 +3298,7 @@ Run the check against `before/` as both sides: the flag and issue assertions fai
 - [ ] **Step 3: Implement (deploy and rebuild)**
 
 1. Merge the PR to `main`; wait for CI to build and push the amd64+arm64 images (if CI is billing-blocked, stop and tell the owner).
-2. Wait for the deployer to mirror to registry.thehalf.io and update the `sundayclays` stack; confirm the backend logs show migration `0010` applied (expand-only; the old release kept running meanwhile).
+2. Wait for the deployer to mirror to registry.example.internal and update the `sundayclays` stack; confirm the backend logs show migration `0010` applied (expand-only; the old release kept running meanwhile).
 3. Enqueue one rebuild without changing data, from the backend container: `docker exec <sundayclays backend task> python -c "from sunday_clays.db import get_session; from sunday_clays.jobs.queue import enqueue; s = next(get_session()); print(enqueue(s, 'rebuild', dedupe_key='rebuild')); s.commit()"`; then poll `/api/admin/jobs/{id}` until it is done.
 4. Ask the owner whether 2026-01-11 Station 10 really was thrown out. If not, `POST /api/admin/rules` `{ "rule_type": "station_drop", "payload": { "event_date": "2026-01-11", "station_label": "10", "dropped": false }, "note": "not thrown out" }` (it enqueues its own rebuild; wait for it), and the check then expects one `station_thrown_out` issue and 1/11 unflagged.
 

@@ -132,7 +132,7 @@ Six conditions that the design implies but does not spell out, and that are most
   address. Rotating `SESSION_SECRET` resets every limit bucket, which is harmless. Rows older
   than a day are deleted by the daily `page_view_rollup` job. `audit_log.ip` (admin actions
   only) stays raw: it is the owner's own trail. uvicorn runs with `--no-access-log` so request
-  URLs never sit beside a device id in container logs. Outside this repo, keep traefik-public
+  URLs never sit beside a device id in container logs. Outside this repo, keep edge-proxy
   and cloudflared access logs off or short.
 
 ## Running the e2e stack (Tasks 3 and 4)
