@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from sunday_clays.api.app import create_app
 from sunday_clays.api.routes import auth as auth_routes
+from sunday_clays.auth import passwords
 from sunday_clays.auth.deps import fingerprint
 from sunday_clays.auth.sessions import COOKIE_NAME, Role, issue_session
 from sunday_clays.config import Settings, get_settings
@@ -282,3 +283,85 @@ def test_cross_site_upload_with_admin_cookie_is_blocked(admin_client: TestClient
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "csrf"
+
+
+LINK = "/api/auth/link-login"
+
+
+def test_link_login_viewer_password_sets_viewer_cookie(
+    anon_client: TestClient, login_passwords: dict[Role, str]
+) -> None:
+    response = anon_client.post(LINK, json={"password": login_passwords["viewer"]})
+    assert response.status_code == 200
+    assert response.json() == {"role": "viewer"}
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith(f"{COOKIE_NAME}=")
+    assert "HttpOnly" in cookie
+    assert "samesite=strict" in cookie.lower()
+    assert "Max-Age=2592000" in cookie
+    assert anon_client.get("/api/auth/me").json() == {"role": "viewer"}
+
+
+def test_link_login_refuses_admin_password_like_any_wrong_one(
+    anon_client: TestClient, login_passwords: dict[Role, str], session: Session
+) -> None:
+    wrong = anon_client.post(LINK, json=WRONG)
+    admin = anon_client.post(LINK, json={"password": login_passwords["admin"]})
+    assert admin.status_code == wrong.status_code == 401
+    assert admin.json() == wrong.json()
+    assert admin.json()["error"]["code"] == "invalid_password"
+    assert "set-cookie" not in admin.headers
+    assert session.execute(select(AUDIT.c.id)).all() == []
+
+
+def test_link_login_never_checks_the_admin_hash(
+    anon_client: TestClient, login_passwords: dict[Role, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hashes: list[str] = []
+    real = passwords.verify_password
+
+    def spy(password_hash: str, password: str) -> bool:
+        hashes.append(password_hash)
+        return real(password_hash, password)
+
+    monkeypatch.setattr(passwords, "verify_password", spy)
+    anon_client.post(LINK, json={"password": login_passwords["admin"]})
+    assert len(hashes) == 1
+    assert hashes[0] == get_settings().viewer_password_hash.get_secret_value()
+
+
+def test_link_login_wrong_password_is_recorded_for_the_rate_limit(
+    anon_client: TestClient, session: Session
+) -> None:
+    anon_client.post(LINK, json=WRONG)
+    assert len(session.execute(select(ATTEMPTS.c.id, ATTEMPTS.c.success)).all()) == 1
+    row = session.execute(select(ATTEMPTS.c.success)).one()
+    assert row[0] is False
+
+
+def test_link_login_shares_the_login_rate_limit_bucket(
+    anon_client: TestClient, login_passwords: dict[Role, str]
+) -> None:
+    for i in range(10):
+        path = LINK if i % 2 else "/api/auth/login"
+        assert anon_client.post(path, json=WRONG).status_code == 401
+    limited = anon_client.post(LINK, json={"password": login_passwords["viewer"]})
+    assert limited.status_code == 429
+    assert limited.json()["error"]["code"] == "rate_limited"
+    assert anon_client.post("/api/auth/login", json=WRONG).status_code == 429
+
+
+@pytest.mark.parametrize("password", ["", "x" * 1025])
+def test_link_login_rejects_empty_and_over_long_passwords(
+    anon_client: TestClient, password: str
+) -> None:
+    assert anon_client.post(LINK, json={"password": password}).status_code == 422
+
+
+def test_link_login_is_csrf_guarded_like_login(
+    anon_client: TestClient, login_passwords: dict[Role, str]
+) -> None:
+    body = {"password": login_passwords["viewer"]}
+    hostile = {"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"}
+    assert anon_client.post("/api/auth/login", json=body, headers=hostile).status_code == 403
+    assert anon_client.post(LINK, json=body, headers=hostile).status_code == 403

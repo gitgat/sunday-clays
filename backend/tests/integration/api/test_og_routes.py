@@ -182,3 +182,18 @@ def test_name_scan_every_sunday_and_every_shooter(
         page = client.get(f"/api/og/page/shooters/{shooter_id}").text
         assert "Scores, trophies and stats" in page  # profiles are always generic
         _assert_name_free(page, names)
+
+
+@pytest.mark.parametrize("switch", [False, True])
+@pytest.mark.parametrize("path", ["/api/og/page/", f"/api/og/page/events/{LATEST}"])
+def test_a_password_in_the_query_is_never_echoed(
+    fx_client: TestClient, fx_session: Session, path: str, switch: bool
+) -> None:
+    """Caddy rewrites a crawler's /?p=... to /api/og/page/...?p=...; the query must stay unused."""
+    if switch:
+        _on(fx_session)
+    response = fx_client.get(f"{path}?p=hunter2-fake&q=hunter2-fake")
+    assert response.status_code == 200
+    assert "hunter2-fake" not in response.text
+    assert "hunter2-fake" not in str(response.headers)
+    assert response.text == fx_client.get(path).text
