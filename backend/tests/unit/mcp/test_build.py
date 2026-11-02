@@ -8,6 +8,7 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from sunday_clays.ingest import parse_upload
+from sunday_clays.ingest.names import name_key
 from sunday_clays.ingest.types import ScoresParse, StationsParse
 from sunday_clays.mcp.build import (
     BuildError,
@@ -125,8 +126,8 @@ def test_build_correction_changes_only_named_rows(scores_bytes: bytes) -> None:
     name, score = before[0]
     new_score = score - 1 if score else 1
     c = CorrectionInput.model_validate({"date": day, "rows": [{"name": name, "score": new_score}]})
-    out, stations = build_correction(scores_bytes, c)
-    assert stations is None
+    out = build_correction(scores_bytes, c)
+    assert isinstance(out, bytes)
     base = _parsed_scores(scores_bytes)
     after = _parsed_scores(out)
     changed = [
@@ -139,24 +140,6 @@ def test_build_correction_changes_only_named_rows(scores_bytes: bytes) -> None:
     assert after.attendance_rows == base.attendance_rows
 
 
-def test_build_correction_stations_for_rows_with_hits(scores_bytes: bytes) -> None:
-    day, before = _latest_rows(scores_bytes)
-    name, _ = before[0]
-    c = CorrectionInput.model_validate(
-        {
-            "date": day,
-            "stations": ["1", "2", "3", "4", "5"],
-            "counts": [10, 10, 10, 10, 10],
-            "rows": [{"name": name, "score": 40, "hits": [8, 8, 8, 8, 8]}],
-        }
-    )
-    _, stations = build_correction(scores_bytes, c)
-    assert stations is not None
-    parsed = parse_upload(stations)
-    assert isinstance(parsed, StationsParse)
-    assert [r.raw_name for r in parsed.sheets[0].rows] == [name]
-
-
 def test_build_correction_name_not_on_date(scores_bytes: bytes) -> None:
     day, _ = _latest_rows(scores_bytes)
     c = CorrectionInput.model_validate(
@@ -167,74 +150,177 @@ def test_build_correction_name_not_on_date(scores_bytes: bytes) -> None:
     assert exc.value.code == "name_not_on_date"
 
 
-def test_correction_hits_need_layout() -> None:
-    with pytest.raises(ValidationError):
+def test_build_correction_name_ambiguous(scores_bytes: bytes) -> None:
+    day, before = _latest_rows(scores_bytes)
+    name = before[0][0]
+    wb = openpyxl.load_workbook(io.BytesIO(scores_bytes))
+    wb["ALL SCORE DETAIL"].append(
+        [name, 1, dt.datetime(day.year, day.month, day.day), "Member", None]  # noqa: DTZ001
+    )
+    buf = io.BytesIO()
+    wb.save(buf)
+    c = CorrectionInput.model_validate({"date": day, "rows": [{"name": name, "score": 2}]})
+    with pytest.raises(BuildError) as exc:
+        build_correction(buf.getvalue(), c)
+    assert exc.value.code == "name_ambiguous"
+
+
+def test_correction_row_rejects_hits() -> None:
+    with pytest.raises(ValidationError, match="hits"):
         CorrectionInput.model_validate(
             {"date": DAY, "rows": [{"name": "Testshooter, Beta", "score": 2, "hits": [1, 1]}]}
         )
 
 
+def test_correction_input_rejects_station_layout() -> None:
+    row = {"name": "Testshooter, Beta", "score": 2}
+    with pytest.raises(ValidationError, match="stations"):
+        CorrectionInput.model_validate({"date": DAY, "rows": [row], "stations": ["1"]})
+
+
+def test_correction_duplicate_names_by_name_key() -> None:
+    rows = [
+        {"name": "Testshooter, Beta", "score": 2},
+        {"name": "Testshooter,  Beta", "score": 3},
+    ]
+    with pytest.raises(ValidationError, match="duplicate"):
+        CorrectionInput.model_validate({"date": DAY, "rows": rows})
+
+
 # --- validation rules -----------------------------------------------------------------------
+def _shooter(**over: object) -> dict[str, object]:
+    return {"name": "Testshooter, Beta", "score": 3, "status": "Guest", **over}
+
+
 @pytest.mark.parametrize(
-    "over",
+    ("over", "message"),
     [
-        {"counts": [10, 10, 10, 10, 9]},  # sum 49
-        {"counts": [10, 10, 10, 10, 11]},  # count > 10
-        {"counts": [10, 10, 10, 20]},  # length mismatch
-        {"stations": ["3", "5", "7", "7", "8"]},
-        {"stations": ["3", "5", "7", "x", "8"]},
-        {"expected_total": 1},
-        {"shooters": []},
-        {
-            "shooters": [
-                {"name": "Testshooter, Beta", "score": 3, "status": "Guest"},
-                {"name": "TESTSHOOTER, BETA", "score": 4, "status": "Guest"},
-            ]
-        },
-        {"shooters": [{"name": "Beta Testshooter", "score": 3, "status": "Guest"}]},
-        {"shooters": [{"name": "Test, Sh, Beta", "score": 3, "status": "Guest"}]},
-        {"shooters": [{"name": "Testshooter, Beta", "score": 51, "status": "Guest"}]},
-        {"shooters": [{"name": "Testshooter, Beta", "score": 3, "status": "Other"}]},
-        {
-            "shooters": [
-                {"name": "Testshooter, Beta", "score": 3, "status": "Guest", "class": "Bazooka"}
-            ]
-        },
-        {
-            "shooters": [
-                {"name": "Testshooter, Beta", "score": 5, "status": "Guest", "hits": [1, 1, 1, 1]}
-            ]
-        },
-        {
-            "shooters": [
-                {
-                    "name": "Testshooter, Beta",
-                    "score": 6,
-                    "status": "Guest",
-                    "hits": [1, 1, 1, 1, 1],
-                }
-            ]
-        },
-        {
-            "shooters": [
-                {
-                    "name": "Testshooter, Beta",
-                    "score": 11,
-                    "status": "Guest",
-                    "hits": [11, 0, 0, 0, 0],
-                }
-            ]
-        },
-        {"shooters": [{"name": "Testshooter, Beta", "score": 3, "status": "Guest", "x": 1}]},
-        {"bogus": 1},
+        ({"counts": [10, 10, 10, 10, 9]}, "must sum to 50"),
+        ({"counts": [11, 9, 10, 10, 10]}, "target count must be 1-10"),
+        ({"counts": [0, 10, 10, 10, 10, 10], "stations": ["1", "2", "3", "4", "5", "6"]}, "1-10"),
+        ({"counts": [10, 10, 10, 10]}, "same length"),
+        ({"stations": ["3", "5", "7", "7", "8"]}, "duplicate station"),
+        ({"stations": ["3", "5", "7", "x", "8"]}, "station must be a label"),
+        ({"stations": []}, "at least 1"),
+        ({"expected_total": 1}, "expected_total"),
+        ({"shooters": []}, "at least 1"),
+        ({"shooters": [_shooter(), _shooter(name="TESTSHOOTER, BETA")]}, "duplicate shooter"),
+        ({"shooters": [_shooter(), _shooter(name="Testshooter,  Beta")]}, "duplicate shooter"),
+        ({"shooters": [_shooter(), _shooter(name="Testshooter , Beta")]}, "duplicate shooter"),
+        ({"shooters": [_shooter(), _shooter(name="Testshooter, Beta.")]}, "duplicate shooter"),
+        (
+            {"shooters": [_shooter(name="O'Neil, Al"), _shooter(name="O\u2019Neil, Al")]},
+            "duplicate shooter",
+        ),
+        ({"shooters": [_shooter(name="Beta Testshooter")]}, "exactly one comma"),
+        ({"shooters": [_shooter(name="Test, Sh, Beta")]}, "exactly one comma"),
+        ({"shooters": [_shooter(name="Testshooter, ")]}, "Last, First"),
+        ({"shooters": [_shooter(score=51)]}, "less than or equal to 50"),
+        ({"shooters": [_shooter(status="Other")]}, "String should match"),
+        ({"shooters": [_shooter(**{"class": "Bazooka"})]}, "class must be one of"),
+        ({"shooters": [_shooter(score=5, hits=[1, 1, 1, 1])]}, "one value per station"),
+        ({"shooters": [_shooter(score=6, hits=[1, 1, 1, 1, 1])]}, "hits sum to 5"),
+        ({"shooters": [_shooter(score=11, hits=[11, 0, 0, 0, 0])]}, "outside 0..target"),
+        ({"shooters": [_shooter(score=5, hits=[-1, 6, 0, 0, 0])]}, "outside 0..target"),
+        ({"shooters": [_shooter(x=1)]}, "Extra inputs"),
+        ({"bogus": 1}, "Extra inputs"),
+        ({"shooters": [_shooter(score=True)]}, "valid integer"),
+        ({"shooters": [_shooter(score="3")]}, "valid integer"),
+        ({"shooters": [_shooter(score=3, hits=[True, 1, 1, 0, 0])]}, "valid integer"),
+        ({"counts": [True, 10, 10, 10, 19]}, "valid integer"),
     ],
 )
-def test_week_rule_violations_rejected(over: dict[str, object]) -> None:
-    with pytest.raises(ValidationError):
+def test_week_rule_violations_rejected(over: dict[str, object], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
         _week(**over)
 
 
-_NAMES = st.builds(lambda a, b: f"Last{a}, First{b}", st.integers(0, 999), st.integers(0, 999))
+@pytest.mark.parametrize(
+    "name",
+    [
+        '=HYPERLINK("http://x"), Beta',
+        "=1+1, Beta",
+        "+Testshooter, Beta",
+        "-Testshooter, Beta",
+        "@Testshooter, Beta",
+        "Testshooter, =Beta",
+        "Testshooter, @Beta",
+        "Testshooter,\nBeta",
+        "Test\nshooter, Beta",
+        "Testshooter, Be\x00ta",
+        "Testshooter, Be\tta",
+        "Testshooter, Beta1",
+        "Test_shooter, Beta",
+        "Testshooter, Be(ta)",
+        "'Testshooter, Beta",
+    ],
+)
+def test_unsafe_names_rejected(name: str) -> None:
+    with pytest.raises(ValidationError, match="name"):
+        _week(shooters=[_shooter(name=name)])
+    with pytest.raises(ValidationError, match="name"):
+        CorrectionInput.model_validate({"date": DAY, "rows": [{"name": name, "score": 3}]})
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["O'Testshooter, Zo\u00eb-Ann", "O\u2019Testshooter, Jos\u00e9", "Van Testshooter, J. R."],
+)
+def test_real_looking_names_accepted(name: str) -> None:
+    week = _week(shooters=[_shooter(name=name)])
+    assert week.shooters[0].name == name
+
+
+def test_name_parts_are_stripped() -> None:
+    assert _week(shooters=[_shooter(name="  Testshooter ,  Beta ")]).shooters[0].name == (
+        "Testshooter, Beta"
+    )
+
+
+def test_formula_name_never_reaches_a_cell() -> None:
+    with pytest.raises(ValidationError):
+        _week(shooters=[_shooter(name='=HYPERLINK("http://x"), y')])
+
+
+def _stations(n: int) -> dict[str, object]:
+    counts = [50 // n + (1 if i < 50 % n else 0) for i in range(n)]
+    return {"stations": [str(i + 1) for i in range(n)], "counts": counts}
+
+
+def test_station_count_bounds() -> None:
+    plain = [_shooter()]
+    assert len(_week(shooters=plain, **_stations(12)).stations) == 12
+    with pytest.raises(ValidationError, match="at most 12"):
+        _week(shooters=plain, **_stations(13))
+    with pytest.raises(ValidationError, match="at least 1"):
+        _week(shooters=plain, stations=[], counts=[])
+
+
+def test_shooter_count_bounds() -> None:
+    def many(n: int) -> list[dict[str, object]]:
+        return [
+            _shooter(name=f"Testshooter, {chr(65 + i // 26)}{chr(97 + i % 26)}") for i in range(n)
+        ]
+
+    assert len(_week(shooters=many(200)).shooters) == 200
+    with pytest.raises(ValidationError, match="at most 200"):
+        _week(shooters=many(201))
+
+
+def test_lettered_labels_in_stations_workbook() -> None:
+    week = _week(stations=["6", "7", "7A", "8", "9"])
+    data = build_stations(week)
+    assert data is not None
+    parsed = parse_upload(data)
+    assert isinstance(parsed, StationsParse)
+    assert [e.label for e in parsed.sheets[0].layout] == ["6", "7", "7A", "8", "9"]
+
+
+_LETTERS = "abcdefghijklmnopqrstuvwxyz\u00e9\u00f6'-"
+_PART = st.text(alphabet=_LETTERS, min_size=1, max_size=10).filter(
+    lambda t: t[0] not in "'-" and t[-1] not in "'-" and "'-" not in t and "-'" not in t
+)
+_NAMES = st.builds(lambda a, b: f"{a.capitalize()}, {b.capitalize()}", _PART, _PART)
 
 
 @st.composite
@@ -247,7 +333,10 @@ def valid_weeks(draw: st.DrawFn) -> dict[str, object]:
             counts[src] -= 1
             counts[dst] += 1
     stations = [str(i + 1) for i in range(n)]
-    names = draw(st.lists(_NAMES, min_size=1, max_size=10, unique_by=str.casefold))
+    for i in range(n):  # sometimes a lettered label such as "7A"
+        if draw(st.booleans()):
+            stations[i] += draw(st.sampled_from("AB"))
+    names = draw(st.lists(_NAMES, min_size=1, max_size=10, unique_by=name_key))
     shooters: list[dict[str, object]] = []
     for name in names:
         hits = [draw(st.integers(0, c)) for c in counts]
@@ -276,27 +365,31 @@ def test_valid_weeks_round_trip(data: dict[str, object]) -> None:
     assert WeekInput.model_validate_json(week.model_dump_json(by_alias=True)) == week
 
 
-@given(valid_weeks(), st.integers(1, 5))
-def test_violations_rejected(data: dict[str, object], bump: int) -> None:
+@given(valid_weeks())
+def test_each_violation_is_rejected_by_its_own_rule(data: dict[str, object]) -> None:
     shooters = list(data["shooters"])  # type: ignore[call-overload]
-    bad_total = {**data, "expected_total": int(str(data["expected_total"])) + bump}
-    with pytest.raises(ValidationError):
-        WeekInput.model_validate(bad_total)
-    dup = {
-        **data,
-        "shooters": [*shooters, {**shooters[0], "name": str(shooters[0]["name"]).upper()}],
-    }
-    with pytest.raises(ValidationError):
-        WeekInput.model_validate(dup)
-    bad_counts = list(data["counts"])  # type: ignore[call-overload]
-    bad_counts[0] = 11
-    with pytest.raises(ValidationError):
-        WeekInput.model_validate({**data, "counts": bad_counts})
+    total = int(str(data["expected_total"]))
+    with pytest.raises(ValidationError, match="expected_total"):
+        WeekInput.model_validate({**data, "expected_total": total + 1})
+    first = shooters[0]
+    dup = {**first, "name": str(first["name"]).upper()}
+    with pytest.raises(ValidationError, match="duplicate shooter"):
+        WeekInput.model_validate({**data, "expected_total": None, "shooters": [*shooters, dup]})
+    counts = list(data["counts"])  # type: ignore[call-overload]
+    with pytest.raises(ValidationError, match="must sum to 50"):
+        WeekInput.model_validate({**data, "counts": [*counts[:-1], counts[-1] - 1]})
     with_hits = [s for s in shooters if "hits" in s]
     if with_hits:
-        broken = {**with_hits[0], "score": int(str(with_hits[0]["score"])) + bump}
-        others = [s for s in shooters if s is not with_hits[0]]
-        with pytest.raises(ValidationError):
-            WeekInput.model_validate(
-                {**data, "expected_total": None, "shooters": [broken, *others]}
-            )
+        victim = with_hits[0]
+        hits = list(victim["hits"])  # type: ignore[call-overload]
+        # move one hit to another station's slot: sum changes only if we bump a slot below cap
+        room = [i for i, (h, c) in enumerate(zip(hits, counts, strict=True)) if h < c]
+        if room:
+            bumped = hits.copy()
+            bumped[room[0]] += 1  # in range, but no longer sums to the score
+            broken = {**victim, "hits": bumped}
+            others = [s for s in shooters if s is not victim]
+            with pytest.raises(ValidationError, match="hits sum to"):
+                WeekInput.model_validate(
+                    {**data, "expected_total": None, "shooters": [broken, *others]}
+                )

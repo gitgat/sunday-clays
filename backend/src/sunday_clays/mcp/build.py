@@ -7,10 +7,19 @@ the stations workbook is a fresh one-sheet file. No DB access.
 
 import datetime as dt
 import io
+import re
+import unicodedata
 from typing import Annotated, Self
 
 import openpyxl
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 from sunday_clays.ingest.names import name_key
 from sunday_clays.ingest.scores import _GAUGES
@@ -32,15 +41,30 @@ class BuildError(Exception):
         self.code = code
 
 
+_NAME_PART = re.compile(r"[^\W\d_]+(?:[ '\u2019.-]+[^\W\d_]+)*\.?")
+
+
 def _check_name(value: str) -> str:
-    if not 3 <= len(value) <= 60:
-        raise ValueError("name must be 3-60 characters")
+    """'Last, First' of letters, spaces, apostrophes, hyphens and periods; never a formula."""
+    if any(unicodedata.category(ch).startswith("C") for ch in value):
+        raise ValueError("name must not hold control characters or newlines")
     if value.count(",") != 1:
         raise ValueError("name must be 'Last, First' with exactly one comma")
     last, first = (part.strip() for part in value.split(","))
     if not last or not first:
         raise ValueError("name must be 'Last, First'")
-    return value
+    for part in (last, first):
+        if not _NAME_PART.fullmatch(part):
+            raise ValueError("name may only hold letters, spaces, apostrophes, hyphens and periods")
+    clean = f"{last}, {first}"
+    if not 3 <= len(clean) <= 60:
+        raise ValueError("name must be 3-60 characters")
+    return clean
+
+
+def _dup_keys(names: list[str]) -> bool:
+    keys = [name_key(n) for n in names]
+    return len(set(keys)) != len(keys)
 
 
 def _check_hits(name: str, hits: list[int], counts: list[int], score: int) -> None:
@@ -70,10 +94,10 @@ class _Model(BaseModel):
 
 class ShooterRow(_Model):
     name: str
-    score: int = Field(ge=0, le=50)
+    score: StrictInt = Field(ge=0, le=50)
     status: str = Field(pattern=r"^(Member|Guest)$")
     class_: str | None = Field(default=None, alias="class")
-    hits: list[int] | None = None
+    hits: list[StrictInt] | None = None
 
     @field_validator("name")
     @classmethod
@@ -91,8 +115,8 @@ class ShooterRow(_Model):
 class WeekInput(_Model):
     date: dt.date
     stations: list[StationLabel] = Field(min_length=1, max_length=12)
-    counts: list[int] = Field(min_length=1, max_length=12)
-    expected_total: int | None = None
+    counts: list[StrictInt] = Field(min_length=1, max_length=12)
+    expected_total: StrictInt | None = None
     shooters: list[ShooterRow] = Field(min_length=1, max_length=200)
 
     @field_validator("counts")
@@ -105,8 +129,7 @@ class WeekInput(_Model):
     @model_validator(mode="after")
     def _consistent(self) -> Self:
         _check_layout(self.stations, self.counts)
-        keys = [s.name.casefold() for s in self.shooters]
-        if len(set(keys)) != len(keys):
+        if _dup_keys([s.name for s in self.shooters]):
             raise ValueError("duplicate shooter name")
         for s in self.shooters:
             if s.hits is not None:
@@ -118,9 +141,10 @@ class WeekInput(_Model):
 
 
 class CorrectionRow(_Model):
+    """Score-only: a stations import replaces the whole day, so corrections carry no hits."""
+
     name: str
-    score: int = Field(ge=0, le=50)
-    hits: list[int] | None = None
+    score: StrictInt = Field(ge=0, le=50)
 
     @field_validator("name")
     @classmethod
@@ -129,28 +153,13 @@ class CorrectionRow(_Model):
 
 
 class CorrectionInput(_Model):
-    """`stations`/`counts` (the day's layout) are required when any row carries hits."""
-
     date: dt.date
     rows: list[CorrectionRow] = Field(min_length=1, max_length=5)
-    stations: list[StationLabel] | None = Field(default=None, min_length=1, max_length=12)
-    counts: list[int] | None = Field(default=None, min_length=1, max_length=12)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
-        keys = [r.name.casefold() for r in self.rows]
-        if len(set(keys)) != len(keys):
+        if _dup_keys([r.name for r in self.rows]):
             raise ValueError("duplicate shooter name")
-        with_hits = [r for r in self.rows if r.hits is not None]
-        if not with_hits:
-            return self
-        if self.stations is None or self.counts is None:
-            raise ValueError("stations and counts are required when a row has hits")
-        if any(not 1 <= c <= 10 for c in self.counts):
-            raise ValueError("each target count must be 1-10")
-        _check_layout(self.stations, self.counts)
-        for r in with_hits:
-            _check_hits(r.name, r.hits or [], self.counts, r.score)
         return self
 
 
@@ -222,7 +231,7 @@ def build_stations(week: WeekInput) -> bytes | None:
     return _stations_workbook(week.date, week.stations, week.counts, rows)
 
 
-def build_correction(base: bytes, c: CorrectionInput) -> tuple[bytes, bytes | None]:
+def build_correction(base: bytes, c: CorrectionInput) -> bytes:
     wb = _load(base)
     ws = wb[SCORES_SHEET]
     on_date: dict[str, list[int]] = {}
@@ -236,8 +245,4 @@ def build_correction(base: bytes, c: CorrectionInput) -> tuple[bytes, bytes | No
         if len(matches) > 1:
             raise BuildError("name_ambiguous")
         ws.cell(matches[0], 2).value = r.score
-    with_hits = [(r.name, r.hits) for r in c.rows if r.hits]
-    stations = None
-    if with_hits and c.stations is not None and c.counts is not None:
-        stations = _stations_workbook(c.date, c.stations, c.counts, with_hits)
-    return _save(wb), stations
+    return _save(wb)
