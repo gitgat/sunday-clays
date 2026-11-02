@@ -60,7 +60,6 @@ VALID: dict[str, Any] = {
             ],
         ),
         "mcp": backend(
-            deploy={"placement": {"constraints": list(X86)}},
             networks={"default": None, "mcp_gateway": {"aliases": ["sundayclays-mcp"]}},
         ),
         "deployer": {
@@ -104,7 +103,7 @@ def run(
 
 def test_x86_on_api_and_worker_is_allowed_even_with_spaces() -> None:
     stack = copy.deepcopy(VALID)
-    for name in ("api", "worker", "mcp"):
+    for name in ("api", "worker"):
         stack["services"][name]["deploy"]["placement"]["constraints"] = [
             "node.platform.arch == x86_64"
         ]
@@ -202,9 +201,13 @@ def api_on_mcp_gateway(stack: dict[str, Any]) -> None:
 
 
 def arm_on_mcp(stack: dict[str, Any]) -> None:
-    stack["services"]["mcp"]["deploy"]["placement"]["constraints"] = [
-        "node.platform.arch==aarch64"
-    ]
+    stack["services"]["mcp"].setdefault("deploy", {})["placement"] = {
+        "constraints": ["node.platform.arch==aarch64"]
+    }
+
+
+def x86_on_mcp(stack: dict[str, Any]) -> None:
+    stack["services"]["mcp"].setdefault("deploy", {})["placement"] = {"constraints": list(X86)}
 
 
 def arm_label_on_caddy(stack: dict[str, Any]) -> None:
@@ -470,6 +473,10 @@ def missing_deployer(stack: dict[str, Any]) -> None:
         (mcp_off_the_gateway, "mcp: must join mcp_gateway with the alias sundayclays-mcp"),
         (mcp_gateway_not_external, "network mcp_gateway: must be external"),
         (api_on_mcp_gateway, "api: must not join mcp_gateway"),
+        (
+            x86_on_mcp,
+            "mcp: must not be constrained to an architecture (node.platform.arch==x86_64)",
+        ),
         (
             arm_on_mcp,
             "mcp: must not be constrained to an architecture (node.platform.arch==aarch64)",

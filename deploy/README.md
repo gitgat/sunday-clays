@@ -19,11 +19,18 @@ secrets, `secrets/deploy.env` in the server's checkout (gitignored, with the res
 | `SC_LAN_HOST` | LAN hostname of Caddy's `sundayclays-lan` router rule |
 | `SC_MCP_NETWORK` | name of the external overlay network shared with the MCP gateway (default `mcp_gateway`) |
 | `SC_MCP_TOKEN_SECRET` | name of the external Swarm secret holding the MCP bearer token (default `sundayclays_mcp_token`) |
+| `SECRETS_REV` | revision suffix of the swarm secret names: compose names them `sundayclays_<name>_v${SECRETS_REV:-1}` (default `1`); set it to the revision the running services use |
+| `DEPLOYER_SECRETS_REV` | the same for the deployer's tokens, which expire on their own schedule (`sundayclays_<name>_v${DEPLOYER_SECRETS_REV:-1}`) |
 | `GHCR_USER` | GitHub login that owns the `read:packages` token |
 | `IMAGE_TAG` | the release to deploy (`sha-<7>`); set per deploy, not stored in the file |
 
 All but `IMAGE_TAG`, `SC_MCP_NETWORK` and `SC_MCP_TOKEN_SECRET` are required (`${…:?}`) with no
-defaults; the two MCP names have neutral defaults that the deploy env overrides. Every hand `docker stack deploy`
+defaults; the two MCP names have neutral defaults that the deploy env overrides. The two `*_SECRETS_REV`
+variables default to `1`, but after secrets are rotated the revision is bumped, and every hand deploy must use the
+live revision or `docker stack deploy` fails with "only updates to Labels are allowed" (Swarm secrets are
+immutable). Check what the running services use with
+`docker service inspect sundayclays_api --format '{{range .Spec.TaskTemplate.ContainerSpec.Secrets}}{{.SecretName}} {{end}}'`
+(the `_v<n>` suffix), and likewise for the deployer service with `DEPLOYER_SECRETS_REV`. Every hand `docker stack deploy`
 first runs `set -a; . secrets/deploy.env; set +a` from the checkout. CI renders the stack with
 placeholder values (`registry.example.internal`, `db-node`, `sundayclays.lan.example`).
 
@@ -43,12 +50,12 @@ placeholder values (`registry.example.internal`, `db-node`, `sundayclays.lan.exa
 - Images are published to GHCR by the CI `publish` job only from CI-green `main` commits. Set the
   repository variable `PUBLISH_ON_PUSH=true` before the first deploy, or run the `ci` workflow on
   `main` with "Run workflow" (workflow_dispatch). Tags are `sha-<7>` and `latest`; deploy `sha-<7>`.
-- Every `sha-<7>` image is multi-arch (`linux/amd64` + `linux/arm64`). Placement: `api`, `worker` and `mcp`
+- Every `sha-<7>` image is multi-arch (`linux/amd64` + `linux/arm64`). Placement: `api` and `worker`
   run on the x86 nodes (the database node or another x86 node, constraint `node.platform.arch==x86_64`),
   because a 4-core arm64 Pi measured slow against the database; if both x86 nodes are down the app
   stops. `db` and `backup` are pinned, by hostname, to the database node (`SC_DB_NODE`). `caddy` and the `deployer` can
-  go anywhere. `scripts/check_stack.py` allows an architecture constraint only on `api`,
-  `worker` and `mcp`, and only that one. The worker is limited to 1 GiB of memory. This is a `compose*.yaml`
+  go anywhere. `scripts/check_stack.py` allows an architecture constraint only on `api`
+  and `worker`, and only that one. `mcp` is light and not pinned: it runs on any node. The worker is limited to 1 GiB of memory. This is a `compose*.yaml`
   change, so it takes effect only after a hand `docker stack deploy`: follow "Deploy or upgrade"
   (`dep` pause, deploy the live tag, `dep` resume); the deployer never applies compose changes.
 - The MCP gateway's external overlay network and the external Swarm secret holding the MCP bearer
@@ -199,6 +206,12 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    SC_MCP_NETWORK=<mcp-gateway-network-name>
    SC_MCP_TOKEN_SECRET=<mcp-token-secret-name>
    GHCR_USER=<github-login>
+   # Secret revision the running services use (`_v<n>` suffix of their secret names; check with
+   # docker service inspect sundayclays_api --format '{{range .Spec.TaskTemplate.ContainerSpec.Secrets}}{{.SecretName}} {{end}}').
+   # Bump after rotating secrets; a hand deploy with a stale value fails "only updates to Labels are allowed".
+   SECRETS_REV=<n>
+   # Same for the deployer's tokens, only if they have been rotated separately (default 1).
+   # DEPLOYER_SECRETS_REV=<n>
    ENV
    chmod 600 secrets/deploy.env
    set -a; . secrets/deploy.env; set +a
@@ -710,7 +723,7 @@ says: every stored answer is keyed by the data version, the local date and the r
 The `mcp` service runs `python -m sunday_clays.mcp` from the backend image: a read-only
 [Model Context Protocol](https://modelcontextprotocol.io) server over the scores database. It
 listens on port 8080 (`GET /healthz` is open; everything else needs the bearer token) and is placed
-on the x86 nodes like `api`.
+on any node (it carries no placement constraint).
 
 - The gateway network and the token secret are external: the deployment creates them, and
   `SC_MCP_NETWORK` / `SC_MCP_TOKEN_SECRET` in the deploy env ("Deploy-time settings") name them.
