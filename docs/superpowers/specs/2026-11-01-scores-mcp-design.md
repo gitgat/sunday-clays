@@ -133,14 +133,30 @@ follows the same rules.
 - Gated by `MCP_COMMIT_ENABLED` like commit.
 
 ### Human approve path (outside the MCP)
-`python -m sunday_clays.mcp.approve <preview_id> [--correction]`, run in the api container by the owner, or by a
-Claude Code session the owner is typing into.
-- **What it does.** Prints the preview summary, asks for a typed `yes` on a TTY, then runs the same commit steps.
+`python -m sunday_clays.mcp.approve <preview_id> [--yes]`, run by the owner in the **mcp container** (only it has the
+backups bind mount), or by a Claude Code session the owner is typing into.
+- **What it does.** Sweeps expired previews, prints the preview summary (kind, date, head count, score sum, average,
+  new names, findings, old and new scores for a correction, age and expiry), asks for a typed `yes` on a TTY, then
+  runs the same commit steps through `commit_operation`.
+- **Bypasses the gate.** It ignores `MCP_COMMIT_ENABLED` (a human is approving) and passes `allow_correction=True`.
+  No MCP tool can reach it: the server never passes `allow_correction=True`, and a test pins that.
 - **Corrections.** Works for both week and correction previews.
-- **Audit.** Records `commit_path = "cli-approve"`.
+- **Non-interactive.** Without a TTY it refuses unless `--yes` is given.
+- **Exit codes.** 0 committed, 1 refused or declined, 2 bad arguments.
+- **Audit.** Records `commit_path = "cli-approve"` and a key `cli-<uuid>`.
 
 This is how commits happen during the preview-only period. A web-UI approve button may come later and would record
 `web-ui-approve`.
+
+### Phase 2 changes made during the build
+- **Corrections are score-only.** `preview_correction` changes scores, not station hits.
+- **Refusal codes added** beyond the first list: `future_date`, `base_changed` (the stored scores moved since the
+  preview, so it is expired), `import_not_pending`, `busy` (deadlock, timeout or lock wait: retry with the same key),
+  `db_error` (the database returned an error; the scores may or may not have changed, so check `get_job` or retry
+  with the same key), `already_committed` and `key_reused`.
+- **Refusals leave an audit row only.** A refused commit or rollback writes an `mcp.refuse` audit row and leaves the
+  operation's status alone, so it stays retryable. Refused previews are the exception: they record a `refused`
+  operation row.
 
 ## Pre-import dump
 - **What runs.** In-process `pg_dump --format=custom --exclude-table-data=response_cache` to

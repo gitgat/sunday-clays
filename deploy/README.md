@@ -738,4 +738,40 @@ on any node (it carries no placement constraint).
      and refreshes the deployer. It must come before the new deployer's first automatic run,
      because the deployer raises if `mcp` does not exist yet.
   4. Verify with `docker service ps sundayclays_mcp`.
-- Commits are disabled until phase 3: the server offers no write tools yet.
+- **Preview-only period.** The server has staging tools (`preview_week`, `preview_correction`) and
+  commit tools (`commit_week`, `rollback_week`), but `MCP_COMMIT_ENABLED` is `"false"` in
+  `compose.swarm.yaml`, so the commit tools refuse. An agent can stage a Sunday or a correction and
+  nothing reaches the live scores until the owner approves it by hand. Corrections are never
+  committed by a tool, even once commits are enabled.
+- **Approving a preview.** Run the approve command on the node that is running the `mcp` task, inside
+  the `mcp` container (only that container has the backups bind mounted, and the command takes the
+  pre-commit database backup):
+
+  ```sh
+  docker exec -it "$(docker ps -q -f name=sundayclays_mcp)" \
+    python -m sunday_clays.mcp.approve <preview_id>
+  ```
+
+  It prints a summary (kind, date, head count, score sum, average, new names, findings, and for a
+  correction each old and new score, plus the preview's age and expiry), then asks you to type
+  exactly `yes`; anything else cancels with no change. Without a terminal it refuses unless you add
+  `--yes`. Exit codes: 0 committed, 1 refused or declined (the refusal code is printed, for example
+  `expired` or `base_changed`: stage the preview again), 2 bad arguments. On success it prints the
+  rebuild job id and the backup file name; check progress with `get_job` using the preview id.
+  This command ignores `MCP_COMMIT_ENABLED` by design and is not reachable from any MCP tool.
+- **Turning on auto-commit later** is the owner's decision, not an automatic step. Set
+  `MCP_COMMIT_ENABLED` to `"true"` in `compose.swarm.yaml` and hand deploy ("Deploy or upgrade"); the
+  deployer only swaps images, so it never changes this. Corrections still need the approve command.
+  Complete the pre-launch checks below first.
+- **Undoing a commit.** With commits enabled, call `rollback_week` with the preview id; it works only
+  for the latest committed Sunday and takes a backup first. A committed correction is rolled back by
+  the owner only. With commits disabled, roll the import back from the admin imports page, then wait
+  for the rebuild it queues. In both cases restoring from the `pre-import-*.dump` file named in the
+  commit result is the last resort.
+- **Pre-launch checks before ever enabling auto-commit:**
+  1. The backup lock works across nodes on NFS: run the nightly backup and an approve at the same
+     time from different nodes and confirm one waits for the other (`fcntl.flock` over NFS depends
+     on the mount options).
+  2. `pg_dump` fits in the `mcp` service's memory limit with the real data: approve a real preview
+     and watch the task for an OOM kill.
+  3. A real dump is larger than the 1 MiB floor, so the size check does not reject healthy dumps.
