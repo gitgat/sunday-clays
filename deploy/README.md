@@ -17,10 +17,13 @@ secrets, `secrets/deploy.env` in the server's checkout (gitignored, with the res
 | `SC_REGISTRY` | the private registry mirror every app image is pulled from (also the deployer's `REGISTRY`) |
 | `SC_DB_NODE` | hostname of the database node, where `db` and `backup` are pinned |
 | `SC_LAN_HOST` | LAN hostname of Caddy's `sundayclays-lan` router rule |
+| `SC_MCP_NETWORK` | name of the external overlay network shared with the MCP gateway (default `mcp_gateway`) |
+| `SC_MCP_TOKEN_SECRET` | name of the external Swarm secret holding the MCP bearer token (default `sundayclays_mcp_token`) |
 | `GHCR_USER` | GitHub login that owns the `read:packages` token |
 | `IMAGE_TAG` | the release to deploy (`sha-<7>`); set per deploy, not stored in the file |
 
-All but `IMAGE_TAG` are required (`${…:?}`) with no defaults. Every hand `docker stack deploy`
+All but `IMAGE_TAG`, `SC_MCP_NETWORK` and `SC_MCP_TOKEN_SECRET` are required (`${…:?}`) with no
+defaults; the two MCP names have neutral defaults that the deploy env overrides. Every hand `docker stack deploy`
 first runs `set -a; . secrets/deploy.env; set +a` from the checkout. CI renders the stack with
 placeholder values (`registry.example.internal`, `db-node`, `sundayclays.lan.example`).
 
@@ -40,14 +43,17 @@ placeholder values (`registry.example.internal`, `db-node`, `sundayclays.lan.exa
 - Images are published to GHCR by the CI `publish` job only from CI-green `main` commits. Set the
   repository variable `PUBLISH_ON_PUSH=true` before the first deploy, or run the `ci` workflow on
   `main` with "Run workflow" (workflow_dispatch). Tags are `sha-<7>` and `latest`; deploy `sha-<7>`.
-- Every `sha-<7>` image is multi-arch (`linux/amd64` + `linux/arm64`). Placement: `api` and `worker`
+- Every `sha-<7>` image is multi-arch (`linux/amd64` + `linux/arm64`). Placement: `api`, `worker` and `mcp`
   run on the x86 nodes (the database node or another x86 node, constraint `node.platform.arch==x86_64`),
   because a 4-core arm64 Pi measured slow against the database; if both x86 nodes are down the app
   stops. `db` and `backup` are pinned, by hostname, to the database node (`SC_DB_NODE`). `caddy` and the `deployer` can
-  go anywhere. `scripts/check_stack.py` allows an architecture constraint only on `api` and
-  `worker`, and only that one. The worker is limited to 1 GiB of memory. This is a `compose*.yaml`
+  go anywhere. `scripts/check_stack.py` allows an architecture constraint only on `api`,
+  `worker` and `mcp`, and only that one. The worker is limited to 1 GiB of memory. This is a `compose*.yaml`
   change, so it takes effect only after a hand `docker stack deploy`: follow "Deploy or upgrade"
   (`dep` pause, deploy the live tag, `dep` resume); the deployer never applies compose changes.
+- The MCP gateway's external overlay network and the external Swarm secret holding the MCP bearer
+  token exist before the stack that uses them is deployed (`SC_MCP_NETWORK`, `SC_MCP_TOKEN_SECRET`;
+  "Scores MCP"). Without them `docker stack deploy` fails.
 - On each Raspberry Pi node, `docker info 2>&1 | grep -i 'memory limit'` must print nothing. A
   `No memory limit support` warning means the kernel's memory cgroup is off and the limits are
   ignored: add `cgroup_enable=memory cgroup_memory=1` to the kernel command line and reboot.
@@ -190,6 +196,8 @@ the internal Traefik once that name resolves to the ingress VIP. Both LAN router
    SC_REGISTRY=<registry-mirror-host>
    SC_DB_NODE=<database-node-hostname>
    SC_LAN_HOST=<lan-hostname>
+   SC_MCP_NETWORK=<mcp-gateway-network-name>
+   SC_MCP_TOKEN_SECRET=<mcp-token-secret-name>
    GHCR_USER=<github-login>
    ENV
    chmod 600 secrets/deploy.env
@@ -336,7 +344,7 @@ curl -fsS https://sundayclays.claysmasher.com/api/health   # {"status":"ok","ver
   and the site is briefly down while the new `api` migrates and starts.
 - Services update independently, so the previous release's `worker` can still run against the
   migrated schema until its own update; expand/contract migrations keep that safe.
-- `api`, `worker`, `caddy` and `backup` roll back by themselves (`failure_action: rollback`): a new
+- `api`, `worker`, `mcp`, `caddy` and `backup` roll back by themselves (`failure_action: rollback`): a new
   task that never turns healthy, or fails within 60 s of starting, puts that service back on its
   previous image. `db` never rolls back automatically.
 - `worker`, `db` and `backup` run one replica each; the worker gets 5 minutes to finish its current
@@ -358,7 +366,7 @@ The `deployer` service (`deploy/deployer/deployer.py`, one task on a Swarm manag
 `sunday-clays-backend`, `-frontend` and `-deployer` at `sha-<7>` to GHCR (the `publish` job runs only
 after `ci-ok` passes on `main`), it mirrors the three into the registry mirror (`SC_REGISTRY`), then runs
 `docker service update --image $SC_REGISTRY/…:sha-<7>` on `api`, waits until `/api/health`
-reports `sha-<7>`, then updates `worker`, `caddy` and `backup`, and records the SHA in its
+reports `sha-<7>`, then updates `worker`, `mcp`, `caddy` and `backup`, and records the SHA in its
 state directory, `/var/data/sunday-clays/deployer` (mounted at `/state`). A service already on that image is skipped.
 
 - **Mirroring.** For each image the deployer runs
@@ -517,8 +525,8 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   `rollback` mirrors the tag again first, so the tag must still be published in GHCR. If GHCR no
   longer has it, use the manual loop below from what the registry mirror (`SC_REGISTRY`) still holds.
 
-  This updates `api`, `worker`, `caddy` and `backup` in the usual order (skipping any already on
-  that tag) and **pauses** automatic deploys, because otherwise the next poll would put `main`
+  This updates `api`, `worker`, `mcp`, `caddy` and `backup` in the usual order (skipping any already on
+  that tag; but see the `mcp` note below for a tag older than the MCP server) and **pauses** automatic deploys, because otherwise the next poll would put `main`
   straight back. Once `main` has the fix, run `resume`. Roll back only to a tag in the `history`,
   for two reasons: those were all built after the rollback-safe start-up (Plan 13 Task 3), and an
   older image crashes on a migrated database with `Can't locate revision`; and they are all
@@ -539,6 +547,11 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
   `DELETE FROM imports WHERE kind = 'special'` and a rebuild first, and upload the shoot again
   once `main` is back. (`alembic downgrade 0007` itself does that clean-up for you, and removes
   the special Sundays' live rows.) The migration's docstring has the details.
+- **Rolling back past the MCP server.** A release from before `mcp` was merged has no
+  `sunday_clays.mcp`, so updating `mcp` to it fails and the deployer reverts the whole rollback.
+  First run `docker service scale sundayclays_mcp=0` (on a manager), then `rollback` (or the manual
+  loop below with `mcp` left out of its list). After rolling forward to a release that has the MCP
+  server, run `docker service scale sundayclays_mcp=1` again.
 - **Retry a failed SHA** without a new commit: `docker service update --force sundayclays_deployer`.
 - **Without the deployer** (if it is itself broken): stop it with
   `docker service scale sundayclays_deployer=0` (a later `docker stack deploy` sets it back to 1),
@@ -553,7 +566,7 @@ The first deploy that moves the state onto the bind needs the one-time steps in 
     docker buildx imagetools create --tag "$SC_REGISTRY/sunday-clays-$i:$TAG" \
       "ghcr.io/gitgat/sunday-clays-$i:$TAG"
   done
-  for s in api worker caddy backup; do
+  for s in api worker mcp caddy backup; do
     kind=backend; [ "$s" = caddy ] && kind=frontend
     docker service update --image "$SC_REGISTRY/sunday-clays-$kind:$TAG" \
       "sundayclays_$s" || { echo "stopped at $s"; break; }
@@ -691,3 +704,25 @@ says: every stored answer is keyed by the data version, the local date and the r
   `restore.sh <dump> [db]` is all or nothing. In one transaction it drops and recreates the `public`
   schema and replays the dump, so tables a newer migration added are gone afterwards. A dump that
   fails part-way leaves the database exactly as it was.
+
+## Scores MCP
+
+The `mcp` service runs `python -m sunday_clays.mcp` from the backend image: a read-only
+[Model Context Protocol](https://modelcontextprotocol.io) server over the scores database. It
+listens on port 8080 (`GET /healthz` is open; everything else needs the bearer token) and is placed
+on the x86 nodes like `api`.
+
+- The gateway network and the token secret are external: the deployment creates them, and
+  `SC_MCP_NETWORK` / `SC_MCP_TOKEN_SECRET` in the deploy env ("Deploy-time settings") name them.
+  `mcp` joins the network with the alias `sundayclays-mcp`; no other service may, and `mcp` never
+  joins `traefik_public` or `edge_public` (`scripts/check_stack.py`).
+- Routing, hostnames and the gateway itself are the deployment's concern, not this repo's.
+- Rolling out the first release that has `mcp`, in order:
+  1. The deployment creates the external overlay network and the bearer-token secret, and sets
+     `SC_MCP_NETWORK` and `SC_MCP_TOKEN_SECRET` in `secrets/deploy.env`.
+  2. Wait until `dep status` shows the merge SHA or a later one.
+  3. Do "Deploy or upgrade" (pause, `docker stack deploy`, resume). That one deploy creates `mcp`
+     and refreshes the deployer. It must come before the new deployer's first automatic run,
+     because the deployer raises if `mcp` does not exist yet.
+  4. Verify with `docker service ps sundayclays_mcp`.
+- Commits are disabled until phase 3: the server offers no write tools yet.

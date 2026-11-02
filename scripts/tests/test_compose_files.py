@@ -60,7 +60,7 @@ def test_swarm_restarts_the_worker_even_after_a_clean_exit() -> None:
     assert restart["condition"] == "any"
 
 
-@pytest.mark.parametrize("name", ["caddy", "api", "db", "backup"])
+@pytest.mark.parametrize("name", ["caddy", "api", "mcp", "db", "backup"])
 def test_swarm_restarts_every_long_running_service_even_after_a_clean_exit(name: str) -> None:
     """A task that gets SIGTERM and exits 0 must come back: on-failure left db and backup at 0/1.
 
@@ -195,3 +195,29 @@ def test_caddy_writes_no_access_log() -> None:
     directives = [line.strip().split()[0] for line in caddyfile.splitlines() if line.strip()]
 
     assert "log" not in directives
+
+
+def test_stack_has_mcp_service() -> None:
+    """The scores MCP server: the backend image, its own command, on the gateway network only."""
+    mcp = service("compose.swarm.yaml", "mcp")
+    api = service("compose.swarm.yaml", "api")
+    overlay = yaml.safe_load((ROOT / "compose.swarm.yaml").read_text())
+
+    assert mcp["image"] == api["image"]
+    assert mcp["command"] == ["python", "-m", "sunday_clays.mcp"]
+    assert mcp["environment"]["MCP_PORT"] == "8080"
+    assert mcp["networks"]["mcp_gateway"] == {"aliases": ["sundayclays-mcp"]}
+    assert "traefik_public" not in mcp["networks"]
+    assert "edge_public" not in mcp["networks"]
+    assert "healthcheck" in mcp and "/healthz" in " ".join(mcp["healthcheck"]["test"])
+    assert overlay["networks"]["mcp_gateway"] == {
+        "external": True,
+        "name": "${SC_MCP_NETWORK:-mcp_gateway}",
+    }
+    assert overlay["secrets"]["mcp_token"] == {
+        "external": True,
+        "name": "${SC_MCP_TOKEN_SECRET:-sundayclays_mcp_token}",
+    }
+    assert [n for n, s in overlay["services"].items() if "mcp_gateway" in (s.get("networks") or {})] == [
+        "mcp"
+    ]
