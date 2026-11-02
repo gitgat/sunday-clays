@@ -5,7 +5,9 @@ import json
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
+from datetime import date
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from mcp.client.session import ClientSession
@@ -14,7 +16,7 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from sunday_clays.models import Event, Round, Shooter
+from sunday_clays.models import Event, McpOperation, Round, Shooter
 
 TOKEN = "test-token-not-secret"
 
@@ -106,6 +108,11 @@ def test_get_event_over_mcp(mcp_server: str, fx_session: Session) -> None:
         ("find_shooters", {"query": "x" * 61}),
         ("get_event", {"date": "not-a-date"}),
         ("get_job", {"id": 0}),
+        ("get_job", {"id": -1}),
+        ("get_job", {"id": 2**31}),
+        ("get_job", {"id": "not-a-uuid"}),
+        ("get_job", {"id": 1.5}),
+        ("get_job", {"id": 1, "bogus": 1}),
     ],
 )
 def test_bad_input_is_tool_error(
@@ -150,3 +157,20 @@ def test_tool_arguments_not_logged(
     server_side = [r for r in caplog.records if r.name.startswith(("mcp.server", "sunday_clays"))]
     assert not [r for r in server_side if secret in r.getMessage()]
     assert not [r for r in server_side if secret in str(r.__dict__.get("args", ""))]
+
+
+def test_get_job_accepts_uuid_string(mcp_server: str, fx_session: Session) -> None:
+    op = McpOperation(kind="week", event_date=date(2026, 11, 1), status="previewed")
+    fx_session.add(op)
+    fx_session.flush()
+    found = asyncio.run(call_tool(mcp_server, "get_job", {"id": str(op.id)}))
+    assert found["preview_id"] == str(op.id)
+    assert found["status"] == "previewed"
+    missing = asyncio.run(call_tool(mcp_server, "get_job", {"id": str(uuid4())}))
+    assert missing["found"] is False
+
+
+def test_get_job_int_bounds_still_accepted(mcp_server: str, mcp_token: str) -> None:
+    for job_id in (1, 2**31 - 1):
+        is_error, _ = asyncio.run(_raw(mcp_server, mcp_token, "get_job", {"id": job_id}))
+        assert is_error is False

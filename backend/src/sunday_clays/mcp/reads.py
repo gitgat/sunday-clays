@@ -1,6 +1,7 @@
 """Read-only queries behind the MCP read tools."""
 
 from datetime import date, timedelta
+from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -11,11 +12,12 @@ from sunday_clays.mcp.schemas import (
     JobStatus,
     NoEvent,
     NotFound,
+    OperationStatus,
     RowInfo,
     ShooterHit,
     StationInfo,
 )
-from sunday_clays.models import DataIssue, Event, Job, Round, Shooter, ShooterAlias
+from sunday_clays.models import DataIssue, Event, Job, McpOperation, Round, Shooter, ShooterAlias
 from sunday_clays.models.live import StationLayout
 
 _STATUS_WINDOW_DAYS = 365
@@ -152,7 +154,10 @@ def get_event(
     )
 
 
-def get_job(session: Session, job_id: int) -> JobStatus | NotFound:
+def get_job(session: Session, ref: int | UUID) -> JobStatus | OperationStatus | NotFound:
+    if isinstance(ref, UUID):
+        return _get_operation(session, ref)
+    job_id = ref
     job = session.get(Job, job_id)
     if job is None:
         return NotFound(id=job_id)
@@ -165,4 +170,24 @@ def get_job(session: Session, job_id: int) -> JobStatus | NotFound:
         started_at=job.started_at,
         finished_at=job.finished_at,
         error=job.error,
+    )
+
+
+def _get_operation(session: Session, preview_id: UUID) -> OperationStatus | NotFound:
+    op = session.get(McpOperation, preview_id)
+    if op is None:
+        return NotFound(id=preview_id)
+    return OperationStatus(
+        preview_id=op.id,
+        kind=op.kind,
+        event_date=op.event_date,
+        status=op.status,
+        commit_path=op.commit_path,
+        scores_import_id=op.scores_import_id,
+        stations_import_id=op.stations_import_id,
+        job_id=op.job_id,
+        backup_file=op.backup_file,
+        created_at=op.created_at,
+        committed_at=op.committed_at,
+        rolled_back_at=op.rolled_back_at,
     )

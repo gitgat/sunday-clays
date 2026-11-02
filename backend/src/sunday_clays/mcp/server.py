@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from typing import Annotated, Any
+from uuid import UUID
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -108,8 +109,13 @@ def _register_reads(mcp: FastMCP, session_factory: SessionFactoryFn) -> None:
         skip = {"rows"} if isinstance(result, EventSummary) and result.rows is None else None
         return result.model_dump(mode="json", exclude=skip)
 
-    @mcp.tool(description="Check the status of a background job (queued, running, done or failed).")
-    def get_job(id: Annotated[int, Field(ge=1, le=MAX_JOB_ID)]) -> dict[str, Any]:
+    @mcp.tool(
+        description=(
+            "Check the status of a background job (queued, running, done or failed) by its "
+            "integer id, or of a score preview or commit by its preview_id (a uuid)."
+        )
+    )
+    def get_job(id: Annotated[int, Field(ge=1, le=MAX_JOB_ID)] | UUID) -> dict[str, Any]:
         args = GetJobInput(id=id)
         with session_factory() as session:
             return reads.get_job(session, args.id).model_dump(mode="json")

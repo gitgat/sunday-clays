@@ -18,6 +18,7 @@ from sunday_clays.models.live import (
     StationHit,
     StationLayout,
 )
+from sunday_clays.models.mcp import McpOperation
 from sunday_clays.models.ops import AppState, Job
 from sunday_clays.models.page_cache import ResponseCache
 from sunday_clays.models.page_views import (
@@ -60,6 +61,7 @@ __all__ = [
     "InsightPick",
     "Job",
     "LoginAttempt",
+    "McpOperation",
     "PageKindRollup",
     "PageView",
     "PageViewAttempt",
