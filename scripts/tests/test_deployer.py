@@ -241,7 +241,7 @@ def cfg(tmp_path: Path) -> Any:
     )
 
 
-APP = [f"sundayclays_{s}" for s in ("api", "worker", "caddy", "backup")]
+APP = [f"sundayclays_{s}" for s in ("api", "worker", "mcp", "caddy", "backup")]
 
 
 def seed_history(cfg: Any, tag: str) -> None:
@@ -399,11 +399,11 @@ def test_failure_after_api_rolls_the_earlier_services_back(
     fake.roll_back.add("sundayclays_caddy")
 
     assert d.tick(cfg, deps, set()) == "failed"
-    assert fake.updates() == APP[:3]
-    assert fake.rollbacks() == ["sundayclays_worker", "sundayclays_api"]
+    assert fake.updates() == APP[:4]
+    assert fake.rollbacks() == ["sundayclays_mcp", "sundayclays_worker", "sundayclays_api"]
     assert fake.tags() == {OLD_TAG}
     assert "sha" not in d.load_state(cfg.state_dir)
-    assert "rolled back sundayclays_worker, sundayclays_api" in logs[-1]
+    assert "rolled back sundayclays_mcp, sundayclays_worker, sundayclays_api" in logs[-1]
 
 
 def test_a_failed_rollback_is_logged_and_the_others_still_roll_back(
@@ -413,9 +413,9 @@ def test_a_failed_rollback_is_logged_and_the_others_still_roll_back(
     fake.fail_rollback.add("sundayclays_worker")
 
     assert d.tick(cfg, deps, set()) == "failed"
-    assert fake.rollbacks() == ["sundayclays_worker", "sundayclays_api"]
+    assert fake.rollbacks() == ["sundayclays_mcp", "sundayclays_worker", "sundayclays_api"]
     assert any("sundayclays_worker: docker service rollback failed" in line for line in logs)
-    assert "rolled back sundayclays_api" in logs[-1]
+    assert "rolled back sundayclays_mcp, sundayclays_api" in logs[-1]
 
 
 def test_a_failed_sha_is_not_retried_every_poll(cfg: Any, deps: Any, fake: Fake) -> None:
@@ -483,7 +483,12 @@ def test_rollback_to_the_image_swarm_already_rolled_back_to_succeeds(
 
     d.rollback(cfg, deps, OLD_TAG)
 
-    assert fake.updates() == ["sundayclays_api", "sundayclays_worker", "sundayclays_backup"]
+    assert fake.updates() == [
+        "sundayclays_api",
+        "sundayclays_worker",
+        "sundayclays_mcp",
+        "sundayclays_backup",
+    ]
     assert fake.tags() == {OLD_TAG}
     assert d.load_state(cfg.state_dir)["tag"] == OLD_TAG
 
