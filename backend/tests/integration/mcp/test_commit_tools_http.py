@@ -193,7 +193,28 @@ def test_real_pg_dump_happy_path(
     assert NOW  # silence unused-import lint for the shared constant
 
 
-def test_no_argument_can_allow_a_correction(mcp_server: str, mcp_token: str) -> None:
-    args = {"preview_id": "x", "idempotency_key": KEY, "allow_correction": True}
-    is_error, _ = asyncio.run(_raw(mcp_server, mcp_token, "commit_week", args))
+def test_no_argument_can_allow_a_correction(
+    mcp_server: str, mcp_token: str, fx_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.integration.mcp.test_commit import _correction
+
+    monkeypatch.setenv("MCP_COMMIT_ENABLED", "true")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@h/d")
+    monkeypatch.setattr(backup, "pre_import_dump", _fake_dump)
+    pid = _correction(fx_session)
+    args = {"preview_id": pid, "idempotency_key": KEY}
+    is_error, text = asyncio.run(_raw(mcp_server, mcp_token, "commit_week", args))
     assert is_error is True
+    assert "correction_needs_human" in text
+    is_error, text = asyncio.run(
+        _raw(mcp_server, mcp_token, "commit_week", {**args, "allow_correction": True})
+    )
+    assert is_error is True
+    assert "allow_correction" in text  # a validation error, not a refusal code
+    assert "correction_needs_human" not in text
+    assert _statuses(fx_session, pid) == ["pending"]
+    for tool in ("rollback_week",):
+        is_error, _ = asyncio.run(
+            _raw(mcp_server, mcp_token, tool, {**args, "allow_correction": True})
+        )
+        assert is_error is True

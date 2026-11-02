@@ -185,11 +185,7 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
         )
     )
     async def preview_week(week: WeekInput) -> dict[str, Any]:
-        work = functools.partial(
-            writes.run_write,
-            write_factory,
-            lambda session: writes.preview_week(session, week, now=clock()),
-        )
+        work = functools.partial(writes.preview_week_tool, write_factory, week, now=clock())
         try:
             result = await anyio.to_thread.run_sync(work)
         except writes.Refusal as exc:
@@ -209,9 +205,7 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
     )
     async def preview_correction(correction: CorrectionInput) -> dict[str, Any]:
         work = functools.partial(
-            writes.run_write,
-            write_factory,
-            lambda session: writes.preview_correction(session, correction, now=clock()),
+            writes.preview_correction_tool, write_factory, correction, now=clock()
         )
         try:
             result = await anyio.to_thread.run_sync(work)
@@ -229,10 +223,13 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
     )
     async def commit_week(preview_id: _PreviewId, idempotency_key: _IdemKey) -> dict[str, Any]:
         return await _run_op(
-            write_factory,
-            lambda s: writes.commit_week(
-                s, preview_id, idempotency_key=idempotency_key, now=clock()
-            ),
+            functools.partial(
+                writes.commit_week_tool,
+                write_factory,
+                preview_id,
+                idempotency_key=idempotency_key,
+                now=clock(),
+            )
         )
 
     @mcp.tool(
@@ -244,17 +241,17 @@ def _register_writes(mcp: FastMCP, write_factory: SessionFactoryFn, clock: Clock
     )
     async def rollback_week(preview_id: _PreviewId, idempotency_key: _IdemKey) -> dict[str, Any]:
         return await _run_op(
-            write_factory,
-            lambda s: writes.rollback_week(
-                s, preview_id, idempotency_key=idempotency_key, now=clock()
-            ),
+            functools.partial(
+                writes.rollback_week_tool,
+                write_factory,
+                preview_id,
+                idempotency_key=idempotency_key,
+                now=clock(),
+            )
         )
 
 
-async def _run_op(
-    write_factory: SessionFactoryFn, fn: Callable[[Session], dict[str, Any]]
-) -> dict[str, Any]:
-    work = functools.partial(writes.run_write, write_factory, fn)
+async def _run_op(work: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     try:
         return await anyio.to_thread.run_sync(work)
     except writes.Refusal as exc:

@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 from sqlalchemy import exists, func, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from sunday_clays.auth.deps import record_audit
@@ -105,16 +106,28 @@ def preview_ttl() -> dt.timedelta:
     return dt.timedelta(seconds=seconds)
 
 
+BUSY_SQLSTATES = frozenset({"40P01", "57014", "55P03"})  # deadlock, canceled, lock not available
+
+
 def run_write[T](
     factory: Callable[[], AbstractContextManager[Session]], fn: Callable[[Session], T]
 ) -> T:
-    """Run ``fn`` in a write session; a Refusal is raised only after the session has committed."""
+    """Run ``fn`` in a write session; a Refusal is raised only after the session has committed.
+
+    A deadlock, statement timeout or lock-wait timeout becomes the coded, retryable refusal
+    ``busy``; the SQL text is never returned to the caller.
+    """
     refusal: Refusal | None = None
-    with factory() as session:
-        try:
-            result = fn(session)
-        except Refusal as exc:
-            refusal = exc
+    try:
+        with factory() as session:
+            try:
+                result = fn(session)
+            except Refusal as exc:
+                refusal = exc
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) in BUSY_SQLSTATES:
+            raise Refusal("busy", "the database was busy; nothing changed, try again") from None
+        raise
     if refusal is not None:
         raise refusal
     return result
@@ -153,10 +166,13 @@ def _sweep(session: Session, now: dt.datetime, ttl: dt.timedelta) -> None:
 
 def _supersede(session: Session, event_date: dt.date) -> None:
     """A newer preview for a Sunday replaces any earlier one, so two never both commit."""
+    # FOR UPDATE: a row another transaction is committing mid-dump is waited for, and the WHERE
+    # is re-evaluated afterwards, so a just-committed operation drops out and is never expired.
     older = session.scalars(
-        select(McpOperation).where(
-            McpOperation.status == "previewed", McpOperation.event_date == event_date
-        )
+        select(McpOperation)
+        .where(McpOperation.status == "previewed", McpOperation.event_date == event_date)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).all()
     for op in older:
         _expire(session, op)
@@ -298,9 +314,9 @@ def _record_preview(
     digest: str,
     base_id: int,
 ) -> McpOperation:
-    _require_base(session, base_id)
     _supersede(session, date)
     session.flush()  # the old row leaves 'previewed' before the new one enters it
+    _require_base(session, base_id)  # after any wait on a committing row: the base may have moved
     op = McpOperation(
         kind=kind,
         event_date=date,
@@ -421,11 +437,17 @@ def _week_preview(
 
 
 def preview_week(
-    session: Session, week: WeekInput, *, now: dt.datetime, ttl: dt.timedelta | None = None
+    session: Session,
+    week: WeekInput,
+    *,
+    now: dt.datetime,
+    ttl: dt.timedelta | None = None,
+    sweep: bool = True,
 ) -> WeekPreview:
     ttl = ttl or preview_ttl()
     _lock_previews(session)
-    _sweep(session, now, ttl)
+    if sweep:  # the tool path sweeps in its own short transaction first (sweep_expired)
+        _sweep(session, now, ttl)
     staged: list[int] = []
     try:
         return _week_preview(session, week, now, ttl, staged)
@@ -494,11 +516,17 @@ def _correction_preview(
 
 
 def preview_correction(
-    session: Session, c: CorrectionInput, *, now: dt.datetime, ttl: dt.timedelta | None = None
+    session: Session,
+    c: CorrectionInput,
+    *,
+    now: dt.datetime,
+    ttl: dt.timedelta | None = None,
+    sweep: bool = True,
 ) -> CorrectionPreview:
     ttl = ttl or preview_ttl()
     _lock_previews(session)
-    _sweep(session, now, ttl)
+    if sweep:
+        _sweep(session, now, ttl)
     staged: list[int] = []
     try:
         return _correction_preview(session, c, now, ttl, staged)
@@ -517,7 +545,7 @@ DumpFn = Callable[..., Path]
 
 def commits_enabled() -> bool:
     """``MCP_COMMIT_ENABLED``: only "true" or "1" turn it on; anything else (or unset) is off."""
-    return os.environ.get("MCP_COMMIT_ENABLED", "").strip().lower() in {"true", "1"}
+    return os.environ.get("MCP_COMMIT_ENABLED") in {"true", "1"}
 
 
 def backup_dir() -> Path:
@@ -634,7 +662,8 @@ def _replay(op: McpOperation, owner: tuple[McpOperation, str] | None, which: str
     """The stored result for a repeated key on the same operation; any other use is reuse."""
     if owner is None or owner[0].id != op.id or owner[1] != which:
         raise Refusal("key_reused", "that idempotency key was already used for something else")
-    return {k: v for k, v in op.result[which].items() if k != "idempotency_key"}
+    stored = {k: v for k, v in op.result[which].items() if k != "idempotency_key"}
+    return {**stored, "current_status": op.status}  # the stored result itself is unchanged
 
 
 def commit_operation(
@@ -648,9 +677,9 @@ def commit_operation(
     dump: DumpFn | None = None,
 ) -> dict[str, Any]:
     """Commit a previewed operation (scores then stations) after a verified dump; fail closed."""
-    _check_key(idempotency_key)
     parsed = _parse_id(preview_id)
     try:
+        _check_key(idempotency_key)
         return _commit(
             session, preview_id, idempotency_key, commit_path, allow_correction, now, dump
         )
@@ -668,7 +697,6 @@ def _commit(
     now: dt.datetime,
     dump: DumpFn | None,
 ) -> dict[str, Any]:
-    _sweep(session, now, preview_ttl())
     op = _lock_op(session, preview_id)
     owner = _find_by_key(session, key)
     if owner is not None:
@@ -679,6 +707,8 @@ def _commit(
         code = "already_committed" if op.status in {"committed", "rolled_back"} else "not_previewed"
         raise Refusal(code, f"this preview is {op.status}")
     if op.created_at < now - preview_ttl():
+        _expire(session, op)  # nothing is held across a dump yet: this refuses straight away
+        session.flush()
         raise Refusal("expired", "this preview expired; stage it again")
     if op.kind == "correction" and not allow_correction:
         raise Refusal(
@@ -769,9 +799,9 @@ def rollback_operation(
     dump: DumpFn | None = None,
 ) -> dict[str, Any]:
     """Undo the latest committed operation (after a verified dump); fail closed."""
-    _check_key(idempotency_key)
     parsed = _parse_id(preview_id)
     try:
+        _check_key(idempotency_key)
         return _rollback(session, preview_id, idempotency_key, now, dump)
     except Refusal as exc:
         _audit_refusal(session, "rollback", parsed, exc.code)
@@ -781,7 +811,6 @@ def rollback_operation(
 def _rollback(
     session: Session, preview_id: str, key: str, now: dt.datetime, dump: DumpFn | None
 ) -> dict[str, Any]:
-    _sweep(session, now, preview_ttl())
     op = _lock_op(session, preview_id)
     owner = _find_by_key(session, key)
     if owner is not None:
@@ -850,10 +879,16 @@ def _rollback(
 def _gate(session: Session, action: str, preview_id: str) -> None:
     if not commits_enabled():
         _audit_refusal(session, action, _parse_id(preview_id), "commits_disabled")
+        parsed = _parse_id(preview_id)
+        how = (
+            f"{APPROVE_COMMAND} {parsed}"
+            if parsed is not None
+            else "the approve command with the preview_id returned by preview_week"
+        )  # only a parsed UUID is ever echoed back
         raise Refusal(
             "commits_disabled",
-            "commits through this server are off; a human commits during the preview-only "
-            f"period with: {APPROVE_COMMAND} {preview_id}",
+            f"commits through this server are off; a human commits during the preview-only "
+            f"period with: {how}",
         )
 
 
@@ -898,4 +933,63 @@ def rollback_week(
         )
     return rollback_operation(
         session, preview_id, idempotency_key=idempotency_key, now=now, dump=dump
+    )
+
+
+# --- tool entry points: gate, then a short sweep transaction, then the real work ---------------
+def sweep_expired(factory: Callable[[], AbstractContextManager[Session]], now: dt.datetime) -> None:
+    """Expire stale previews in their own short transaction.
+
+    Never inside a commit's transaction: discarding takes the import lifecycle lock, which would
+    then be held across the dump and invert lock order against the row locks held there.
+    """
+    run_write(factory, lambda session: _sweep(session, now, preview_ttl()))
+
+
+def preview_week_tool(
+    factory: Callable[[], AbstractContextManager[Session]], week: WeekInput, *, now: dt.datetime
+) -> WeekPreview:
+    sweep_expired(factory, now)
+    return run_write(factory, lambda s: preview_week(s, week, now=now, sweep=False))
+
+
+def preview_correction_tool(
+    factory: Callable[[], AbstractContextManager[Session]],
+    correction: CorrectionInput,
+    *,
+    now: dt.datetime,
+) -> CorrectionPreview:
+    sweep_expired(factory, now)
+    return run_write(factory, lambda s: preview_correction(s, correction, now=now, sweep=False))
+
+
+def commit_week_tool(
+    factory: Callable[[], AbstractContextManager[Session]],
+    preview_id: str,
+    *,
+    idempotency_key: str,
+    now: dt.datetime,
+    dump: DumpFn | None = None,
+) -> dict[str, Any]:
+    run_write(factory, lambda s: _gate(s, "commit", preview_id))  # disabled: no sweep, no state
+    sweep_expired(factory, now)
+    return run_write(
+        factory,
+        lambda s: commit_week(s, preview_id, idempotency_key=idempotency_key, now=now, dump=dump),
+    )
+
+
+def rollback_week_tool(
+    factory: Callable[[], AbstractContextManager[Session]],
+    preview_id: str,
+    *,
+    idempotency_key: str,
+    now: dt.datetime,
+    dump: DumpFn | None = None,
+) -> dict[str, Any]:
+    run_write(factory, lambda s: _gate(s, "rollback", preview_id))
+    sweep_expired(factory, now)
+    return run_write(
+        factory,
+        lambda s: rollback_week(s, preview_id, idempotency_key=idempotency_key, now=now, dump=dump),
     )
