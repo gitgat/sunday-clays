@@ -100,7 +100,7 @@ def test_typing_yes_commits_and_reports_the_job_and_backup(
     assert op.status == "committed"
     assert op.commit_path == "cli-approve"
     assert (op.idempotency_key or "").startswith("cli-")
-    assert f"job {op.job_id};" in out
+    assert f"get_job with the job id {op.job_id}" in out
     assert "pre-import-x.dump" in out
     assert "get_job" in out
     assert pid in out
@@ -185,6 +185,7 @@ def test_a_correction_commits_and_shows_old_and_new_scores(
     assert code == 0, out
     assert "correction" in out
     assert " -> " in out
+    assert "station_score_mismatch" in out
     stored = _op(committed_engine, pid).result["preview"]["changes"][0]
     assert stored["name"] in out
     assert f"{stored['old_score']} -> {stored['new_score']}" in out
@@ -216,7 +217,8 @@ def test_an_expired_preview_is_refused_expired(fac: Factory, committed_engine: E
 def test_an_unknown_preview_exits_1_without_a_change(fac: Factory) -> None:
     code, out = _run(["00000000-0000-4000-8000-000000000000", "--yes"], Stdin(tty=False))
     assert code == 1
-    assert "no preview" in out.lower()
+    assert "unknown_preview" in out
+    assert "Refused: unknown_preview" in out
 
 
 def test_an_already_committed_preview_is_refused(fac: Factory) -> None:
@@ -308,3 +310,222 @@ def test_the_server_module_never_allows_corrections_or_imports_approve() -> None
     assert "import approve" not in src
     assert "cli-approve" not in src
     assert "commit_operation" not in src
+
+
+# --- fix round 1 -------------------------------------------------------------------------------
+class HookIn(Stdin):
+    """A stdin that runs a hook between the summary and the answer."""
+
+    def __init__(self, hook: Callable[[], None], text: str = "yes\n") -> None:
+        super().__init__(text)
+        self.hook = hook
+
+    def readline(self, *_a: Any) -> str:
+        self.hook()
+        return super().readline()
+
+
+def _audits(engine: Engine, action: str = "mcp.refuse") -> list[dict[str, Any]]:
+    with Session(engine) as s:
+        return [a.details for a in s.scalars(select(AuditLog).where(AuditLog.action == action))]
+
+
+def test_the_cli_sweeps_stale_previews_first(fac: Factory, committed_engine: Engine) -> None:
+    stale = _week_preview(fac, _week(AFTER, 40), now=STALE)
+    pid = _week_preview(fac)
+    assert _run([pid, "--yes"], Stdin(tty=False))[0] == 0
+    assert _op(committed_engine, stale).status == "expired"  # swept, not merely left behind
+
+
+def test_a_leading_space_is_not_yes(fac: Factory, committed_engine: Engine) -> None:
+    pid = _week_preview(fac)
+    code, _out = _run([pid], Stdin(" yes\n"))
+    assert code == 1
+    assert _op(committed_engine, pid).status == "previewed"
+
+
+def test_the_summary_numbers_messages_and_clock(fac: Factory) -> None:
+    pid = _week_preview(fac)
+    stored = writes.run_write(
+        fac,
+        lambda s: dict(s.get(McpOperation, UUID(pid)).result["preview"]),  # type: ignore[union-attr]
+    )
+    now = LATER + dt.timedelta(minutes=25)
+    out = io.StringIO()
+    approve.main([pid], Stdin("no\n"), out, dump=FakeDump(), now=lambda: now)
+    text = out.getvalue()
+    n = len(stored["findings_for_date"])
+    assert f"findings for this date: {n} (+{stored['historical_findings']} older)" in text
+    for f in stored["findings_for_date"]:
+        assert f["message"] in text
+    assert "staged 25 min ago" in text
+    assert "expires 2026-10-13T19:00" in text  # created 18:00 + the one-hour default
+
+
+def test_duplicates_and_note_are_printed(fac: Factory) -> None:
+    def many(s: Session) -> str:
+        week = _week()
+        extra = [{"name": f"Newname{c}, Person", "score": 20, "status": "Guest"} for c in "ABCDE"]
+        data = week.model_dump(mode="json", by_alias=True)
+        data["shooters"] = data["shooters"] + extra
+        from sunday_clays.mcp.build import WeekInput
+
+        return writes.preview_week(s, WeekInput.model_validate(data), now=LATER).preview_id
+
+    pid = writes.run_write(fac, many)
+    out = io.StringIO()
+    approve.main([pid], Stdin("no\n"), out, dump=FakeDump(), now=lambda: LATER)
+    assert "check each against find_shooters" in out.getvalue()
+
+
+def test_a_correction_summary_has_counts(fac: Factory) -> None:
+    pid = _correction_preview(fac)
+    out = io.StringIO()
+    approve.main([pid], Stdin("no\n"), out, dump=FakeDump(), now=lambda: LATER)
+    text = out.getvalue()
+    assert "shooters, score sum" in text
+    assert "average" in text
+    assert "station detail stays" in text
+
+
+def test_a_non_previewed_status_goes_straight_to_the_refusal(fac: Factory) -> None:
+    pid = _week_preview(fac, now=STALE)
+    code, out = _run([pid], Stdin("yes\n"))  # a TTY and no --yes
+    assert code == 1
+    assert "Refused: expired" in out
+    assert "Type yes" not in out
+
+
+@pytest.mark.parametrize("how", ["superseded", "base_moved"])
+def test_state_changing_between_summary_and_yes_refuses_with_no_dump(
+    fac: Factory, committed_engine: Engine, how: str
+) -> None:
+    a = _week_preview(fac)
+    b = _week_preview(fac, _week(AFTER, 40))
+
+    def change() -> None:
+        if how == "superseded":
+            writes.run_write(fac, lambda s: writes.preview_week(s, _week(score=44), now=LATER))
+        else:
+            writes.commit_week_tool(
+                fac, b, idempotency_key="key-bbbbbbb", now=LATER, dump=FakeDump()
+            )
+
+    dump = FakeDump()
+    base = _active(committed_engine) if how == "superseded" else None
+    code, out = _run([a], HookIn(change), dump=dump)
+    assert code == 1
+    assert "Refused:" in out
+    if how == "base_moved":
+        assert "base_changed" in out
+        assert dump.calls == []
+    else:
+        assert dump.calls == []
+        assert _active(committed_engine) == base
+    assert _op(committed_engine, a).status == "expired"
+
+
+def test_a_cli_refusal_writes_the_audit_row(fac: Factory, committed_engine: Engine) -> None:
+    pid = _week_preview(fac, now=STALE)
+    _run([pid, "--yes"], Stdin(tty=False))
+    assert {"action": "commit", "code": "expired", "preview_id": pid} in _audits(committed_engine)
+    _run(["00000000-0000-4000-8000-000000000000", "--yes"], Stdin(tty=False))
+    assert any(d.get("code") == "unknown_preview" for d in _audits(committed_engine))
+
+
+def test_a_commit_prints_both_import_ids_and_both_ways_to_check(
+    fac: Factory, committed_engine: Engine
+) -> None:
+    pid = _week_preview(fac)
+    code, out = _run([pid, "--yes"], Stdin(tty=False))
+    assert code == 0
+    op = _op(committed_engine, pid)
+    assert f"scores import {op.scores_import_id}" in out
+    assert f"stations import {op.stations_import_id}" in out
+    assert f"get_job with the job id {op.job_id}" in out
+    assert f"preview id {pid}" in out
+    assert out.index("Taking the backup") < out.index("Committing") < out.index("Committed ")
+
+
+def test_a_database_error_is_uncertain_and_mentions_no_key(
+    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy import text
+
+    pid = _week_preview(fac)
+
+    def bad(*_a: object, **_k: object) -> int:
+        raise_sql(committed_engine)
+        return 0
+
+    def raise_sql(engine: Engine) -> None:
+        with Session(engine) as s:
+            s.execute(text("SELECT secret_col FROM no_such_table"))
+
+    monkeypatch.setattr(writes, "enqueue", bad)
+    code, out = _run([pid, "--yes"], Stdin(tty=False))
+    assert code == 1
+    assert "the outcome is uncertain; re-run this command" in out
+    assert "42P01" in out
+    assert "ProgrammingError" in out
+    assert "idempotency" not in out
+    assert "Refused: db_error" not in out
+    assert "secret_col" not in out
+
+
+def test_closed_stdin_exits_2_without_yes_and_works_with_it(
+    fac: Factory, committed_engine: Engine
+) -> None:
+    pid = _week_preview(fac)
+    import sys  # sys.stdin is None when the process was started with stdin closed
+
+    real = sys.stdin
+    sys.stdin = None  # type: ignore[assignment]
+    try:
+        out = io.StringIO()
+        assert approve.main([pid], None, out, dump=FakeDump(), now=lambda: LATER) == 2
+        assert "--yes" in out.getvalue()
+        assert _op(committed_engine, pid).status == "previewed"
+        out = io.StringIO()
+        assert approve.main([pid, "--yes"], None, out, dump=FakeDump(), now=lambda: LATER) == 0
+    finally:
+        sys.stdin = real
+    assert _op(committed_engine, pid).status == "committed"
+
+
+def test_ctrl_c_at_the_prompt_is_not_committed(fac: Factory, committed_engine: Engine) -> None:
+    def interrupt() -> None:
+        raise KeyboardInterrupt
+
+    pid = _week_preview(fac)
+    dump = FakeDump()
+    code, out = _run([pid], HookIn(interrupt), dump=dump)
+    assert code == 1
+    assert "Not committed." in out
+    assert dump.calls == []
+    assert _op(committed_engine, pid).status == "previewed"
+
+
+def test_ctrl_c_during_the_backup_is_not_committed(fac: Factory, committed_engine: Engine) -> None:
+    def interrupt() -> None:
+        raise KeyboardInterrupt
+
+    pid = _week_preview(fac)
+    code, out = _run([pid, "--yes"], Stdin(tty=False), dump=FakeDump(hook=interrupt))
+    assert code == 1
+    assert "Not committed." in out
+    assert _op(committed_engine, pid).status == "previewed"
+
+
+def test_ctrl_c_during_the_commit_step_is_ambiguous(
+    fac: Factory, committed_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*_a: object, **_k: object) -> int:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(writes, "enqueue", boom)
+    pid = _week_preview(fac)
+    code, out = _run([pid, "--yes"], Stdin(tty=False))
+    assert code == 1
+    assert "may or may not have committed" in out
+    assert "Traceback" not in out

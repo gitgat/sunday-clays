@@ -149,7 +149,9 @@ This is how commits happen during the preview-only period. A web-UI approve butt
 `web-ui-approve`.
 
 ### Phase 2 changes made during the build
-- **Corrections are score-only.** `preview_correction` changes scores, not station hits.
+- **Corrections are score-only.** `preview_correction` changes scores and carries no hits. A corrected shooter's
+  existing station hits stay linked to the new score, and the rebuild raises a `station_score_mismatch` issue for
+  them; nothing is dropped. The approve summary says so.
 - **Refusal codes added** beyond the first list: `future_date`, `base_changed` (the stored scores moved since the
   preview, so it is expired), `import_not_pending`, `busy` (deadlock, timeout or lock wait: retry with the same key),
   `db_error` (the database returned an error; the scores may or may not have changed, so check `get_job` or retry

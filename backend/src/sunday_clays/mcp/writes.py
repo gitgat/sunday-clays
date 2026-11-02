@@ -95,6 +95,10 @@ class CorrectionChange(BaseModel):
 class CorrectionPreview(BaseModel):
     date: dt.date
     changes: list[CorrectionChange]
+    # The corrected day as a whole, from the staged rows (None on previews stored before this).
+    head_count: int | None = None
+    score_sum: int | None = None
+    average: float | None = None
     findings_for_date: list[FindingOut]
     historical_findings: int
     preview_id: str
@@ -523,8 +527,12 @@ def _correction_preview(
         session, "correction", c.date, now, ttl, scores.import_id, None, digest, base_id
     )
     mine, other = _split_findings(c.date, [scores], [])
+    day = [r.score for r in load_staged_scores(session, scores.import_id) if r.event_date == c.date]
     preview = CorrectionPreview(
         date=c.date,
+        head_count=len(day),
+        score_sum=sum(day),
+        average=round(sum(day) / len(day), 2) if day else None,
         changes=[
             CorrectionChange(name=r.name, old_score=old[name_key(r.name)], new_score=r.score)
             for r in c.rows
@@ -950,7 +958,8 @@ def rollback_week(
         _audit_refusal(session, "rollback", parsed, "correction_needs_human")
         raise Refusal(
             "correction_needs_human",
-            f"a human must roll back a correction: use the imports page or {APPROVE_COMMAND}",
+            "a human must roll back a correction: use the admin imports page and roll back both "
+            "the scores and the stations import (the approve command only commits)",
         )
     return rollback_operation(
         session, preview_id, idempotency_key=idempotency_key, now=now, dump=dump

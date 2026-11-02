@@ -757,17 +757,23 @@ on any node (it carries no placement constraint).
   exactly `yes`; anything else cancels with no change. Without a terminal it refuses unless you add
   `--yes`. Exit codes: 0 committed, 1 refused or declined (the refusal code is printed, for example
   `expired` or `base_changed`: stage the preview again), 2 bad arguments. On success it prints the
-  rebuild job id and the backup file name; check progress with `get_job` using the preview id.
+  both import ids, the rebuild job id and the backup file name. Check rebuild progress with `get_job`
+  using the job id; `get_job` with the preview id returns the commit record.
   This command ignores `MCP_COMMIT_ENABLED` by design and is not reachable from any MCP tool.
 - **Turning on auto-commit later** is the owner's decision, not an automatic step. Set
   `MCP_COMMIT_ENABLED` to `"true"` in `compose.swarm.yaml` and hand deploy ("Deploy or upgrade"); the
   deployer only swaps images, so it never changes this. Corrections still need the approve command.
   Complete the pre-launch checks below first.
-- **Undoing a commit.** With commits enabled, call `rollback_week` with the preview id; it works only
-  for the latest committed Sunday and takes a backup first. A committed correction is rolled back by
-  the owner only. With commits disabled, roll the import back from the admin imports page, then wait
-  for the rebuild it queues. In both cases restoring from the `pre-import-*.dump` file named in the
-  commit result is the last resort.
+- **Undoing a commit.** A committed Sunday is two imports, scores and stations, and the approve
+  command prints both ids. With commits enabled, call `rollback_week` with the preview id: it rolls
+  back both, works only for the latest committed Sunday, and takes a backup first. A committed
+  correction is rolled back by the owner only. With commits disabled, use the admin imports page and
+  roll back BOTH imports, scores and stations. Rolling back only the scores leaves orphan station
+  hits that keep the date alive, and `preview_week` then refuses that date with
+  `not_after_last_event`. Either way a rebuild is queued; wait for it. `get_job` with the preview id
+  keeps reporting `committed` after an admin rollback, because the commit record is history; trust
+  the imports page. Restoring from the `pre-import-*.dump` file named in the commit result is the
+  last resort.
 - **Pre-launch checks before ever enabling auto-commit:**
   1. The backup lock works across nodes on NFS: run the nightly backup and an approve at the same
      time from different nodes and confirm one waits for the other (`fcntl.flock` over NFS depends

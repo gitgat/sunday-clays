@@ -84,6 +84,15 @@ def _render(info: dict[str, Any]) -> list[str]:
         changes = p.get("changes", [])
         lines.append(f"  {len(changes)} score(s) change:")
         lines += [f"    {c['name']}: {c['old_score']} -> {c['new_score']}" for c in changes]
+        if p.get("head_count") is not None:
+            lines.append(
+                f"  the day then has {p['head_count']} shooters, score sum {p['score_sum']}, "
+                f"average {p['average']}"
+            )
+        lines.append(
+            "  A corrected shooter's station detail stays, and will be flagged as not matching "
+            "the score (station_score_mismatch)."
+        )
     else:
         lines.append(
             f"  {p.get('head_count', '?')} shooters, score sum {p.get('score_sum', '?')}, "
@@ -91,8 +100,15 @@ def _render(info: dict[str, Any]) -> list[str]:
         )
         new = p.get("new_names", [])
         lines.append(f"  new names ({len(new)}): {'; '.join(new) if new else 'none'}")
-    findings = len(p.get("findings_for_date", [])) + int(p.get("historical_findings", 0))
-    lines.append(f"  findings: {findings}")
+        for first, second in p.get("possible_duplicates", []):
+            lines.append(f"  possible duplicate: {first} / {second}")
+    mine = p.get("findings_for_date", [])
+    lines.append(
+        f"  findings for this date: {len(mine)} (+{int(p.get('historical_findings', 0))} older)"
+    )
+    lines += [f"    - {f['message']}" for f in mine]
+    if p.get("note"):
+        lines.append(f"  note: {p['note']}")
     lines.append(
         f"  staged {_age(now - info['created_at'])} ago; "
         f"expires {info['expires_at'].isoformat(timespec='minutes')}"
@@ -100,14 +116,31 @@ def _render(info: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _default_dump(base: Callable[..., Path]) -> Callable[..., Path]:
+def _default_dump(
+    base: Callable[..., Path], say: Callable[[str], None], phase: dict[str, str]
+) -> Callable[..., Path]:
     """The normal dump, but with its own (long) lock wait: a human can wait out the nightly job."""
 
     def dump(preview_id: uuid.UUID, **kw: Any) -> Path:
         kw.pop("lock_timeout_s", None)  # the tools' short wait; pre_import_dump has its default
-        return base(preview_id, **kw)
+        phase["at"] = "backup"
+        say("Taking the backup...")
+        path = base(preview_id, **kw)
+        phase["at"] = "commit"
+        say("Committing...")
+        return path
 
     return dump
+
+
+def _uncertain(say: Callable[[str], None], exc: writes.Refusal) -> None:
+    say(
+        "The outcome is uncertain: the database returned an error and the scores may or may not "
+        "have changed."
+    )
+    say("  the outcome is uncertain; re-run this command (a committed preview won't commit twice)")
+    say("  or check get_job with the preview id.")
+    say(f"  sqlstate {exc.sqlstate or 'unknown'}, error class {exc.error_class or 'unknown'}")
 
 
 def main(
@@ -119,7 +152,7 @@ def main(
     dump: Callable[..., Path] | None = None,
     now: Callable[[], dt.datetime] | None = None,
 ) -> int:
-    stdin = stdin or sys.stdin
+    stdin = stdin if stdin is not None else sys.stdin  # None when the process has no stdin
     out = stdout or sys.stdout
 
     def say(text: str = "") -> None:
@@ -134,25 +167,25 @@ def main(
         return EXIT_USAGE
     except SystemExit:  # --help
         return EXIT_OK
-    interactive = stdin.isatty()
-    if not interactive and not args.yes:
+    if (stdin is None or not stdin.isatty()) and not args.yes:
         say("error: stdin is not a terminal, so there is no way to confirm.")
         say("Re-run with --yes to commit without a prompt.")
         return EXIT_USAGE
 
     factory = session_factory or server.write_session_factory
     clock = now or (lambda: dt.datetime.now(dt.UTC))
-    take = _default_dump(dump or backup.pre_import_dump)
+    phase = {"at": "before"}  # before -> backup -> commit: what an interrupt can have left behind
+    take = _default_dump(dump or backup.pre_import_dump, say, phase)
     stamp = clock()
     try:
         writes.sweep_expired(factory, stamp)  # commit_operation never sweeps
         info = writes.run_write(factory, lambda s: _summary(s, preview_id, stamp))
-        if info is None:
-            say("error: no preview with that id")
-            return EXIT_REFUSED
-        for line in _render(info):
-            say(line)
-        if info["status"] == "previewed" and not args.yes:
+        if info is not None:
+            for line in _render(info):
+                say(line)
+        # An unknown id and a preview that is no longer pending go straight to the real refusal
+        # (which also writes the audit row): there is nothing to confirm.
+        if info is not None and info["status"] == "previewed" and not args.yes and stdin:
             out.write("Type yes to commit this (anything else cancels): ")
             out.flush()
             if stdin.readline().rstrip("\r\n") != "yes":
@@ -172,12 +205,36 @@ def main(
                 dump=take,
             ),
         )
+    except KeyboardInterrupt:
+        say()
+        if phase["at"] == "commit":
+            say(
+                "Interrupted while committing: it may or may not have committed; run approve "
+                "again or check get_job with the preview id."
+            )
+        else:
+            say("Not committed. Nothing was changed.")
+        return EXIT_REFUSED
     except writes.Refusal as exc:
-        say(f"Refused: {exc.code}: {exc.message}")
+        if exc.code == "db_error":
+            _uncertain(say, exc)
+        elif exc.code == "busy":
+            say("Busy: the database was busy and nothing was changed; re-run this command.")
+        else:
+            say(f"Refused: {exc.code}: {exc.message}")
         return EXIT_REFUSED
     say(f"Committed {result['kind']} for {result['date']}.")
-    say(f"  rebuild job {result['job_id']}; backup file {result['backup_file']}")
-    say(f"  check progress: get_job with the preview id {result['preview_id']}")
+    say(
+        f"  scores import {result['scores_import_id']}"
+        + (
+            f", stations import {result['stations_import_id']}"
+            if result["stations_import_id"] is not None
+            else ""
+        )
+        + f"; backup file {result['backup_file']}"
+    )
+    say(f"  rebuild progress: get_job with the job id {result['job_id']}")
+    say(f"  the commit record: get_job with the preview id {result['preview_id']}")
     return EXIT_OK
 
 
