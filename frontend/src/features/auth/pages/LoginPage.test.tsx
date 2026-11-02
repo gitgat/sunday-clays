@@ -155,7 +155,7 @@ describe('LoginPage', () => {
 
   it('shows the link note when a password link failed, and drops it after a login', async () => {
     const queryClient = createTestQueryClient();
-    queryClient.setQueryData(LINK_FAILED_KEY, true);
+    queryClient.setQueryData(LINK_FAILED_KEY, 'rejected');
     const { user } = renderRoutes(ROUTES, {
       route: '/login?next=%2Fclub',
       role: null,

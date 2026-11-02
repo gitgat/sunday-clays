@@ -8,10 +8,17 @@ import { server } from '../../test/msw/server';
 import { createTestQueryClient } from '../../test/render';
 import { SESSION_QUERY_KEY } from './api';
 import { LinkLoginGate } from './components/LinkLoginGate';
-import { captureLinkPassword, resolveLinkLogin, takePendingLinkPassword } from './linkLogin';
+import {
+  captureLinkPassword,
+  LINK_FAILED_KEY,
+  resolveLinkLogin,
+  takePendingLinkPassword,
+} from './linkLogin';
 import { TEST_PASSWORDS } from './mocks';
 import { LoginPage } from './pages/LoginPage';
 import { RequireRole } from './components/RequireRole';
+
+const UNAVAILABLE_NOTE = "We couldn't check that link. Try opening it again in a moment.";
 
 const loggedOut = http.get('/api/auth/me', () =>
   HttpResponse.json({ error: { code: 'unauthenticated', message: 'Log in' } }, { status: 401 }),
@@ -37,14 +44,14 @@ function setup(url: string, queryClient: QueryClient = createTestQueryClient()) 
   );
   const visited: string[] = [];
   router.subscribe((state) => visited.push(state.location.pathname));
-  render(
+  const view = render(
     <AppProviders queryClient={queryClient}>
       <LinkLoginGate ready={ready}>
         <RouterProvider router={router} />
       </LinkLoginGate>
     </AppProviders>,
   );
-  return { router, visited, queryClient };
+  return { router, visited, queryClient, unmount: view.unmount };
 }
 
 function spyLinkLogin() {
@@ -123,16 +130,37 @@ describe('link login', () => {
       ),
     );
     setup('/events/1?p=anything');
-    expect(await screen.findByText(/link's password didn't work/)).toBeInTheDocument();
+    expect(await screen.findByText(UNAVAILABLE_NOTE)).toBeInTheDocument();
+    expect(screen.queryByText(/password didn't work/)).toBeNull();
   });
 
-  it('a network failure gets the same path without crashing', async () => {
+  it('a busy server says so, not that the password was wrong', async () => {
+    server.use(
+      loggedOut,
+      http.post('/api/auth/link-login', () =>
+        HttpResponse.json({ error: { code: 'login_busy', message: 'Busy' } }, { status: 429 }),
+      ),
+    );
+    setup('/events/1?p=anything');
+    expect(await screen.findByText(UNAVAILABLE_NOTE)).toBeInTheDocument();
+  });
+
+  it('a server error says the link could not be checked', async () => {
+    server.use(
+      loggedOut,
+      http.post('/api/auth/link-login', () => HttpResponse.json({}, { status: 500 })),
+    );
+    setup('/events/1?p=anything');
+    expect(await screen.findByText(UNAVAILABLE_NOTE)).toBeInTheDocument();
+  });
+
+  it('a network failure gets the could-not-check path without crashing', async () => {
     server.use(
       loggedOut,
       http.post('/api/auth/link-login', () => HttpResponse.error()),
     );
     const { router } = setup('/events/1?p=anything');
-    expect(await screen.findByText(/link's password didn't work/)).toBeInTheDocument();
+    expect(await screen.findByText(UNAVAILABLE_NOTE)).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/login');
   });
 
@@ -167,6 +195,23 @@ describe('link login', () => {
     await screen.findByText("Can't reach the server");
     expect(bodies).toEqual([]);
     expect(takePendingLinkPassword()).toBeNull();
+    expect(queryClient.getQueryData(LINK_FAILED_KEY)).toBe('unavailable');
+  });
+
+  it('does not update state when unmounted before the login settles', async () => {
+    server.use(
+      loggedOut,
+      http.post('/api/auth/link-login', async () => {
+        await delay(30);
+        return HttpResponse.json({ role: 'viewer' });
+      }),
+    );
+    const { unmount, queryClient } = setup('/events/1?p=my-fake-pw');
+    unmount();
+    await waitFor(() =>
+      expect(queryClient.getQueryData(SESSION_QUERY_KEY)).toEqual({ role: 'viewer' }),
+    );
+    expect(screen.queryByText('protected page')).toBeNull();
   });
 
   it('renders straight away when the URL had no link password', async () => {

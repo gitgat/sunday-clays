@@ -365,3 +365,19 @@ def test_link_login_is_csrf_guarded_like_login(
     hostile = {"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"}
     assert anon_client.post("/api/auth/login", json=body, headers=hostile).status_code == 403
     assert anon_client.post(LINK, json=body, headers=hostile).status_code == 403
+
+
+@pytest.mark.parametrize("role", ["viewer", "admin"])
+def test_link_login_with_a_live_session_keeps_it_and_sets_no_cookie(
+    anon_client: TestClient,
+    login_passwords: dict[Role, str],
+    role: Role,
+    session: Session,
+) -> None:
+    anon_client.cookies.set(COOKIE_NAME, issue_session(get_settings(), role))
+    response = anon_client.post(LINK, json={"password": login_passwords["viewer"]})
+    assert response.status_code == 200
+    assert response.json() == {"role": role}
+    assert "set-cookie" not in response.headers
+    assert anon_client.get("/api/auth/me").json() == {"role": role}
+    assert session.execute(select(ATTEMPTS.c.id)).all() == []

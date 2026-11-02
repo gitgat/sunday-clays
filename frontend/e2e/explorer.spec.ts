@@ -243,3 +243,17 @@ test('a short window opens on Sunday, All time on Year, and a thin split gets a 
     await expect(nudge).toHaveCount(0);
   }
 });
+
+test('a rain-filtered Explorer URL survives a reload and an old p= link is carried over', async ({
+  page,
+}) => {
+  await page.goto('/explorer?m=rounds&w=all&rain=0..0.25');
+  await expect(page.getByRole('img', { name: 'Rounds by year' })).toBeVisible(FIRST_RESULT);
+  await page.reload();
+  await expect(page).toHaveURL(/rain=0\.\.0\.25/);
+  // A bookmark from before ?p= became the password link: no login attempt, filter kept.
+  await page.goto('/explorer?m=rounds&w=all&p=0..0.25');
+  await expect(page.getByRole('img', { name: 'Rounds by year' })).toBeVisible(FIRST_RESULT);
+  await expect(page).toHaveURL(/rain=0\.\.0\.25/);
+  expect(page.url()).not.toMatch(/[?&]p=/);
+});

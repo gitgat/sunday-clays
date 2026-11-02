@@ -5,7 +5,7 @@ import { ApiError } from '../../../api/errors';
 import { Button } from '../../../components/ui/Button';
 import { safeNext } from '../../../lib/safeNext';
 import { useLogin, useSession } from '../api';
-import { LINK_FAILED_KEY } from '../linkLogin';
+import { LINK_FAILED_KEY, type LinkFailure } from '../linkLogin';
 
 function errorMessage(error: unknown): string | null {
   if (error === null) return null;
@@ -31,7 +31,7 @@ export function LoginPage() {
   const errorId = useId();
   const next = params.get('next');
   // Set by a failed password link; the login that follows clears it with the other cached data.
-  const linkFailed = useQueryClient().getQueryData(LINK_FAILED_KEY) === true;
+  const linkFailed = useQueryClient().getQueryData<LinkFailure>(LINK_FAILED_KEY) ?? null;
 
   // Signed in (already, or just now): leave through safeNext only (C10). A data router's
   // navigate() returns a promise; a refused navigation must not become an unhandled rejection.
@@ -54,9 +54,11 @@ export function LoginPage() {
         className="flex w-full max-w-sm flex-col gap-4 rounded-card bg-elevated p-6 shadow-xl"
       >
         <h1 className="text-2xl font-bold text-text">Sunday Clays</h1>
-        {linkFailed ? (
+        {linkFailed !== null ? (
           <p role="status" className="rounded-card bg-surface px-3 py-2 text-sm text-text">
-            That link&apos;s password didn&apos;t work. Enter the password to continue.
+            {linkFailed === 'rejected'
+              ? "That link's password didn't work. Enter the password to continue."
+              : "We couldn't check that link. Try opening it again in a moment."}
           </p>
         ) : (
           <p className="text-sm text-text-muted">Enter the club password to continue.</p>

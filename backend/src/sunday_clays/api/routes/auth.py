@@ -11,6 +11,7 @@ from sunday_clays.auth.deps import (
     NotAuthenticatedError,
     TooManyRequestsError,
     client_ip,
+    current_role,
     ip_fingerprint,
     record_audit,
     require_viewer,
@@ -94,8 +95,14 @@ def link_login(
     response: Response,
     session: SessionDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    existing: Annotated[Role | None, Depends(current_role)],
 ) -> RoleOut:
-    """Password-in-link login: viewer only. An admin password is just a wrong password here."""
+    """Password-in-link login: viewer only. An admin password is just a wrong password here.
+
+    A request that already carries a valid session keeps it: never replaced, never downgraded.
+    """
+    if existing is not None:
+        return RoleOut(role=existing)
     return _login_with(match_viewer, body, request, response, session, settings)
 
 

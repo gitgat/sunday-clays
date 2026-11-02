@@ -16,7 +16,11 @@ describe('extractLinkPassword', () => {
     ['/?p=a%26b%3Dc', 'a&b=c', '/'],
     ['/?p=first&p=second', 'first', '/'],
     ['/?p=first&a=1&p=second', 'first', '/?a=1'],
-    ['/?p=%E0%A4%A', '%E0%A4%A', '/'],
+    ['/?p=%E0%A4%A', '\uFFFD%A', '/'],
+    ['/?p=a%26b%', 'a&b%', '/'],
+    ['//?p=secret', 'secret', '//'],
+    ['//events?p=secret&x=1', 'secret', '//events?x=1'],
+    ['//[/?p=secret', 'secret', '//[/'],
     ['https://example.test/events?p=secret&x=1', 'secret', '/events?x=1'],
   ])('%s', (url, password, cleanedUrl) => {
     expect(extractLinkPassword(url)).toEqual({ password, cleanedUrl });
@@ -37,6 +41,25 @@ describe('extractLinkPassword', () => {
       expect(extractLinkPassword(url)).toEqual({ password: null, cleanedUrl: url });
     },
   );
+
+  it.each(['//', '//events', '//[/', '//events?x=1#a'])(
+    'leaves a doubled-slash path alone and does not throw: %s',
+    (url) => {
+      expect(extractLinkPassword(url)).toEqual({ password: null, cleanedUrl: url });
+    },
+  );
+
+  it.each([
+    ['/explorer?m=rounds&p=0..0.25', '/explorer?m=rounds&rain=0..0.25'],
+    ['/explorer?p=..1', '/explorer?rain=..1'],
+    ['/explorer?p=0.5..', '/explorer?rain=0.5..'],
+  ])('maps the old Explorer rain range to its new parameter: %s', (url, cleanedUrl) => {
+    expect(extractLinkPassword(url)).toEqual({ password: null, cleanedUrl });
+  });
+
+  it('only maps a range on the Explorer page', () => {
+    expect(extractLinkPassword('/events?p=0..0.25').password).toBe('0..0.25');
+  });
 
   it('keeps the other parameters byte for byte', () => {
     expect(extractLinkPassword('/?q=a%20b+c&p=x&r=%7E').cleanedUrl).toBe('/?q=a%20b+c&r=%7E');
@@ -73,6 +96,33 @@ describe('captureLinkPassword', () => {
     captureLinkPassword(win);
     expect(replaceState).toHaveBeenCalledWith({ idx: 3 }, '', '/');
     expect(takePendingLinkPassword()).toBeNull();
+  });
+
+  it('leaves an Explorer rain filter alone: no password, no request, filter kept', () => {
+    const { win, replaceState } = fakeWindow('/explorer?m=rounds&p=0..0.25');
+    captureLinkPassword(win);
+    expect(takePendingLinkPassword()).toBeNull();
+    expect(replaceState).toHaveBeenCalledExactlyOnceWith(
+      { idx: 3 },
+      '',
+      '/explorer?m=rounds&rain=0..0.25',
+    );
+  });
+
+  it('does not throw on a doubled-slash path, with or without p', () => {
+    for (const [pathname, search] of [
+      ['//', '?p=hunter2-fake'],
+      ['//events', '?p=hunter2-fake&x=1'],
+      ['//', ''],
+    ] as const) {
+      const replaceState = vi.fn();
+      const win = {
+        location: { pathname, search, hash: '' },
+        history: { state: null, replaceState },
+      };
+      expect(() => captureLinkPassword(win)).not.toThrow();
+      takePendingLinkPassword();
+    }
   });
 
   it('does nothing for a URL without p', () => {
