@@ -178,7 +178,9 @@ logger = logging.getLogger(__name__)
 def _tool_error(tool: str, exc: writes.Refusal) -> ToolError:
     """A refusal as a tool error; a database error is logged by tool and sqlstate only."""
     if exc.code == "db_error":
-        logger.warning("tool=%s code=db_error sqlstate=%s", tool, exc.sqlstate)
+        logger.warning(
+            "tool=%s code=db_error sqlstate=%s error_class=%s", tool, exc.sqlstate, exc.error_class
+        )
     return ToolError(f"{exc.code}: {exc.message}")
 
 

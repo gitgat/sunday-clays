@@ -252,10 +252,13 @@ def test_a_database_error_over_mcp_is_a_coded_refusal_without_sql(
         )
     assert is_error is True
     assert "db_error" in text
+    assert "may or may not have changed" in text
+    assert "were not changed" not in text
     for leaked in ("SELECT", "secret_col", "Zzname", "parameters", "[SQL"):
         assert leaked not in text
     logged = " ".join(r.getMessage() for r in caplog.records)
     assert "tool=commit_week" in logged
     assert "sqlstate=42P01" in logged
+    assert "error_class=ProgrammingError" in logged
     assert "Zzname" not in logged
     assert "secret_col" not in logged

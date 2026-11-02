@@ -746,6 +746,12 @@ def test_a_real_failing_statement_reaches_the_caller_as_db_error(fx_session: Ses
         writes.run_write(_factory(fx_session), _boom_real_statement)
     assert exc.value.code == "db_error"
     assert exc.value.sqlstate == "42P01"
+    assert exc.value.error_class == "ProgrammingError"
+    assert exc.value.message == (
+        "the database returned an error; the scores may or may not have changed; "
+        "check get_job, or retry with the same idempotency key"
+    )
+    assert "were not changed" not in exc.value.message
     for leaked in ("SELECT", "secret_col", "no_such_table", "Zzname", "parameters", "SQL"):
         assert leaked not in exc.value.message
 

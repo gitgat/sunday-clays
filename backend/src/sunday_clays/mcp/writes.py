@@ -69,6 +69,7 @@ class Refusal(Exception):
         self.code = code
         self.message = message
         self.sqlstate: str | None = None  # set for db_error, for the log only
+        self.error_class: str | None = None  # likewise: the exception class name, never its text
 
 
 class WeekPreview(BaseModel):
@@ -107,6 +108,11 @@ def preview_ttl() -> dt.timedelta:
     return dt.timedelta(seconds=seconds)
 
 
+# A failure at COMMIT may already have been applied, so this never says "unchanged".
+DB_ERROR_MESSAGE = (
+    "the database returned an error; the scores may or may not have changed; "
+    "check get_job, or retry with the same idempotency key"
+)
 BUSY_SQLSTATES = frozenset({"40P01", "57014", "55P03"})  # deadlock, canceled, lock not available
 
 
@@ -134,10 +140,9 @@ def run_write[T](
                 "retry with the same idempotency key",
             ) from None
         # Anything else is a bug or an outage; the text (SQL, parameters) never reaches the caller.
-        db_refusal = Refusal(
-            "db_error", "the database rejected the request; the scores were not changed"
-        )
+        db_refusal = Refusal("db_error", DB_ERROR_MESSAGE)
         db_refusal.sqlstate = sqlstate
+        db_refusal.error_class = type(exc).__name__
         raise db_refusal from None
     if refusal is not None:
         raise refusal
