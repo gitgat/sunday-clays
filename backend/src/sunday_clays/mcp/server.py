@@ -101,6 +101,7 @@ def build_mcp(
     # SDK's localhost-only Host check (DNS-rebinding protection) is off.
     mcp = FastMCP(
         "sunday-clays-scores",
+        log_level="ERROR",
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
     _register_reads(mcp, session_factory)

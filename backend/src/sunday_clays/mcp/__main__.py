@@ -10,11 +10,13 @@ from sunday_clays.mcp.server import build_app, default_session_factory, write_se
 
 
 def main() -> None:
-    # The SDK logs a malformed request's input on the root logger (shared/session.py), which can
-    # carry shooter names: keep root at ERROR and let only our own loggers speak at WARNING.
+    app = build_app(load_auth_token(), default_session_factory, write_session_factory)
+    # After build_app: FastMCP's startup calls logging.basicConfig(level=INFO), which would
+    # raise a handler-less root back to INFO. The SDK logs a malformed request's input on the root
+    # logger (shared/session.py), which can carry shooter names: keep root at ERROR and let only
+    # our own loggers speak at WARNING.
     logging.getLogger().setLevel(logging.ERROR)
     logging.getLogger("sunday_clays").setLevel(logging.WARNING)
-    app = build_app(load_auth_token(), default_session_factory, write_session_factory)
     uvicorn.run(
         app,
         host="0.0.0.0",  # noqa: S104  # reachable on the gateway network only; bearer-gated

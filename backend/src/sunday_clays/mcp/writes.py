@@ -674,7 +674,9 @@ def _take_dump(session: Session, op: McpOperation, dump: DumpFn | None) -> str:
         )
     except backup.BackupDirNotShared as exc:
         raise Refusal(
-            "backup_dir_not_shared", f"the pre-import backup was not taken, nothing changed: {exc}"
+            "backup_dir_not_shared",
+            "the backups folder isn't the shared one (no last_success marker). Do the hand deploy "
+            "in deploy/README.md 'Scores MCP', and make sure the backup job has run once.",
         ) from exc
     except backup.BackupError as exc:
         raise Refusal(

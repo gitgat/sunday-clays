@@ -96,8 +96,8 @@ services:
 
   # Scores MCP server (deploy/README.md "Scores MCP"): the backend image with its own command. It is
   # reachable only through the deployment's MCP gateway, over the external MCP network (alias
-  # sundayclays-mcp), never through the public edge. Read-only for now; the image has python but
-  # no curl, hence the urllib healthcheck.
+  # sundayclays-mcp), never through the public edge. Previews stage imports; commits are off unless
+  # MCP_COMMIT_ENABLED. The image has python but no curl, hence the urllib healthcheck.
   mcp:
     image: ${SC_REGISTRY:?SC_REGISTRY is required}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     command: ["python", "-m", "sunday_clays.mcp"]

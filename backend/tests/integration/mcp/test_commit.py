@@ -318,6 +318,9 @@ def test_an_unshared_backup_dir_refuses_with_its_own_code_and_changes_nothing(
     with pytest.raises(Refusal) as exc:
         writes.commit_week(fx_session, pid, idempotency_key=KEY, now=NOW)  # the real dump
     assert exc.value.code == "backup_dir_not_shared"
+    assert str(tmp_path) not in str(exc.value)
+    assert "last_success marker" in str(exc.value)
+    assert "deploy/README.md 'Scores MCP'" in str(exc.value)
     assert _statuses(fx_session, pid) == ["pending", "pending"]
     assert active_scores_import(fx_session) == base
     assert list(tmp_path.iterdir()) == []

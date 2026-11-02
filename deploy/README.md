@@ -755,7 +755,7 @@ on any node (it carries no placement constraint).
   nothing reaches the live scores until the owner approves it by hand. Corrections are never
   committed by a tool, even once commits are enabled.
 - **Approving a preview.** Run the approve command on the node that is running the `mcp` task, inside
-  the `mcp` container (only that container has the backups bind mounted, and the command takes the
+  the `mcp` container (the API container doesn't have the backups bind, and the command takes the
   pre-commit database backup):
 
   ```sh
@@ -768,8 +768,9 @@ on any node (it carries no placement constraint).
   exactly `yes`; anything else cancels with no change. Without a terminal it refuses unless you add
   `--yes`. Exit codes: 0 committed, 1 refused or declined (the refusal code is printed, for example
   `expired` or `base_changed`: stage the preview again), 2 bad arguments. On success it prints the
-  import ids (a Sunday has two, a correction has one), the rebuild job id and the backup file name. Check rebuild progress with `get_job`
-  using the job id; `get_job` with the preview id returns the commit record.
+  import ids (a Sunday has two, a correction has one), the rebuild job id and the backup file name.
+  Check rebuild progress with `get_job` using the job id; `get_job` with the preview id returns
+  the commit record.
   This command ignores `MCP_COMMIT_ENABLED` by design and is not reachable from any MCP tool.
 - **Turning on auto-commit later** is the owner's decision, not an automatic step. Set
   `MCP_COMMIT_ENABLED` to `"true"` in `compose.swarm.yaml` and hand deploy ("Deploy or upgrade"); the
