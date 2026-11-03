@@ -14,5 +14,14 @@ export const handlers = [
       { status: 401 },
     );
   }),
+  // Viewer-only: the admin password is simply wrong here, like the server.
+  http.post('/api/auth/link-login', async ({ request }) => {
+    const body = (await request.json()) as { password?: unknown };
+    if (body.password === TEST_PASSWORDS.viewer) return HttpResponse.json({ role: 'viewer' });
+    return HttpResponse.json(
+      { error: { code: 'invalid_password', message: 'Wrong password' } },
+      { status: 401 },
+    );
+  }),
   http.post('/api/auth/logout', () => new HttpResponse(null, { status: 204 })),
 ];

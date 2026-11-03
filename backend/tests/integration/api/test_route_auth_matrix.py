@@ -19,6 +19,7 @@ from sunday_clays.db import get_session
 PUBLIC = {
     ("GET", "/api/health"),
     ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/link-login"),
     ("POST", "/api/auth/logout"),
     # Plan 19 D6: link previews for crawlers, which cannot log in (no names, no scores)
     *{
@@ -77,6 +78,7 @@ def test_every_session_dependency_is_function_scoped(anon_client: TestClient) ->
         for method in sorted(context.methods or ()):
             walk(dependant, (method, context.path_format))
     assert scopes.get(("POST", "/api/auth/login")) == ["function"]  # the walk is not vacuous
+    assert scopes.get(("POST", "/api/auth/link-login")) == ["function"]
     wrong = {route: found for route, found in scopes.items() if set(found) != {"function"}}
     assert wrong == {}
 

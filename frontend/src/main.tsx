@@ -1,3 +1,5 @@
+// First import, on purpose: removes ?p= from the address bar before anything reads the URL.
+import './features/auth/linkLoginBoot';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 

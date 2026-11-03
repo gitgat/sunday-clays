@@ -54,3 +54,11 @@ def match_role(settings: Settings, password: str) -> Role | None:
     if verify_password(settings.viewer_password_hash.get_secret_value(), password):
         return "viewer"
     return None
+
+
+def match_viewer(settings: Settings, password: str) -> Role | None:
+    """Viewer-only match for link logins: the admin hash is never read, so an admin password
+    fails exactly like any wrong one, in the same time."""
+    if verify_password(settings.viewer_password_hash.get_secret_value(), password):
+        return "viewer"
+    return None

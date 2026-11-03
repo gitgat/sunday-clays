@@ -333,7 +333,7 @@ describe('ExplorerPage', () => {
   it('restores a shared URL into the query and the controls', async () => {
     const seen = captureSpecs();
     renderPage(
-      '/explorer?m=rounds&g=status,year&st=member&ga=unspecified&sh=3,4&t=40..70&gu=0..10&p=0..0.02&mr=5&best=1&s=value_desc&from=2025-01-01&to=2025-12-31&rt=sporting&c=line',
+      '/explorer?m=rounds&g=status,year&st=member&ga=unspecified&sh=3,4&t=40..70&gu=0..10&rain=0..0.02&mr=5&best=1&s=value_desc&from=2025-01-01&to=2025-12-31&rt=sporting&c=line',
     );
     await screen.findByRole('img', { name: 'Value by status and year' });
     expect(seen[0]).toMatchObject({
@@ -753,16 +753,16 @@ describe('ExplorerPage', () => {
 
   it('drops an unsettled slider value when the URL changes from elsewhere (Back, a link)', async () => {
     captureSpecs();
-    const { router } = renderPage('/explorer?p=0..1');
+    const { router } = renderPage('/explorer?rain=0..1');
     await screen.findByRole('img', { name: 'Value by Sunday' });
     fakeSettleClock();
     const slider = screen.getByLabelText('Rain maximum');
     fireEvent.change(slider, { target: { value: '0.5' } });
     expect(slider).toHaveValue('0.5');
-    await act(() => router.navigate('/explorer?p=0..0.25'));
+    await act(() => router.navigate('/explorer?rain=0..0.25'));
     expect(slider).toHaveValue('0.25');
     await tick(SETTLE_MS);
-    expect(router.state.location.search).toBe('?p=0..0.25');
+    expect(router.state.location.search).toBe('?rain=0..0.25');
     expect(slider).toHaveValue('0.25');
     realClock();
   });
