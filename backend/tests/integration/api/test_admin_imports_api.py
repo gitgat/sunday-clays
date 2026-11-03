@@ -1,8 +1,10 @@
 import io
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import openpyxl
 import pytest
@@ -11,7 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sunday_clays.config import Settings, get_settings
-from sunday_clays.models import Base
+from sunday_clays.mcp import writes
+from sunday_clays.mcp.build import WeekInput
+from sunday_clays.models import Base, McpOperation
 
 IMPORTS = Base.metadata.tables["imports"]
 JOBS = Base.metadata.tables["jobs"]
@@ -259,6 +263,58 @@ def test_second_commit_is_409_not_pending(admin_client: TestClient, stations_byt
     assert again.json()["error"]["code"] == "not_pending"
 
 
+def _link_to_mcp(
+    session: Session, *, scores: int | None = None, stations: int | None = None
+) -> None:
+    session.add(
+        McpOperation(
+            kind="week",
+            event_date=date(2026, 10, 4),
+            status="previewed",
+            scores_import_id=scores,
+            stations_import_id=stations,
+        )
+    )
+    session.flush()
+
+
+@pytest.mark.parametrize("linked", ["scores", "stations"])
+def test_an_mcp_staged_import_cannot_be_committed_from_the_admin_page(
+    admin_client: TestClient,
+    scores_bytes: bytes,
+    stations_bytes: bytes,
+    session: Session,
+    linked: str,
+) -> None:
+    data, name = (
+        (scores_bytes, "scores_2026-09-27.xlsx")
+        if linked == "scores"
+        else (stations_bytes, "stations_2026-09-27.xlsx")
+    )
+    import_id = _upload(admin_client, data, name)["import_id"]
+    _link_to_mcp(session, **{linked: import_id})
+    before = _actions(session)
+
+    refused = admin_client.post(f"/api/admin/imports/{import_id}/commit")
+
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "mcp_staged"
+    assert "approve command" in refused.json()["error"]["message"]
+    assert _status(session, import_id) == "pending"
+    assert _actions(session) == before  # no commit audit, no rebuild queued
+    assert session.scalar(select(JOBS.c.id)) is None
+
+
+def test_an_mcp_staged_import_can_still_be_discarded_from_the_admin_page(
+    admin_client: TestClient, stations_bytes: bytes, session: Session
+) -> None:
+    import_id = _upload(admin_client, stations_bytes)["import_id"]
+    _link_to_mcp(session, stations=import_id)
+
+    assert admin_client.post(f"/api/admin/imports/{import_id}/discard").status_code == 204
+    assert _status(session, import_id) == "discarded"
+
+
 def test_discard_marks_import_discarded(
     admin_client: TestClient, stations_bytes: bytes, session: Session
 ) -> None:
@@ -293,6 +349,52 @@ def test_rollback_marks_import_rolled_back_and_enqueues_rebuild(
     jobs = session.execute(select(JOBS.c.id, JOBS.c.kind, JOBS.c.dedupe_key, JOBS.c.status)).all()
     assert [tuple(job) for job in jobs] == [(commit_job_id, "rebuild", "rebuild", "queued")]
     assert _status(session, import_id) == "rolled_back"
+    assert _last_audit(session) == ("imports.rollback", "admin", "testclient")
+
+
+def test_an_admin_can_roll_back_an_import_committed_through_the_mcp(
+    admin_client: TestClient,
+    scores_bytes: bytes,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The README's undo for an approved preview is the admin rollback; it has no MCP guard."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@h/d")
+    base_id = _upload(admin_client, scores_bytes, "scores_2026-09-27.xlsx")["import_id"]
+    assert admin_client.post(f"/api/admin/imports/{base_id}/commit").status_code == 200
+    week = WeekInput.model_validate(
+        {
+            "date": date(2026, 10, 4),
+            "stations": ["1", "2", "3", "4", "5"],
+            "counts": [10, 10, 10, 10, 10],
+            "shooters": [
+                {"name": "Testshooter, Alpha", "score": 45, "status": "Member", "class": "12 Gauge"}
+            ],
+        }
+    )
+    now = datetime(2026, 10, 6, 18, 0, tzinfo=UTC)
+    preview_id = writes.preview_week(session, week, now=now).preview_id
+    writes.commit_operation(
+        session,
+        preview_id,
+        idempotency_key="key-0000001",
+        commit_path="cli-approve",
+        allow_correction=False,
+        now=now,
+        dump=lambda *_a, **_k: Path("/somewhere/else/pre-import-x.dump"),
+    )
+    op = session.get(McpOperation, UUID(preview_id))
+    assert op is not None
+    session.refresh(op)
+    import_ids = [i for i in (op.scores_import_id, op.stations_import_id) if i is not None]
+    assert import_ids
+    assert {_status(session, i) for i in import_ids} == {"committed"}
+
+    for import_id in import_ids:
+        response = admin_client.post(f"/api/admin/imports/{import_id}/rollback")
+        assert response.status_code == 200, response.text
+
+    assert {_status(session, i) for i in import_ids} == {"rolled_back"}
     assert _last_audit(session) == ("imports.rollback", "admin", "testclient")
 
 

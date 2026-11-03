@@ -1,6 +1,7 @@
 """Typed inputs and outputs of the MCP tools."""
 
 import datetime as dt
+import uuid
 from datetime import datetime
 from typing import Literal
 
@@ -31,7 +32,14 @@ class GetEventInput(_Input):
 
 
 class GetJobInput(_Input):
-    id: int = Field(ge=1, le=MAX_JOB_ID)
+    id: int | uuid.UUID
+
+    @field_validator("id")
+    @classmethod
+    def _job_id_in_range(cls, value: int | uuid.UUID) -> int | uuid.UUID:
+        if isinstance(value, int) and not 1 <= value <= MAX_JOB_ID:
+            raise ValueError(f"job id must be between 1 and {MAX_JOB_ID}")
+        return value
 
 
 class ShooterHit(BaseModel):
@@ -95,6 +103,21 @@ class JobStatus(BaseModel):
     error: str | None
 
 
+class OperationStatus(BaseModel):
+    preview_id: uuid.UUID
+    kind: str
+    event_date: dt.date
+    status: str
+    commit_path: str | None
+    scores_import_id: int | None
+    stations_import_id: int | None
+    job_id: int | None
+    backup_file: str | None
+    created_at: datetime
+    committed_at: datetime | None
+    rolled_back_at: datetime | None
+
+
 class NotFound(BaseModel):
-    id: int
+    id: int | uuid.UUID
     found: Literal[False] = False

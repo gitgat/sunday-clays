@@ -1,14 +1,15 @@
 """MCP read queries, called directly on the fixture-world database."""
 
 from datetime import date, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from sunday_clays.mcp.reads import find_shooters, get_event, get_job
-from sunday_clays.mcp.schemas import EventSummary, JobStatus, NoEvent, NotFound
-from sunday_clays.models import Event, Job, Round, Shooter, ShooterAlias
+from sunday_clays.mcp.schemas import EventSummary, JobStatus, NoEvent, NotFound, OperationStatus
+from sunday_clays.models import Event, Job, McpOperation, Round, Shooter, ShooterAlias
 from sunday_clays.models.live import StationLayout
 
 
@@ -148,6 +149,26 @@ def test_get_job(fx_session: Session) -> None:
     assert found.created_at is not None
     assert "payload" not in found.model_dump()
     missing = get_job(fx_session, job.id + 10_000)
+    assert isinstance(missing, NotFound)
+    assert missing.found is False
+
+
+def test_get_job_by_preview_id(fx_session: Session) -> None:
+    op = McpOperation(kind="week", event_date=date(2026, 11, 1), status="previewed", caller="t")
+    fx_session.add(op)
+    fx_session.flush()
+    found = get_job(fx_session, op.id)
+    assert isinstance(found, OperationStatus)
+    assert (found.preview_id, found.kind, found.status) == (op.id, "week", "previewed")
+    assert found.event_date == date(2026, 11, 1)
+    assert found.commit_path is None
+    assert found.created_at is not None
+    assert "caller" not in found.model_dump()
+    assert "result" not in found.model_dump()
+
+
+def test_get_job_unknown_uuid_not_found(fx_session: Session) -> None:
+    missing = get_job(fx_session, uuid4())
     assert isinstance(missing, NotFound)
     assert missing.found is False
 

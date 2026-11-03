@@ -208,27 +208,213 @@ hypothesis.
 
 ---
 
-## Phase 2: write tools (outline, to be detailed after the routine test passes)
-- **T4: `mcp_operations` table.** Alembic migration 0011 and the model. Columns as in the spec. Unique
-  `idempotency_key`. `get_job` accepts a uuid preview_id.
-- **T5: `mcp/build.py`.** The skill's `build.py` logic as pure functions:
-  - `WeekInput` validation, hypothesis-tested;
-  - `build_scores(base: bytes, week) -> bytes`;
-  - `build_stations(week) -> bytes`;
-  - `build_correction(base, date, rows) -> bytes`.
-- **T6: `mcp/backup.py`.**
-  - `pre_import_dump(preview_id) -> Path`: pg_dump custom format, `pg_restore --list`, a 1 MiB floor, the
-    `backup.lock` flock, and keep the last 20 `pre-import-*.dump`.
-  - Fail-closed tests with a fake `pg_dump` on PATH.
-  - Compose: add `db_password` and the backups bind.
-- **T7: `preview_week` and `preview_correction`.**
-  - The date rules and the append-only diff gate, which discards staged imports when it refuses.
-  - The 1-hour expiry sweep.
-  - Returns date and head_count first.
-- **T8: `commit_week` and `rollback_week`.**
-  - Gated by `MCP_COMMIT_ENABLED` (default false). A correction is always refused.
-  - Idempotency.
-  - Dump, then commit scores, then commit stations, then queue the rebuild, then write the audit row.
-  - Rollback is for the latest commit only.
-- **T9: `python -m sunday_clays.mcp.approve <preview_id>`.** A TTY confirm, then the same commit steps with
-  `commit_path="cli-approve"`. Update the private skill to the MCP flow.
+## Phase 2: write tools
+
+Branch `feat/scores-mcp-writes`, off main. Merging this branch auto-deploys, but no MCP commit can happen, because
+`MCP_COMMIT_ENABLED` defaults to false. It still waits on the unattended gateway test (phase 1 exit) before merging.
+
+**Phase 2 global constraints** (in addition to the ones above):
+- **Writes are the only thing the read-only session factory doesn't cover.** Write tools use a separate
+  `write_session_factory()`: same engine URL and 10 s statement timeout, not read-only.
+- **No raw SQL, no file paths in tool args.** Workbooks are built in memory from the validated input and the latest
+  committed scores import's bytes.
+- **Every refusal is an MCP tool error** with a stable `code` and a plain message, and it writes an `mcp_operations`
+  row with `status="refused"`, plus an `audit_log` row (`role="mcp"`, action `mcp.refuse`).
+- **Same names and values as the spec.**
+  - `MCP_COMMIT_ENABLED`: bool, default false.
+  - `MCP_PREVIEW_TTL`: seconds, default 3600.
+  - `MCP_BACKUP_DIR`: default `/backups`.
+  - Previews older than the TTL are expired.
+  - Week date rules: a Sunday; later than the last committed event; at most 14 days before today in
+    America/Los_Angeles; no existing rounds.
+  - Corrections: the latest committed Sunday only, at most 5 rows, no deletes, no new names.
+  - At most 200 shooters.
+- **The model never commits a correction.** `commit_week` always refuses a correction preview. Only the approve CLI
+  commits corrections.
+
+### Task 4: `mcp_operations` table and audit access
+**Files:**
+- Create: `backend/migrations/versions/0011_mcp_operations.py`, `backend/src/sunday_clays/models/mcp.py`.
+- Modify: `models/__init__.py`, `mcp/reads.py` (`get_job`), `mcp/server.py` (the `get_job` arg accepts an int job id
+  or a uuid string).
+
+**Model `McpOperation`:**
+- Columns:
+  - `id: UUID` (pk, default uuid4)
+  - `kind: str` (`week|correction`)
+  - `event_date: date`
+  - `caller: str | None`
+  - `status: str` (`previewed|committed|rolled_back|expired|refused`, with a check constraint)
+  - `scores_import_id: int | None` (FK imports), `stations_import_id: int | None` (FK imports)
+  - `idempotency_key: str | None` (unique)
+  - `commit_path: str | None` (`mcp-auto|cli-approve|web-ui-approve`, with a check constraint)
+  - `backup_file: str | None`
+  - `job_id: int | None`
+  - `created_at`, `committed_at`, `rolled_back_at` (timestamptz)
+  - `result: dict` (jsonb, default `{}`)
+- Index on `(status, created_at)`.
+
+**`get_job(session, ref: int | UUID)`:**
+- For a uuid, return `OperationStatus`: `{preview_id, kind, event_date, status, commit_path, scores_import_id,
+  stations_import_id, job_id, backup_file, created_at, committed_at, rolled_back_at}`.
+- A missing id is NotFound, as for jobs.
+
+**Tests:**
+- `test_migration_0011_upgrade_downgrade`: upgrade, then downgrade, then upgrade, the way the existing migration tests do
+  it.
+- `test_status_check_constraint_rejects_unknown`
+- `test_idempotency_key_unique`
+- `test_get_job_by_preview_id`
+- `test_get_job_unknown_uuid_not_found`
+- Over MCP: `get_job` accepts a uuid string and still rejects ints below 1 or above 2^31-1.
+
+### Task 5: Workbook builders (`mcp/build.py`)
+Port of the private skill's `build.py`. Read it at `~/code/sunday-clays/.claude/skills/import-weekly-scores/scripts/build.py`.
+It contains no real names; keep it that way.
+
+**Inputs:**
+- `WeekInput` (pydantic, `extra="forbid"`): `{date, stations: list[str] (1-12, each a station label like "7" or "7A"),
+  counts: list[int] (1-10 each, same length, sum 50), expected_total: int | None, shooters: list[ShooterRow] (1-200)}`.
+- `ShooterRow`: `{name: "Last, First" (3-60 chars, one comma), score: 0-50, status: "Member"|"Guest",
+  class_: str | None (alias "class"; one of the known gauge classes in `ingest/scores.py` `_GAUGES` values, or
+  `"Pump"`), hits: list[int] | None}`.
+- Validators:
+  - no duplicate names, compared case-insensitively;
+  - each `hits` has the same length as `stations`, each value is within 0..count, and the sum equals `score`;
+  - when `expected_total` is set, it equals the sum of scores.
+- `CorrectionInput`: `{date, rows: list[CorrectionRow] (1-5)}`, where `CorrectionRow` is `{name, score, hits | None}`.
+
+**Functions:**
+- `build_scores(base: bytes, week: WeekInput) -> bytes`: append the rows to "ALL SCORE DETAIL", sorted by score
+  descending, and set or append the "Attendance History" count. It raises `BuildError("date_present")` if the base
+  already has that date.
+- `build_stations(week: WeekInput) -> bytes | None`: None if no shooter has hits.
+- `build_correction(base: bytes, c: CorrectionInput) -> tuple[bytes, bytes | None]`: rewrite the score (and class
+  untouched) for each named row on that date. Raise `BuildError("name_not_on_date")` for a name that isn't there. The
+  stations workbook covers only the corrected rows that have hits.
+
+**Tests:**
+- Hypothesis on `WeekInput` validation: generated valid weeks round-trip, and each rule violation is rejected.
+- `build_scores` output parses with `ingest.parse_upload` and has exactly the new rows for the date. Use the fixture
+  scores workbook as the base.
+- `build_stations` output parses as stations, with the right station labels and counts.
+- `build_correction` changes only the named rows.
+- `date_present` and `name_not_on_date` raise.
+
+### Task 6: Pre-import dump (`mcp/backup.py`) and service wiring
+**`pre_import_dump(preview_id: UUID, *, backup_dir: Path, database_url: str) -> Path`:**
+1. Convert the SQLAlchemy URL to a libpq URI without the password, and pass the password as `PGPASSWORD` in the
+   child's environment, so it never appears in argv.
+2. Take an exclusive `fcntl.flock` on `backup_dir/backup.lock`, waiting at most 600 s.
+3. Run `pg_dump --format=custom --exclude-table-data=response_cache --file=<tmp>` to
+   `pre-import-<preview_id>-<UTC %Y%m%dT%H%M%SZ>.dump.tmp`.
+4. Verify with `pg_restore --list <tmp>`.
+5. Require the size to be ≥ 1 MiB (`MIN_DUMP_BYTES`, overridable for tests). Then rename to `.dump`.
+6. Prune to the newest 20 `pre-import-*.dump`, never touching other files.
+7. Any failure raises `BackupError`, removes the tmp file, and leaves nothing behind.
+
+**Tests** (fake `pg_dump` and `pg_restore` scripts on PATH via monkeypatch):
+- the success path names and keeps the file;
+- each of these raises and leaves no tmp: a failing pg_dump, a failing pg_restore, a too-small dump;
+- prune keeps 20 and leaves `sc-*.dump` alone;
+- the password is not in argv (the fake records argv);
+- the lock is honoured (a held lock with a short timeout raises).
+
+One integration test with the real `pg_dump` against the test container: it produces a restorable dump. Mark it
+`@pytest.mark.slow` if the suite has that marker; otherwise keep it.
+
+**Wiring:**
+- In `compose.swarm.yaml`, the `mcp` service gains the bind `/var/data/sunday-clays/backups:/backups` (the same source
+  as `backup`) and `MCP_BACKUP_DIR=/backups`.
+- In `check_stack.py`, the rule allows that bind on `mcp`.
+- Update the stack tests.
+- Add `MCP_COMMIT_ENABLED: "false"` explicitly to the mcp environment.
+
+### Task 7: `preview_week` and `preview_correction`
+**Files:** `mcp/writes.py` (the logic, on a `Session`) and `mcp/server.py` (the tools).
+
+**`preview_week(session, week, *, now) -> WeekPreview`:**
+1. Sweep expired previews first: any `previewed` older than the TTL becomes `expired`, and its pending imports are
+   discarded.
+2. Apply the date rules.
+3. Base = bytes of the latest committed scores import. With none, refuse (`no_base`).
+4. Build both workbooks, then `stage_import` each (stations only if built).
+5. Gate on the scores diff: `events_added == [date]`, `events_removed == []`, `rows_removed == 0`,
+   `rows_changed == 0`. Otherwise `discard_import` both, then refuse with `not_append_only`.
+6. Insert an `mcp_operations` row with `status="previewed"` and an `audit_log` row (`mcp.preview`).
+
+`WeekPreview` fields, in this order:
+- `date`, `head_count`, `score_sum`, `average`;
+- `new_names`, `possible_duplicates`;
+- `findings_for_date` (FindingOut for that date);
+- `historical_findings` (a count);
+- `preview_id`, `expires_at`;
+- `note` (set when `len(new_names) > 3`: check `find_shooters`).
+
+**`preview_correction(session, c, *, now) -> CorrectionPreview`:**
+- The date must be the latest committed event, and every name must be on it.
+- Build, stage, then gate: `rows_changed == len(rows)`, with `rows_added == rows_removed == 0` and no events
+  added or removed. Otherwise discard and refuse.
+- Returns `needs_human_approval: true`.
+
+**Refusal codes:** `not_sunday`, `not_after_last_event`, `too_old`, `date_has_rounds`, `no_base`, `not_append_only`,
+`not_latest_event`, `name_not_on_date`, `invalid_input`.
+
+**Tests:**
+- Each refusal code. Assert no pending imports remain afterwards, and an `mcp_operations` row is marked refused.
+- A happy path on the fx world, with the clock frozen so the next Sunday is valid.
+- Expiry sweep.
+- Duplicate preview of identical bytes: `stage_import` returns `duplicate_of`. Treat that as the same preview: return
+  the existing preview_id if it is still `previewed`; otherwise refuse with `duplicate`.
+- Over MCP: both tools are listed with bounded schemas, and a refusal comes back as `isError` with the code in the text.
+
+### Task 8: `commit_week` and `rollback_week`
+**`commit_operation(session, preview_id, *, idempotency_key, commit_path, allow_correction, now, dump=pre_import_dump)`:**
+the shared commit steps.
+1. Lock the `mcp_operations` row `FOR UPDATE`.
+2. If a row already has this idempotency key, return its stored `result`, provided it is for the same preview;
+   otherwise refuse `key_reused`.
+3. The row must be `previewed` and within the TTL (else `expired`).
+4. `kind == "correction"` requires `allow_correction` (else `correction_needs_human`).
+5. Dump; a `BackupError` refuses with `backup_failed`.
+6. `commit_import` for scores, then stations.
+7. `enqueue(session, "rebuild", dedupe_key="rebuild")`.
+8. Update the row: committed, path, key, backup file, job id, result. Write `audit_log` (`mcp.commit`).
+
+**`commit_week` tool:**
+- Refuses `commits_disabled` unless `MCP_COMMIT_ENABLED`. The message says a human commits during the preview-only
+  period, and gives the approve command with the preview_id.
+- Otherwise calls `commit_operation(..., commit_path="mcp-auto", allow_correction=False)`.
+
+**`rollback_operation(session, preview_id, *, idempotency_key, now, dump)` and the `rollback_week` tool:**
+- Gated like commit.
+- The operation must be `committed`; its scores import must be the active one (`active_scores_import`); and its date
+  must be the latest event. Otherwise refuse `not_latest`.
+- Dump, then `rollback_import` both, enqueue a rebuild, mark the row `rolled_back`, and audit `mcp.rollback`.
+
+**Tests:**
+- Disabled by default.
+- A correction is refused even when enabled.
+- Expired.
+- A key reused with a different preview.
+- The same key returns the same result, without a second dump.
+- A dump failure changes no import status. Assert both imports are still `pending`.
+- The happy path commits both, enqueues a rebuild and records the backup file.
+- Rollback refuses a non-latest import, and the happy path works.
+
+### Task 9: Approve CLI and the skill update
+**`python -m sunday_clays.mcp.approve <preview_id> [--yes]`:**
+- Prints the preview summary from `mcp_operations` plus the stored import previews (date, head count, sum, new
+  names, findings count, kind).
+- If stdin is a TTY, requires typing `yes`; `--yes` is for non-interactive runs by the owner.
+- Calls `commit_operation(commit_path="cli-approve", allow_correction=True)` with a fresh key `cli-<uuid4>`.
+- Prints the job id and the backup file.
+- Exit codes: 0 committed; 1 refused, with the code printed; 2 bad args.
+
+**Tests:** the confirm prompt (yes and no), `--yes`, a refusal exit code, and committing a correction.
+
+**Docs:**
+- In `deploy/README.md` "Scores MCP": the preview-only period, how to approve (`docker exec` into the mcp task, then
+  `python -m sunday_clays.mcp.approve <id>`), and how to turn on auto-commit later (`MCP_COMMIT_ENABLED=true`, the
+  owner's call).
+- In the private skill (outside this repo): an MCP section.

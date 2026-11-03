@@ -36,6 +36,7 @@ from sunday_clays.models import (
     ImportStationLayout,
     ImportStationSheet,
     Job,
+    McpOperation,
 )
 
 ALEMBIC_INI = Path(__file__).resolve().parents[3] / "alembic.ini"
@@ -138,12 +139,14 @@ C4_TABLES = {
     "page_kind_rollups",  # 0007 (Plan 16)
     "import_special_events",  # 0008 (Plan 17)
     "response_cache",  # 0009 (Plan 19)
+    "mcp_operations",  # 0011 (scores MCP phase 2)
 }
 TABLES_0003 = {"insights", "insight_picks"}
 TABLES_0006 = {"fist_bumps", "bump_attempts"}
 TABLES_0007 = {"page_views", "page_view_attempts", "page_view_rollups", "page_kind_rollups"}
 TABLES_0008 = {"import_special_events"}
 TABLES_0009 = {"response_cache"}
+TABLES_0011 = {"mcp_operations"}
 
 
 def _alembic(eng: Engine, action: str, target: str) -> None:
@@ -267,30 +270,59 @@ def test_upgrade_downgrade_roundtrip(scratch_engine: Engine) -> None:
     _alembic(scratch_engine, "upgrade", "head")
     assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
     assert _round_id_index(scratch_engine) == ROUND_ID_INDEX_DEF
+    _alembic(scratch_engine, "downgrade", "0010")  # 0011 drops only its table
+    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0011) | {"alembic_version"}
+    old = C4_TABLES - TABLES_0011
     _alembic(scratch_engine, "downgrade", "0009")  # 0010 drops only its three columns
-    assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
+    assert _tables(scratch_engine) == (old - TABLES_0011) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0008")  # 0009 drops only the response cache
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0009) | {"alembic_version"}
+    assert _tables(scratch_engine) == (old - TABLES_0009) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0007")  # 0008 drops its table and the event kind
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0008 - TABLES_0009) | {"alembic_version"}
+    assert _tables(scratch_engine) == (old - TABLES_0008 - TABLES_0009) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0006")  # 0007 drops only its four tables
     newer = TABLES_0007 | TABLES_0008 | TABLES_0009
-    assert _tables(scratch_engine) == (C4_TABLES - newer) | {"alembic_version"}
+    assert _tables(scratch_engine) == (old - newer) | {"alembic_version"}
     later = TABLES_0006 | newer
     _alembic(scratch_engine, "downgrade", "0005")  # 0006 drops only its two tables
-    assert _tables(scratch_engine) == (C4_TABLES - later) | {"alembic_version"}
+    assert _tables(scratch_engine) == (old - later) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0004")  # 0005 drops the station labels
     _alembic(scratch_engine, "downgrade", "0003")  # 0004 is a data-only no-op
     _alembic(scratch_engine, "downgrade", "0002")  # 0003 drops only its two tables
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0003 - later) | {"alembic_version"}
+    assert _tables(scratch_engine) == (old - TABLES_0003 - later) | {"alembic_version"}
     _alembic(scratch_engine, "downgrade", "0001")  # 0002 drops only its index
-    assert _tables(scratch_engine) == (C4_TABLES - TABLES_0003 - later) | {"alembic_version"}
+    assert _tables(scratch_engine) == (old - TABLES_0003 - later) | {"alembic_version"}
     assert _round_id_index(scratch_engine) is None
     _alembic(scratch_engine, "downgrade", "base")
     assert _tables(scratch_engine) == {"alembic_version"}
     _alembic(scratch_engine, "upgrade", "head")
     assert _tables(scratch_engine) == C4_TABLES | {"alembic_version"}
     assert _round_id_index(scratch_engine) == ROUND_ID_INDEX_DEF
+
+
+def test_migration_0011_upgrade_downgrade(scratch_engine: Engine) -> None:
+    _alembic(scratch_engine, "upgrade", "head")
+    assert "mcp_operations" in _tables(scratch_engine)
+    _alembic(scratch_engine, "downgrade", "0010")
+    assert "mcp_operations" not in _tables(scratch_engine)
+    _alembic(scratch_engine, "upgrade", "head")
+    assert "mcp_operations" in _tables(scratch_engine)
+
+
+def test_status_check_constraint_rejects_unknown(session: Session) -> None:
+    session.add(McpOperation(kind="week", event_date=date(2026, 11, 1), status="bogus"))
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_idempotency_key_unique(session: Session) -> None:
+    for _ in range(2):
+        session.add(
+            McpOperation(
+                kind="week", event_date=date(2026, 11, 1), status="previewed", idempotency_key="k1"
+            )
+        )
+    with pytest.raises(IntegrityError):
+        session.flush()
 
 
 def test_0004_folds_unknown_round_type_into_sporting(scratch_engine: Engine) -> None:

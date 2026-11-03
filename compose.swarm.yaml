@@ -96,8 +96,8 @@ services:
 
   # Scores MCP server (deploy/README.md "Scores MCP"): the backend image with its own command. It is
   # reachable only through the deployment's MCP gateway, over the external MCP network (alias
-  # sundayclays-mcp), never through the public edge. Read-only for now; the image has python but
-  # no curl, hence the urllib healthcheck.
+  # sundayclays-mcp), never through the public edge. Previews stage imports; commits are off unless
+  # MCP_COMMIT_ENABLED. The image has python but no curl, hence the urllib healthcheck.
   mcp:
     image: ${SC_REGISTRY:?SC_REGISTRY is required}/sunday-clays-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     command: ["python", "-m", "sunday_clays.mcp"]
@@ -105,6 +105,12 @@ services:
       MCP_AUTH_TOKEN_FILE: /run/secrets/mcp_token
       DATABASE_URL_FILE: /run/secrets/database_url
       MCP_PORT: "8080"
+      MCP_COMMIT_ENABLED: "false"
+      MCP_BACKUP_DIR: /backups
+    volumes:
+      # Same bind as `backup`: the pre-import dump lands where the nightly dumps do. /var/data is
+      # shared across nodes, so mcp needs no placement pin for it.
+      - /var/data/sunday-clays/backups:/backups
     secrets:
       - source: mcp_token
         target: mcp_token
