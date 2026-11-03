@@ -62,7 +62,7 @@ export const RANGE_FILTERS: Record<
 > = {
   temp_f: { param: 't', label: 'Temperature', min: 0, max: 110, step: 1, unit: '°F' },
   gust_mph: { param: 'gu', label: 'Wind gust', min: 0, max: 50, step: 1, unit: 'mph' },
-  precip_in: { param: 'p', label: 'Rain', min: 0, max: 2, step: 0.01, unit: 'in' },
+  precip_in: { param: 'rain', label: 'Rain', min: 0, max: 2, step: 0.01, unit: 'in' },
 };
 
 /** Empty string ⇄ null, so "no filter" drops the parameter. */

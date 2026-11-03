@@ -1,6 +1,7 @@
-"""POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me (C8)."""
+"""POST /api/auth/login, POST /api/auth/link-login, POST /api/auth/logout, GET /api/auth/me (C8)."""
 
 import threading
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -10,11 +11,12 @@ from sunday_clays.auth.deps import (
     NotAuthenticatedError,
     TooManyRequestsError,
     client_ip,
+    current_role,
     ip_fingerprint,
     record_audit,
     require_viewer,
 )
-from sunday_clays.auth.passwords import match_role
+from sunday_clays.auth.passwords import match_role, match_viewer
 from sunday_clays.auth.ratelimit import is_limited, record_attempt
 from sunday_clays.auth.sessions import COOKIE_NAME, TTL, Role, issue_session
 from sunday_clays.config import Settings, get_settings
@@ -35,13 +37,13 @@ class RoleOut(BaseModel):
     role: Role
 
 
-@router.post("/login")
-def login(
+def _login_with(
+    matcher: Callable[[Settings, str], Role | None],
     body: LoginIn,
     request: Request,
     response: Response,
     session: SessionDep,
-    settings: Annotated[Settings, Depends(get_settings)],
+    settings: Settings,
 ) -> RoleOut:
     ip = client_ip(request)  # raw only for audit_log; rate-limit rows get the fingerprint
     bucket = ip_fingerprint(request)
@@ -53,7 +55,7 @@ def login(
     if not _VERIFY_SLOTS.acquire(timeout=VERIFY_ACQUIRE_TIMEOUT_S):
         raise TooManyRequestsError("login_busy", "The server is busy. Try again in a moment.")
     try:
-        role = match_role(settings, body.password)
+        role = matcher(settings, body.password)
     finally:
         _VERIFY_SLOTS.release()
     record_attempt(session, bucket, role is not None)
@@ -72,6 +74,36 @@ def login(
         samesite="strict",
     )
     return RoleOut(role=role)
+
+
+@router.post("/login")
+def login(
+    body: LoginIn,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RoleOut:
+    # Looked up at call time (not bound as a default) so tests can swap auth.match_role.
+    return _login_with(match_role, body, request, response, session, settings)
+
+
+@router.post("/link-login")
+def link_login(
+    body: LoginIn,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    existing: Annotated[Role | None, Depends(current_role)],
+) -> RoleOut:
+    """Password-in-link login: viewer only. An admin password is just a wrong password here.
+
+    A request that already carries a valid session keeps it: never replaced, never downgraded.
+    """
+    if existing is not None:
+        return RoleOut(role=existing)
+    return _login_with(match_viewer, body, request, response, session, settings)
 
 
 @router.post("/logout", status_code=204)

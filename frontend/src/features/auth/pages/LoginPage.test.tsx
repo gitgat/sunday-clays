@@ -2,7 +2,8 @@ import { screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../../test/msw/server';
-import { renderRoutes } from '../../../test/render';
+import { createTestQueryClient, renderRoutes } from '../../../test/render';
+import { LINK_FAILED_KEY } from '../linkLogin';
 import { TEST_PASSWORDS } from '../mocks';
 import { LoginPage } from './LoginPage';
 
@@ -145,5 +146,27 @@ describe('LoginPage', () => {
     const { router } = renderRoutes(ROUTES, { route: '/login?next=%2Fclub', role: 'viewer' });
     expect(await screen.findByText('app')).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/club');
+  });
+
+  it('shows no link note on a normal visit', () => {
+    renderLogin();
+    expect(screen.queryByText(/link's password/)).toBeNull();
+  });
+
+  it('shows the link note when a password link failed, and drops it after a login', async () => {
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(LINK_FAILED_KEY, 'rejected');
+    const { user } = renderRoutes(ROUTES, {
+      route: '/login?next=%2Fclub',
+      role: null,
+      queryClient,
+    });
+    expect(
+      screen.getByText("That link's password didn't work. Enter the password to continue."),
+    ).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Password'), TEST_PASSWORDS.viewer);
+    await user.click(screen.getByRole('button', { name: 'Log in' }));
+    await screen.findByText('app');
+    expect(queryClient.getQueryData(LINK_FAILED_KEY)).toBeUndefined();
   });
 });
