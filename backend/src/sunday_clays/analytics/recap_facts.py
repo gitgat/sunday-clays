@@ -488,20 +488,21 @@ class FactSource:
         so_far = self._rounds_through(today.date) - self._rounds_through(start - timedelta(days=1))
         before = so_far - self._rounds_on[today.date]
         held = sum(s.date.year == year for s in sundays[: i + 1])
-        lead = f"{year} so far: {so_far:,} rounds over {_plural(held, 'Sunday', 'Sundays')}"
+        sundays_held = _plural(held, "Sunday", "Sundays")
+        lead = f"{year} so far: {so_far:,} Sunday Clays rounds over {sundays_held}"
         last_start = date(year - 1, 1, 1)
         last_total = self._rounds_through(start - timedelta(days=1)) - self._rounds_through(
             last_start - timedelta(days=1)
         )
         last_held = sum(s.date.year == year - 1 for s in sundays[:i])
         if last_held >= YEAR_MIN_SUNDAYS and before <= last_total < so_far:
-            text = f"{lead}, already more than all of {year - 1} ({last_total:,} rounds)."
+            text = f"{lead}, already more than all of {year - 1} ({last_total:,})."
             return [_fact("year_so_far", text, 1.5, key=f"passed:{year - 1}")]
         crossed = so_far // YEAR_ROUND_STEP
         if crossed > before // YEAR_ROUND_STEP:
             mark = crossed * YEAR_ROUND_STEP
             verb = "reached" if so_far == mark else "past"
-            text = f"{lead}, {verb} the {mark:,}-round mark."
+            text = f"{lead}, {verb} the {mark:,} mark."
             return [_fact("year_so_far", text, 1.0, key=f"{year}:step:{mark}")]
         return []
 

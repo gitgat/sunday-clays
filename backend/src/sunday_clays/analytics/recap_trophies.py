@@ -14,7 +14,7 @@ from sunday_clays.analytics.summary import LEFT_OUT_TROPHY_CODES
 #: A short plain explanation for the one-off trophies whose name alone would not make sense to
 #: someone outside the club. Codes missing here (3-Bird Shoot, ...) read fine alone.
 ONE_OFF_EXPLANATIONS: Final[dict[str, str]] = {
-    "doubleheader": "two rounds in one day",
+    "doubleheader": "two Sunday Clays rounds in one day",
     "joined_club": "first shot as a guest, now a member",
     "both_disciplines": "shot both a sporting and a super sporting day",
     "comeback": "beat the previous outing's best round by 15 or more",

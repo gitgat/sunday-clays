@@ -45,7 +45,7 @@ def test_a_one_off_is_its_name_with_a_plain_explanation_when_needed() -> None:
     assert recap_trophy_items(["doubleheader"]) == [
         f"Doubleheader ({ONE_OFF_EXPLANATIONS['doubleheader']})"
     ]
-    assert ONE_OFF_EXPLANATIONS["doubleheader"] == "two rounds in one day"
+    assert ONE_OFF_EXPLANATIONS["doubleheader"] == "two Sunday Clays rounds in one day"
 
 
 def test_a_one_off_without_an_explanation_is_just_the_name() -> None:
