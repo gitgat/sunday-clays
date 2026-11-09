@@ -452,7 +452,7 @@ def test_year_so_far_passed_all_of_last_year(make_world: Any) -> None:
     # 2023: 53 Sundays x 3 = 159 rounds. 2024 at 4 a Sunday passes it on the 40th (160).
     fr = year_world(make_world, 4)
     assert texts(fr, date(2024, 10, 6), "year_so_far") == [
-        "2024 so far: 160 rounds over 40 Sundays, already more than all of 2023 (159 rounds)."
+        "2024 so far: 160 Sunday Clays rounds over 40 Sundays, already more than all of 2023 (159)."
     ]
     assert texts(fr, date(2024, 10, 13), "year_so_far") == []  # the crossing is a one-day story
     assert texts(fr, date(2024, 9, 29), "year_so_far") == []
@@ -462,7 +462,7 @@ def test_year_so_far_round_number_crossed_today(make_world: Any) -> None:
     # at 7 a Sunday, 2024 reaches 105 rounds on the 15th Sunday (98 the week before)
     fr = year_world(make_world, 7)
     assert texts(fr, date(2024, 4, 14), "year_so_far") == [
-        "2024 so far: 105 rounds over 15 Sundays, past the 100-round mark."
+        "2024 so far: 105 Sunday Clays rounds over 15 Sundays, past the 100 mark."
     ]
     assert texts(fr, date(2024, 4, 21), "year_so_far") == []
     assert texts(fr, date(2024, 3, 31), "year_so_far") == []  # 91: nothing crossed
@@ -474,7 +474,7 @@ def test_year_so_far_says_reached_not_past_when_it_lands_exactly_on_the_mark(
     # at 5 a Sunday, 2024 is on exactly 100 rounds on the 20th Sunday
     fr = year_world(make_world, 5)
     assert texts(fr, date(2024, 5, 19), "year_so_far") == [
-        "2024 so far: 100 rounds over 20 Sundays, reached the 100-round mark."
+        "2024 so far: 100 Sunday Clays rounds over 20 Sundays, reached the 100 mark."
     ]
 
 
@@ -482,7 +482,7 @@ def test_year_so_far_passing_last_year_comes_before_the_round_number(make_world:
     # 7 a Sunday passes 2023's 159 rounds on the 23rd Sunday (161)
     fr = year_world(make_world, 7)
     assert texts(fr, date(2024, 6, 9), "year_so_far") == [
-        "2024 so far: 161 rounds over 23 Sundays, already more than all of 2023 (159 rounds)."
+        "2024 so far: 161 Sunday Clays rounds over 23 Sundays, already more than all of 2023 (159)."
     ]
 
 
@@ -893,7 +893,7 @@ def case_year(make_world: Any, mp: pytest.MonkeyPatch) -> Case:
         year_world(make_world, 7),
         date(2024, 4, 14),
         "year_so_far",
-        "2024 so far: 105 rounds over 15 Sundays, past the 100-round mark.",
+        "2024 so far: 105 Sunday Clays rounds over 15 Sundays, past the 100 mark.",
     )
 
 
